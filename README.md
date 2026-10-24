@@ -66,3 +66,14 @@ We have included a built-in test portal `test_portal.html` that matches your rea
    - Uses native property descriptors and event bubbling (`input`, `change`, `blur`) so that React, Angular, Vue, and vanilla HTML forms register all input changes without dropping data.
 5. **Modern Popup Design**:
    - Categorized card layout, individual field copy buttons, live editing, QC pass/warning badges, and 1-click JSON export.
+6. **Comprehensive Section 7 Address Normalization & Expansion**:
+   - Implements Sections 7.4 through 7.11 address rules:
+     - **Street & Road Types**: `St.` -> `Street`, `Rd.` -> `Road`, `Ave.` -> `Avenue`, `Blvd.` -> `Boulevard`, `Dr.` -> `Drive`, `Ln.` -> `Lane`, `Ct.` -> `Court`, `Hwy.` -> `Highway`, `Pkwy.` -> `Parkway`, `Sq.` -> `Square`, `Pl.` -> `Place`, `Cres.` -> `Crescent`, `Ter.` -> `Terrace`, `Cir.` -> `Circle`, `Trl.` -> `Trail`, `Extn.` -> `Extension`, `Rd. Extn.` -> `Road Extension`.
+     - **Context Safeguards**: Protects Saint in proper names (`St. John`, `St. Louis`, `St. Mary`) and Doctor (`Dr. B.R. Ambedkar`) from improper expansion.
+     - **Building & Units**: `Bldg.` -> `Building`, `Bldg No.` -> `Building Number`, `Ste.` -> `Suite`, `Apt.` -> `Apartment`, `Rm.` -> `Room`, `Blk.` -> `Block`, `No.` / `#` -> `Number`. Retains `Unit` as written.
+     - **Floors & Phases**: `1st Fl.` / `2nd Fl.` / `3rd Fl.` -> `First Floor` / `Second Floor` / `Third Floor`; `G.F.` / `F.F.` / `S.F.` -> `Ground Floor` / `First Floor` / `Second Floor`; `1 Phase` / `2 Phase` -> `First Phase` / `Second Phase`.
+     - **Industrial & Commercial**: `Ind. Area` -> `Industrial Area`, `Ind. Est.` -> `Industrial Estate`, `Tech. Park` -> `Technology Park`, `IT Park` -> `Information Technology Park`, `Bus. Park` -> `Business Park`, `Comml. Complex` -> `Commercial Complex`, `Dev. Zone` -> `Development Zone`, `Econ. & Tech. Dev. Zone` -> `Economic & Technical Development Zone`.
+     - **Directions**: `N.`, `S.`, `E.`, `W.` -> `North`, `South`, `East`, `West`; `NE`, `NW`, `SE`, `SW` -> `Northeast`, `Northwest`, `Southeast`, `Southwest`; `Old Rd.` -> `Old Road`, `New Rd.` -> `New Road`.
+     - **Indian & International Terms**: `H.O.` -> `Head Office`, `S.O.` -> `Sub Office`, `P.O. Box No.` -> `Post Office Box Number`, `Vill.` -> `Village`, `Tal.` / `Tq.` -> `Taluka`, `Dist.` -> `District`, `C/O` -> `Care Of`, `B.P.` -> `Boîte Postale`, `Z.I.` -> `Zone Industrielle`, `Pol. Ind.` -> `Polígono Industrial`.
+     - **Preserves Local Official Names**: Local place names like `Jalan P/1`, `Kawasan Perusahaan`, `Nagar`, `Puram`, and `Colony` are strictly preserved without distortion.
+

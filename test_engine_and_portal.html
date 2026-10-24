@@ -421,6 +421,77 @@
     }
     renderTest("Test 6: Section 5.3 International Legal Suffix Expansion (Full Form)", allSuffixPassed, suffixResults);
 
+    // TEST 7: Section 7 Address Abbreviations & Normalization (Sections 7.4 - 7.11)
+    const addressTestCases = [
+      // Example 1 (China, Postal code, Econ & Tech Dev Zone, Rd.)
+      {
+        raw: "No. 1098 Kunjia Rd., Kunshan Econ. & Tech. Dev. Zone, Kunshan, Jiangsu, 215300, China",
+        expected: "Number 1098 Kunjia Road, Kunshan Economic & Technical Development Zone, Kunshan, Jiangsu"
+      },
+      // Example 2 (India, Bldg, 2nd Fl, Ind. Est., Phase II, Postal code)
+      {
+        raw: "Bldg. 5, 2nd Fl., Ind. Est., Phase II, Vapi, Gujarat, 396195, India",
+        expected: "Building 5, Second Floor, Industrial Estate, Phase II, Vapi, Gujarat"
+      },
+      // Example 3 (India, Ste, 2 Phase)
+      {
+        raw: "Ste. 204, 165/C/3, Fortune Landmark, 2 Phase, Vapi, Gujarat, India",
+        expected: "Suite 204, 165/C/3, Fortune Landmark, Second Phase, Vapi, Gujarat"
+      },
+      // Example 4 (India, Unit retention, Tech. Park, North Rd., Postal code)
+      {
+        raw: "Unit 12, Tech. Park, North Rd., Chennai, Tamil Nadu, 600001, India",
+        expected: "Unit 12, Technology Park, North Road, Chennai, Tamil Nadu"
+      },
+      // Example 5 (Preservation of local names like Jalan P/1 and Kawasan Perusahaan)
+      {
+        raw: "Lot 6 & 8, Jalan P/1,, Kawasan Perusahaan",
+        expected: "Lot 6 & 8, Jalan P/1,, Kawasan Perusahaan"
+      },
+      // Saint vs Street discrimination (Rule 7.4)
+      {
+        raw: "100 St. John Street",
+        expected: "100 St. John Street"
+      },
+      // Doctor vs Drive discrimination (Rule 7.4)
+      {
+        raw: "45 Dr. B.R. Ambedkar Rd.",
+        expected: "45 Dr. B.R. Ambedkar Road"
+      },
+      // Drive expansion (Rule 7.4)
+      {
+        raw: "500 Technology Dr.",
+        expected: "500 Technology Drive"
+      },
+      // Building Number & PO Box Number (Rules 7.5 & 7.8)
+      {
+        raw: "Bldg. No. 14, P.O. Box No. 99",
+        expected: "Building Number 14, Post Office Box Number 99"
+      },
+      // Indian Address Terms (Rule 7.8)
+      {
+        raw: "Vill. Khadki, Tal. Dahanu, Dist. Palghar",
+        expected: "Village Khadki, Taluka Dahanu, District Palghar"
+      },
+      // International Terms (Rule 7.9)
+      {
+        raw: "Pol. Ind. Can Roca, Z.I. Nord, C/O Global Corp",
+        expected: "Polígono Industrial Can Roca, Zone Industrielle Nord, Care Of Global Corp"
+      }
+    ];
+
+    let allAddressPassed = true;
+    const addressResults = {};
+    for (const tc of addressTestCases) {
+      const actual = Extractor.cleanAddressString(tc.raw);
+      addressResults[tc.raw] = { expected: tc.expected, actual, passed: actual === tc.expected };
+      if (actual !== tc.expected) {
+        allAddressPassed = false;
+        console.error(`Address test failed for "${tc.raw}":\n  expected: "${tc.expected}"\n  actual:   "${actual}"`);
+      }
+    }
+    renderTest("Test 7: Section 7 Address Normalization & Abbreviations Expansion (Rules 7.4 - 7.11)", allAddressPassed, addressResults);
+
     // TEST 7: Portal Form Auto-Fill Test with EXACT FIELD DISCRIMINATION
     // Fill resKorea data into the portal form elements on this page
     const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -540,7 +611,7 @@
       cCountryVal === "South Korea"
     );
 
-    renderTest("Test 7: Portal Form Exact Filling (Company Name, Address, Country)", passPortal, {
+    renderTest("Test 8: Portal Form Exact Filling (Company Name, Address, Country)", passPortal, {
       totalFilled: `${filledCount}/14 fields`,
       filledCompanyName: cNameVal,
       filledCompanyAddress: cAddrVal,
@@ -557,8 +628,9 @@
       passUSA,
       passAccurite,
       allSuffixPassed,
+      allAddressPassed,
       passPortal,
-      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && passPortal
+      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && allAddressPassed && passPortal
     };
   </script>
 </body>

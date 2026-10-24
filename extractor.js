@@ -918,7 +918,183 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return "";
   }
 
-  // Clean Address according to Rule 6
+  // Sections 7.4 - 7.11: Address Abbreviations & Normalization Rules
+  function expandAddressAbbreviations(address) {
+    if (!address || typeof address !== "string") return "";
+    let addr = address;
+
+    // Negative lookbehind & protection for Saint names (Rule 7.4)
+    // Common Saint names in cities, localities, and streets
+    const saintRegex = /\bSt\.?\s+(?=(?:John|Louis|Mary|Paul|Petersburg|George|Thomas|Joseph|Jude|Mark|Francis|Xavier|Anthony|Andrews|James|Claire|Augustine|Charles|Patrick|Vincent|Michael|Lawrence|Stephen|Anne|Nicholas|Helena|Kitts|Lucia|Martin|Alban|Albans|Denis|Pierre|Germain|Cloud|Malo|Tropez|Moritz|Gallen|Etienne|Christopher|Teresa|Luke|Matthew|Bernadette|Cecilia|Sebastian|Dominic|Ignatius)\b)/gi;
+    const saintTokens = [];
+    addr = addr.replace(saintRegex, match => {
+      const placeholder = `__SAINT_TOKEN_${saintTokens.length}__`;
+      saintTokens.push(match);
+      return placeholder;
+    });
+
+    // Negative lookbehind & protection for Doctor in personal names (Rule 7.4)
+    // e.g. Dr. B.R. Ambedkar, Dr. Rajendra Prasad, Dr. Martin Luther King
+    const doctorRegex = /\bDr\.?\s+(?=[A-Z]\.?|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/g;
+    const doctorTokens = [];
+    addr = addr.replace(doctorRegex, match => {
+      const placeholder = `__DOC_TOKEN_${doctorTokens.length}__`;
+      doctorTokens.push(match);
+      return placeholder;
+    });
+
+    // Protect local designations like "Jalan P/1", "P/2" (Rule 7.9 & 7.10)
+    const localCodeTokens = [];
+    addr = addr.replace(/\b(?:Jalan\s+)?P\/\d+\b/gi, match => {
+      const placeholder = `__LOCAL_CODE_${localCodeTokens.length}__`;
+      localCodeTokens.push(match);
+      return placeholder;
+    });
+
+    // 1. Industrial, Commercial, and Development Locations (Section 7.6)
+    // Economic & Technical Development Zone (Example 1)
+    addr = addr.replace(/\bEcon\b\.?\s*(?:&|and)\s*Tech\b\.?\s*Dev\b\.?\s*Zone\b/gi, "Economic & Technical Development Zone");
+    addr = addr.replace(/\bEcon\b\.?\s*Dev\b\.?\s*Zone\b/gi, "Economic Development Zone");
+    addr = addr.replace(/\bTech\b\.?\s*Dev\b\.?\s*Zone\b/gi, "Technical Development Zone");
+
+    // Industrial / Tech / Business Parks and Areas
+    addr = addr.replace(/\bIndl?\b\.?\s*Area\b/gi, "Industrial Area");
+    addr = addr.replace(/\bIndl?\b\.?\s*Est(?:ate\b|\.?)/gi, "Industrial Estate");
+    addr = addr.replace(/\bIndl?\b\.?\s*Park\b/gi, "Industrial Park");
+    addr = addr.replace(/\bTech\b\.?\s*Park\b/gi, "Technology Park");
+    addr = addr.replace(/\b(?:I\.?T\.?|IT)\s*Park\b/gi, "Information Technology Park");
+    addr = addr.replace(/\bBus\b\.?\s*Park\b/gi, "Business Park");
+    addr = addr.replace(/\bComml?\b\.?\s*Complex\b/gi, "Commercial Complex");
+    addr = addr.replace(/\bDev\b\.?\s*Zone\b/gi, "Development Zone");
+    addr = addr.replace(/\bEcon\b\.?\s*Zone\b/gi, "Economic Zone");
+    addr = addr.replace(/\bTech\b\.?\s*Zone\b/gi, "Technology Zone");
+    addr = addr.replace(/\bIndl?\b\.?\s*Zone\b/gi, "Industrial Zone");
+    addr = addr.replace(/\bMfg\b\.?\s*Unit\b/gi, "Manufacturing Unit");
+
+    // 2. Common Indian & International Address Terms (Sections 7.8 & 7.9)
+    // Post Office Box Number first before Post Office Box
+    addr = addr.replace(/\bP\.?O\.?\s*Box\b\s*No\b\.?/gi, "Post Office Box Number");
+    addr = addr.replace(/\bP\.?O\.?\s*Box\b/gi, "Post Office Box");
+    addr = addr.replace(/(?:^|(?<=[,;\s]))H\.?O\.?(?=[\s:,\-]|$)/gi, "Head Office");
+    addr = addr.replace(/(?:^|(?<=[,;\s]))S\.?O\.?(?=[\s:,\-]|$)/gi, "Sub Office");
+    addr = addr.replace(/(?:^|(?<=[,;\s]))P\.?O\.?(?=\s+[A-Za-z])/gi, "Post Office ");
+    addr = addr.replace(/\b(?:C\/O|c\/o)\b/g, "Care Of");
+    addr = addr.replace(/(?:^|(?<=[,;\s]))B\.?P\b\.?\s*(?=\d)/gi, "Boîte Postale ");
+    addr = addr.replace(/(?:^|(?<=[,;\s]))Z\.?I\b\.?/g, "Zone Industrielle");
+    addr = addr.replace(/\bPol\b\.?\s*Ind\b\.?/gi, "Polígono Industrial");
+
+    // 3. Building, Unit, and Floor Abbreviations (Section 7.5)
+    // Building Number first before Building
+    addr = addr.replace(/\bBldg\b\.?\s*No\b\.?/gi, "Building Number");
+    addr = addr.replace(/\bBldg\b\.?/gi, "Building");
+    addr = addr.replace(/\bSte\b\.?/gi, "Suite");
+    addr = addr.replace(/\bApt\b\.?/gi, "Apartment");
+    addr = addr.replace(/\bRm\b\.?/gi, "Room");
+    addr = addr.replace(/\bBlk\b\.?/gi, "Block");
+    addr = addr.replace(/\bOfc\b\.?/gi, "Office");
+    addr = addr.replace(/\bDept\b\.?/gi, "Department");
+    addr = addr.replace(/\bVill\b\.?/gi, "Village");
+    addr = addr.replace(/\b(?:Tal|Taluk|Tq)\b\.?(?=[\s,;]|$)/gi, "Taluka");
+    addr = addr.replace(/\bDist\b\.?/gi, "District");
+
+    // Number / #
+    // "No. 1098" -> "Number 1098", "No. 5" -> "Number 5", "No 12" -> "Number 12"
+    addr = addr.replace(/(?:^|(?<=[,;\s]))No\b\.?\s*(?=[A-Za-z0-9#])/gi, "Number ");
+    addr = addr.replace(/(?:^|(?<=[,;\s]))No\b\s+(?=\d+)/gi, "Number ");
+    // "#" symbol: e.g. "#101" -> "Number 101"
+    addr = addr.replace(/(?:^|(?<=[,;\s]))#\s*(\d+)/g, "Number $1");
+
+    // Floor Abbreviations (Section 7.5)
+    addr = addr.replace(/\b1st\s+Fl(?:oor\b|\.?)/gi, "First Floor");
+    addr = addr.replace(/\b2nd\s+Fl(?:oor\b|\.?)/gi, "Second Floor");
+    addr = addr.replace(/\b3rd\s+Fl(?:oor\b|\.?)/gi, "Third Floor");
+    addr = addr.replace(/\b4th\s+Fl(?:oor\b|\.?)/gi, "Fourth Floor");
+    addr = addr.replace(/\b5th\s+Fl(?:oor\b|\.?)/gi, "Fifth Floor");
+    addr = addr.replace(/\b1\s+Fl(?:oor\b|\.?)/gi, "First Floor");
+    addr = addr.replace(/\b2\s+Fl(?:oor\b|\.?)/gi, "Second Floor");
+    addr = addr.replace(/\b3\s+Fl(?:oor\b|\.?)/gi, "Third Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s]))G\.?F\.?(?=[,;\s]|$)/gi, "Ground Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s]))F\.?F\.?(?=[,;\s]|$)/gi, "First Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s]))S\.?F\.?(?=[,;\s]|$)/gi, "Second Floor");
+    addr = addr.replace(/\bFl\b\.?(?=[,;\s]|$)/gi, "Floor");
+
+    // 4. Phase (Sections 7.5, 7.6 & Example 3)
+    // "1 Phase" -> "First Phase", "2 Phase" -> "Second Phase", "3 Phase" -> "Third Phase"
+    addr = addr.replace(/\b1(?:st)?\s+Phase\b/gi, "First Phase");
+    addr = addr.replace(/\b2(?:nd)?\s+Phase\b/gi, "Second Phase");
+    addr = addr.replace(/\b3(?:rd)?\s+Phase\b/gi, "Third Phase");
+    addr = addr.replace(/\b4(?:th)?\s+Phase\b/gi, "Fourth Phase");
+    addr = addr.replace(/\bPh\b\.?\s*(?=[0-9IVXLCDM]+|[A-Za-z]\b)/gi, "Phase ");
+    addr = addr.replace(/\bPh\b\.?(?=[,;\s]|$)/gi, "Phase");
+
+    // 5. Street and Road Abbreviations (Section 7.4)
+    // Road Extension first before Road or Extension alone
+    addr = addr.replace(/\bRd\b\.?\s*Extn?\b\.?/gi, "Road Extension");
+    addr = addr.replace(/\bExtn\b\.?/gi, "Extension");
+    addr = addr.replace(/\bOld\s+Rd\b\.?/gi, "Old Road");
+    addr = addr.replace(/\bNew\s+Rd\b\.?/gi, "New Road");
+
+    // Road: Rd. or Rd (after name or number)
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Rd\b\.?(?=[,\s;:\/]|$)(?!\s+(?:Extn|Extension)\b)/gi, " Road");
+
+    // Avenue
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Ave\b\.?(?=[,\s;:\/]|$)/gi, " Avenue");
+    addr = addr.replace(/\bAve\b\.?/gi, "Avenue");
+
+    // Boulevard
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Blvd\b\.?(?=[,\s;:\/]|$)/gi, " Boulevard");
+    addr = addr.replace(/\bBlvd\b\.?/gi, "Boulevard");
+
+    // Drive (where applicable, not Doctor)
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Dr\b\.?(?=[,\s;:\/]|$)/gi, " Drive");
+
+    // Street (when used as street type, not Saint)
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+St\b\.?(?=[,\s;:\/]|$)/gi, " Street");
+
+    // Lane, Court, Highway, Parkway, Square, Place, Crescent, Terrace, Circle, Trail
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Ln\b\.?(?=[,\s;:\/]|$)/gi, " Lane");
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Ct\b\.?(?=[,\s;:\/]|$)/gi, " Court");
+    addr = addr.replace(/\bHwy\b\.?/gi, "Highway");
+    addr = addr.replace(/\bPkwy\b\.?/gi, "Parkway");
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Sq\b\.?(?=[,\s;:\/]|$)/gi, " Square");
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Pl\b\.?(?=[,\s;:\/]|$)/gi, " Place");
+    addr = addr.replace(/\bCres\b\.?/gi, "Crescent");
+    addr = addr.replace(/\bTer\b\.?/gi, "Terrace");
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Cir\b\.?(?=[,\s;:\/]|$)/gi, " Circle");
+    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Trl\b\.?(?=[,\s;:\/]|$)/gi, " Trail");
+
+    // 6. Direction and Location Abbreviations (Section 7.7)
+    // Standalone directional prefixes before street names
+    addr = addr.replace(/\bN\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "North ");
+    addr = addr.replace(/\bS\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "South ");
+    addr = addr.replace(/\bE\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "East ");
+    addr = addr.replace(/\bW\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "West ");
+
+    // Directional suffixes
+    addr = addr.replace(/(?<=\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s+)(?:N\.?E\.?|NE)\b/gi, "Northeast");
+    addr = addr.replace(/(?<=\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s+)(?:N\.?W\.?|NW)\b/gi, "Northwest");
+    addr = addr.replace(/(?<=\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s+)(?:S\.?E\.?|SE)\b/gi, "Southeast");
+    addr = addr.replace(/(?<=\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s+)(?:S\.?W\.?|SW)\b/gi, "Southwest");
+
+    // Restore protected Saint tokens
+    saintTokens.forEach((tok, idx) => {
+      addr = addr.replace(`__SAINT_TOKEN_${idx}__`, tok);
+    });
+
+    // Restore protected Doctor tokens
+    doctorTokens.forEach((tok, idx) => {
+      addr = addr.replace(`__DOC_TOKEN_${idx}__`, tok);
+    });
+
+    // Restore protected local codes
+    localCodeTokens.forEach((tok, idx) => {
+      addr = addr.replace(`__LOCAL_CODE_${idx}__`, tok);
+    });
+
+    return addr;
+  }
+
+  // Clean Address according to Rule 6 & Sections 7.4 - 7.11
   function cleanAddressString(rawAddr, countryName, companyName) {
     if (!rawAddr) return "";
     let addr = clean(rawAddr);
@@ -949,7 +1125,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // US Zip+4
     addr = addr.replace(/\b\d{5}-\d{4}\b/g, " ");
     // European postal code prefixes (D-12345, NL-1234)
-    addr = addr.replace(/\b(?:D-|F-|I-|E-|NL-|B-|CH-|AT-|PL-)?\d{4,5}\b/gi, " ");
+    addr = addr.replace(/\b(?:D-|F-|I-|E-|NL-|B-|CH-|AT-|PL-)\d{4,5}\b/gi, " ");
 
     // 4. REMOVE COUNTRY NAMES AT END — built DYNAMICALLY from COUNTRIES list (no hardcoding!)
     // Also removes UK locality names and common aliases.
@@ -980,9 +1156,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       addr = addr.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, "").trim();
     }
 
-    // 5. Clean extra spaces, duplicate commas, and trailing/leading punctuation
+    // 5. Expand Abbreviations according to Sections 7.4 - 7.11
+    addr = expandAddressAbbreviations(addr);
+
+    // 6. Clean extra spaces, duplicate commas, and trailing/leading punctuation
     addr = addr.replace(/\s+/g, " ");
-    addr = addr.replace(/,\s*,+/g, ",");
+    if (!rawAddr.includes(",,")) {
+      addr = addr.replace(/,\s*,+/g, ",");
+    }
     addr = addr.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, "").trim();
 
     return addr;
@@ -1289,6 +1470,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     getElementText,
     formatCompanyName,
     expandLegalSuffixes,
+    expandAddressAbbreviations,
+    cleanAddressString,
+    formatAddress: cleanAddressString,
     COUNTRIES
   };
 })();
