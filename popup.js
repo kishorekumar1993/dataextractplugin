@@ -64,9 +64,9 @@ async function detectPortalUrl() {
     const title = tab.title ? tab.title.slice(0, 24) : "Portal Connected";
     $("portal-tab-name").textContent = title;
 
-    // Direct script execution into active tab (no messaging needed)
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId: portalTabId },
+    // Direct script execution into active tab with allFrames: true (handles iframes)
+    const execResults = await chrome.scripting.executeScript({
+      target: { tabId: portalTabId, allFrames: true },
       func: () => {
         const controls = [...document.querySelectorAll("input:not([type=hidden]), textarea")];
         for (const c of controls) {
@@ -81,6 +81,8 @@ async function detectPortalUrl() {
         return "";
       }
     });
+
+    const result = execResults?.find(r => r?.result)?.result || "";
 
     if (result) {
       $("url").value = result;
@@ -166,17 +168,22 @@ async function crawlAndExtractDirect(targetUrl) {
       throw new Error(mainData?.error || "Could not extract details from page.");
     }
 
-    // Step 4: English subpage — fetch within the same tab context (avoids CORS)
-    // Try the discovered /en link first, then fallback to origin/en
-    let enUrl = mainData.enUrl;
-    if (!enUrl) {
-      try {
-        const u = new URL(normUrl);
-        enUrl = `${u.origin}/en`;
-      } catch {}
-    }
+    // Step 4: English subpage fallback (Issue 16: Retry candidates when English subpage fails)
+    let enCandidates = [];
+    try {
+      const u = new URL(tab.url || normUrl);
+      const hostCandidates = [
+        mainData.enUrl,
+        `${u.origin}/en`,
+        `${u.origin}/en/`,
+        `${u.origin}/english`,
+        `${u.origin}/eng`,
+        `${u.origin}/global-en`
+      ];
+      enCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(candidate => candidate !== normUrl && candidate !== tab.url);
+    } catch {}
 
-    if (enUrl && enUrl !== normUrl && enUrl !== tab.url) {
+    for (const testUrl of enCandidates) {
       try {
         setStatus("Checking English version of site...", "info");
         const [{ result: enData }] = await chrome.scripting.executeScript({
@@ -191,10 +198,10 @@ async function crawlAndExtractDirect(targetUrl) {
               return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
             } catch { return null; }
           },
-          args: [enUrl]
+          args: [testUrl]
         });
 
-        if (enData) {
+        if (enData && !enData.error) {
           // Prefer Latin-alphabet company name from English subpage
           if (enData.companyName && /[a-zA-Z]{3,}/.test(enData.companyName) &&
               (!mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName))) {
@@ -211,10 +218,11 @@ async function crawlAndExtractDirect(targetUrl) {
           }
           // Merge country / state / city
           if (enData.countryName && !mainData.countryName) mainData.countryName = enData.countryName;
-          if (enData.state === "Available" && mainData.state !== "Available") mainData.state = "Available";
-          if (enData.city === "Available" && mainData.city !== "Available") mainData.city = "Available";
+          if (["Y", "Available"].includes(enData.state) && !["Y", "Available"].includes(mainData.state)) mainData.state = enData.state;
+          if (["Y", "Available"].includes(enData.city) && !["Y", "Available"].includes(mainData.city)) mainData.city = enData.city;
           // Merge phone
           if (enData.phoneNumber && !mainData.phoneNumber) mainData.phoneNumber = enData.phoneNumber;
+          break; // Found and merged from first responding candidate
         }
       } catch (e) {
         console.log("English subpage check note:", e);
@@ -242,6 +250,13 @@ function populateFields(data) {
     if (el && data[key] !== undefined && data[key] !== null) {
       el.value = data[key];
     }
+  }
+
+  // 1.5 Highlight empty fields (Issue 17)
+  for (const key of ALL_FIELD_KEYS) {
+    const el = $(`field-${key}`);
+    const empty = !el?.value?.trim();
+    el?.parentElement?.classList.toggle("qc-field-empty", empty);
   }
 
   // 2. Check Forbidden Categories (Porn, Medical, Food, Weapons, etc.)
@@ -309,7 +324,7 @@ function renderQcChecklist(data) {
   const checks = [
     {
       name: "Rule 1: Website Status",
-      ok: data.websiteStatus === "Working" && !data.urlRules?.isSubdomain,
+      ok: ["W-Working", "Working"].includes(data.websiteStatus) && !data.urlRules?.isSubdomain,
       msg: data.urlRules?.isSubdomain ? "Subdomain detected (Not Allowed)" : `Status: ${data.websiteStatus}`
     },
     {
@@ -319,13 +334,15 @@ function renderQcChecklist(data) {
     },
     {
       name: "Rule 3: Company Profile",
-      ok: true,
+      ok: ["Y", "Available"].includes(data.companyProfile),
       msg: `Profile is ${data.companyProfile}`
     },
     {
       name: "Rule 4: Company Name",
-      ok: Boolean(data.companyName) && !/[()\[\]]/.test(data.companyName),
-      msg: data.companyName ? `Name: ${data.companyName} (No brackets)` : "Company name missing"
+      ok: Boolean(data.companyName) &&
+          !/[()\[\]]/.test(data.companyName) &&
+          !(data.companyName.length > 5 && data.companyName === data.companyName.toUpperCase() && /[A-Z]{4,}/.test(data.companyName)),
+      msg: data.companyName ? `Name: ${data.companyName}` : "Company name missing"
     },
     {
       name: "Rule 5: Country Name",
@@ -334,12 +351,15 @@ function renderQcChecklist(data) {
     },
     {
       name: "Rule 6: Address",
-      ok: Boolean(data.companyAddress) && !/[()\[\]]/.test(data.companyAddress),
-      msg: data.companyAddress ? "Clean address (No postal code, country, or brackets)" : "Address not found"
+      ok: Boolean(data.companyAddress) &&
+          !/[()\[\]]/.test(data.companyAddress) &&
+          !/\b(?:USA|UK|India|China|Germany|Korea|Taiwan|Japan|Italy|France)\b/i.test(data.companyAddress.slice(-30)) &&
+          !/\d{5,6}\s*$/.test(data.companyAddress),
+      msg: data.companyAddress ? "Clean address" : "Address not found"
     },
     {
       name: "Rule 7 & 8: State & City",
-      ok: true,
+      ok: ["Y", "Available"].includes(data.state) && ["Y", "Available"].includes(data.city),
       msg: `State: ${data.state}, City: ${data.city}`
     },
     {
@@ -349,7 +369,9 @@ function renderQcChecklist(data) {
     },
     {
       name: "Rule 11: Phone Number",
-      ok: Boolean(data.phoneNumber) && !data.phoneNumber.startsWith("0"),
+      ok: Boolean(data.phoneNumber) &&
+          !data.phoneNumber.startsWith("0") &&
+          !/^(1800|1888|800|0800|1544|1588|1577|1566)/.test(data.phoneNumber.replace(/\D/g, "")),
       msg: data.phoneNumber ? `Digits: ${data.phoneNumber} (No country code, no 0, no toll-free)` : "Phone not found"
     },
     {
@@ -400,8 +422,8 @@ async function fillPortal(data) {
 
   setStatus("Filling fields into portal form...", "info");
 
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId: portalTabId },
+  const execResults = await chrome.scripting.executeScript({
+    target: { tabId: portalTabId, allFrames: true },
     func: (formData) => {
       const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
       const controls = [...document.querySelectorAll("input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]), textarea, select")];
@@ -649,7 +671,22 @@ async function fillPortal(data) {
           used.add(bestCtrl);
           if (bestCtrl.tagName === "SELECT") {
             const wanted = norm(val);
-            let opt = [...bestCtrl.options].find(o => norm(o.value) === wanted || norm(o.textContent) === wanted);
+            // Synonyms map for seamless portal compatibility
+            const synMap = {
+              "y": ["y", "available", "yes", "true", "1"],
+              "available": ["y", "available", "yes", "true", "1"],
+              "n": ["n", "notavailable", "no", "false", "0"],
+              "notavailable": ["n", "notavailable", "no", "false", "0"],
+              "wworking": ["wworking", "working"],
+              "working": ["wworking", "working"],
+              "distributer": ["distributer", "distributor"],
+              "distributor": ["distributer", "distributor"],
+              "industrialservices": ["industrialservices", "serviceprovider", "service"]
+            };
+            const validVariants = synMap[wanted] || [wanted];
+            let opt = [...bestCtrl.options].find(o => validVariants.includes(norm(o.value)) || validVariants.includes(norm(o.textContent)));
+            if (!opt) opt = [...bestCtrl.options].find(o => validVariants.some(v => norm(o.textContent).includes(v)));
+            if (!opt) opt = [...bestCtrl.options].find(o => norm(o.value) === wanted || norm(o.textContent) === wanted);
             if (!opt) opt = [...bestCtrl.options].find(o => norm(o.textContent).includes(wanted));
             if (opt) {
               bestCtrl.value = opt.value;
@@ -677,7 +714,8 @@ async function fillPortal(data) {
     args: [data]
   });
 
-  setStatus(`✅ Filled ${result || 0}/14 fields in portal! Review and Submit.`, "ok");
+  const totalFilled = execResults?.reduce((sum, r) => sum + (r?.result || 0), 0) || 0;
+  setStatus(`✅ Filled ${totalFilled}/14 fields in portal! Review and Submit.`, "ok");
 }
 
 // Event Listeners on DOMContentLoaded

@@ -78,15 +78,21 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
     }
 
     // 5. English Subpage Crawling (for international companies with /en)
-    let candidateEnUrl = mainData.enUrl;
-    if (!candidateEnUrl) {
-      try {
-        const u = new URL(normUrl);
-        candidateEnUrl = `${u.origin}/en`;
-      } catch {}
-    }
+    let enCandidates = [];
+    try {
+      const u = new URL(normUrl);
+      const hostCandidates = [
+        mainData.enUrl,
+        `${u.origin}/en`,
+        `${u.origin}/en/`,
+        `${u.origin}/english`,
+        `${u.origin}/eng`,
+        `${u.origin}/global-en`
+      ];
+      enCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(c => c !== normUrl);
+    } catch {}
 
-    if (candidateEnUrl && candidateEnUrl !== normUrl) {
+    for (const candidateEnUrl of enCandidates) {
       try {
         const [{ result: enData }] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -95,6 +101,7 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
               const res = await fetch(enUrl);
               if (!res.ok) return null;
               const html = await res.text();
+              if (html.length < 200) return null;
               const doc = new DOMParser().parseFromString(html, "text/html");
               const enT = Extractor.getElementText(doc.body);
               return Extractor.extractFromDocument(doc, enT, enUrl);
@@ -105,9 +112,10 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
           args: [candidateEnUrl]
         });
 
-        if (enData) {
-          // If English name has Latin letters, prefer it
-          if (enData.companyName && /[a-zA-Z]{3,}/.test(enData.companyName)) {
+        if (enData && !enData.error) {
+          // Only override if original company name lacks Latin letters (Issue 13)
+          if (enData.companyName && /[a-zA-Z]{3,}/.test(enData.companyName) &&
+              (!mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName))) {
             mainData.companyName = enData.companyName;
           }
           // If English address has Latin letters, prefer it
@@ -115,27 +123,26 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
             mainData.companyAddress = enData.companyAddress;
           }
           // Email priorities
-          if (enData.emailId) {
-            if (mainData.emailId && mainData.emailId !== enData.emailId) {
-              mainData.secondaryEmailId = mainData.emailId;
-            }
+          if (enData.emailId && enData.emailId !== mainData.emailId) {
+            if (mainData.emailId) mainData.secondaryEmailId = mainData.emailId;
             mainData.emailId = enData.emailId;
           }
-          if (enData.countryName && (!mainData.countryName || /[a-zA-Z]/.test(enData.countryName))) {
+          if (enData.countryName && !mainData.countryName) {
             mainData.countryName = enData.countryName;
           }
-          if (enData.state && (mainData.state === "Not Available" || !mainData.state)) {
+          if (["Y", "Available"].includes(enData.state) && !["Y", "Available"].includes(mainData.state)) {
             mainData.state = enData.state;
           }
-          if (enData.city && (mainData.city === "Not Available" || !mainData.city)) {
+          if (["Y", "Available"].includes(enData.city) && !["Y", "Available"].includes(mainData.city)) {
             mainData.city = enData.city;
           }
-          if (enData.phoneNumber) {
+          if (enData.phoneNumber && !mainData.phoneNumber) {
             mainData.phoneNumber = enData.phoneNumber;
           }
+          break; // successfully merged from first responding candidate
         }
       } catch (err) {
-        console.log("English subpage check note:", err);
+        console.log("English subpage candidate note:", err);
       }
     }
 

@@ -306,13 +306,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (!raw) return "";
     let name = clean(raw);
 
+    // 0. Strip trailing "Trading As", "d/b/a", "doing business as"
+    name = name.replace(/\s+(?:trading\s+as|d\/b\/a|doing\s+business\s+as)\s+.*$/i, "");
+
     // 1. Remove copyright phrases, dates, or trailing noise
     name = name.replace(/\ball rights reserved\b/gi, "");
     name = name.replace(/\bcopyright\b/gi, "");
     name = name.replace(/^(?:copyright|©|\(c\))\s*(?:[0-9]{4})?\s*/gi, "");
 
     // 2. Expand Korean entity designations before stripping brackets
-    name = name.replace(/[（(]\s*주\s*[)）]|㈜/g, "Jusik Hoesa ");
+    name = name.replace(/[\(\[（]\s*주\s*[\)\]）]|㈜/g, "Jusik Hoesa ");
     name = name.replace(/주식회사/g, "Jusik Hoesa ");
     name = name.replace(/유한회사/g, "Yuhan Hoesa ");
     name = name.replace(/유한책임회사/g, "Yuhanchaegim Hoesa ");
@@ -323,10 +326,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 4. Trim special characters from beginning and end
     name = trimSpecialChars(name);
 
-    // 5. Title-case the trade name portion (if all lowercase or all uppercase)
-    // Preserves 2-5 letter all-caps acronyms (like BBC, 3M, IBM, BASF) intact
+    // 5. Title-case the trade name portion
     name = name.split(/\s+/).map(w => {
-      if (/^[A-Z]{2,5}$/.test(w)) return w;
+      if (/^(?:USA|UK|IBM|BMW|BBC|BHP|LLC|LLP|PLC|GMBH|AG|T2)$/i.test(w)) return w.toUpperCase();
+      if (/^[A-Z]{2,3}$/.test(w)) return w;
       if (/[a-z]/.test(w) && /[A-Z]/.test(w.slice(1))) return w;
       if (/^[a-zA-Z가-힣]+$/.test(w)) {
         return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
@@ -334,10 +337,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return w;
     }).join(" ");
 
-    // 6. Section 5.3: Expand all international legal suffixes to full form
+    // 6. Capitalize short connector words (of, and, the, etc.)
+    const SMALL_WORDS = /\b(of|and|the|for|to|in|on|at|by|as|a|an)\b/gi;
+    name = name.replace(SMALL_WORDS, m => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase());
+
+    // 7. Section 5.3: Expand all international legal suffixes to full form
     name = expandLegalSuffixes(name);
 
-    // 7. Clean duplicate punctuation, extra spaces, trailing/leading commas or dots
+    // 8. Clean duplicate punctuation, extra spaces, trailing/leading commas or dots
     name = clean(name.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, ""));
 
     return name;
@@ -389,11 +396,17 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return res;
   }
 
-  // Check Forbidden Categories Filter
-  function checkForbiddenCategories(text) {
-    const lower = text.toLowerCase();
+  // Check Forbidden Categories Filter (Scans header/hero context only to prevent false positives from case studies)
+  function checkForbiddenCategories(text, doc) {
+    const headerContext = [
+      doc?.title || "",
+      doc?.querySelector?.('meta[name="description"]')?.content || "",
+      doc?.querySelector?.("h1")?.textContent || "",
+      (text || "").slice(0, 500)
+    ].join(" ").toLowerCase();
+
     for (const cat of FORBIDDEN_CATEGORIES) {
-      if (cat.regex.test(lower)) {
+      if (cat.regex.test(headerContext)) {
         return {
           isForbidden: true,
           category: cat.name,
@@ -404,16 +417,19 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return { isForbidden: false };
   }
 
-  // Rule 2: Business Type (7 paid types: Manufacturer to Wholesaler)
+  // Rule 2: Business Type (Excel values: Manufacturer, Wholesaler, Distributer, Exporter, Trader, Supplier, Industrial Services)
   function detectBusinessType(text) {
-    const lower = text.toLowerCase();
+    const lower = (text || "").toLowerCase();
 
-    // Priority rule: If manufacturing/producer mentioned (even on shopping site) -> Manufacturer
+    // Priority rule: If manufacturing/producer mentioned -> Manufacturer
     if (/\b(manufacturer|manufacturing|manufacture|factory|produced by|producer|production|fabrication|plant|oem|odm|assembly line)\b/i.test(lower)) {
       return "Manufacturer";
     }
-    if (/\b(wholesale|wholesaler|bulk supply|bulk order|distributor|distribution)\b/i.test(lower)) {
+    if (/\b(wholesale|wholesaler|bulk supply|bulk order)\b/i.test(lower)) {
       return "Wholesaler";
+    }
+    if (/\b(distributer|distributor|distribution|authorized dealer|dealership)\b/i.test(lower)) {
+      return "Distributer";
     }
     // Trader requires BOTH import/export or compound phrase — not just 'trading'
     if (/\b(trading company|importer and exporter|import.*export|export.*import|merchant)\b/i.test(lower)) {
@@ -425,19 +441,18 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (/\b(supplier|supplying|stockist|vendor)\b/i.test(lower)) {
       return "Supplier";
     }
-    // Service Provider: only match explicit compound phrases — NOT just 'services' or 'solutions'
-    if (/\b(service provider|it consulting|consulting firm|maintenance company|after-?sales service|support contractor)\b/i.test(lower)) {
-      return "Service Provider";
+    if (/\b(industrial services|service provider|it consulting|consulting firm|maintenance company|after-?sales service|support contractor|engineering services)\b/i.test(lower)) {
+      return "Industrial Services";
     }
 
     return "Manufacturer"; // Default — most B2B industrial sites are manufacturers
   }
 
-  // Rule 3: Company Profile
+  // Rule 3: Company Profile (Y / N)
   function detectCompanyProfile(text, doc) {
-    const hasProfile = /\b(about us|company profile|company overview|greetings|history|management philosophy|organization|회사소개|회사개요|인사말)\b/i.test(text) ||
+    const hasProfile = /\b(about us|company profile|company overview|greetings|history|management philosophy|organization|회사소개|회사개요|인사말)\b/i.test(text || "") ||
       Boolean(doc?.querySelector?.('a[href*="about"], a[href*="ab0"], a[href*="company"], a[href*="profile"]'));
-    return hasProfile ? "Available" : "Not Available";
+    return hasProfile ? "Y" : "N";
   }
 
   // Rule 4: Company Name — Full Form Extraction with Extended Content & Suffix Analysis
@@ -812,8 +827,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
-    // 7. Match full body text against City/State to Country Map (restricted to first 3000 chars to avoid false positives)
-    const bodySnippet = `${addressText || ""} ${(fullText || "").slice(0, 3000)}`;
+    // 7. Match full body text against City/State to Country Map (restricted to first 500 chars of header/hero to avoid false positives)
+    const bodySnippet = `${addressText || ""} ${(fullText || "").slice(0, 500)}`;
     for (const mapping of CITY_STATE_COUNTRY_MAP) {
       if (mapping.regex.test(bodySnippet)) {
         return mapping.country;
@@ -1118,8 +1133,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
 
     // 3. REMOVE POSTAL CODES FIRST (so country names at end can be matched cleanly!)
-    // 5-digit or 6-digit zip codes
-    addr = addr.replace(/(?:^|[, \t])\b\d{5,6}\b(?=[, \t]|$)/g, " ");
+    // Remove only when surrounded by commas OR at end of address (preserves 5-digit house numbers like 12345 Main St)
+    addr = addr.replace(/(?:,\s*)\b\d{5,6}\b(?=\s*,|\s*$)/g, ",");
+    addr = addr.replace(/^\d{5,6}\s*,\s*/, "");
+    addr = addr.replace(/\b\d{5,6}\s*$/g, "");
     // UK postcodes (e.g. SW1A 1AA, EC2M 5QD)
     addr = addr.replace(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/gi, " ");
     // US Zip+4
@@ -1166,38 +1183,53 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
     addr = addr.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, "").trim();
 
+    // 7. Apply Title Case to the final address (preserves acronyms like USA, UK, and numeric tokens)
+    addr = addr.split(/\s+/).map(w =>
+      /^[A-Z]{2,5}[,;:]?$/.test(w) ? w :
+      /^\d/.test(w) ? w :
+      w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+    ).join(" ");
+
     return addr;
   }
 
-  // Rules 7 & 8: State & City
-  function detectStateAndCity(address, text) {
+  // Rules 7 & 8: State & City (Y / N)
+  // Scans ONLY the verified address (never full body text) to prevent false positives from blog posts/global offices
+  function detectStateAndCity(address) {
     const addrLower = (address || "").toLowerCase();
-    const combined = `${address || ""} ${text || ""}`.toLowerCase();
-    let state = "Not Available";
-    let city = "Not Available";
+    let state = "N";
+    let city = "N";
 
-    // Rule 7 & 8 Note: If country's capital is mentioned in address, BOTH State and City are Available!
+    // If country's capital is mentioned in address, BOTH State and City are Available (Y)
     for (const cap of WORLD_CAPITALS) {
-      if (addrLower.includes(cap) || combined.includes(cap)) {
-        return { state: "Available", city: "Available" };
+      if (addrLower.includes(cap)) {
+        state = "Y";
+        city = "Y";
+        break;
       }
     }
 
-    // State indicators: County, Province, Prefecture, -do (Korea), or known states/provinces
-    if (/(?:county|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland)/i.test(combined)) {
-      state = "Available";
+    // State indicators in address
+    if (state === "N" && /(?:county|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland)/i.test(addrLower)) {
+      state = "Y";
     }
 
-    // City indicators: Town, District, Municipality, -si (Korea), -gu (Korea), or known global cities
-    if (/(?:town|district|municipality|city|-si\b|-gu\b|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei)/i.test(combined)) {
-      city = "Available";
+    // City indicators in address
+    if (city === "N" && /(?:town|district|municipality|city|-si\b|-gu\b|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei)/i.test(addrLower)) {
+      city = "Y";
+    }
+
+    // Completeness validation (Rule 18): If address has fewer than 2 segments, State is likely invalid
+    const parts = (address || "").split(",").map(p => p.trim()).filter(Boolean);
+    if (parts.length < 2 && state === "Y") {
+      state = "N";
     }
 
     return { state, city };
   }
 
   // Rule 9 & 10: Email ID & Secondary Email ID
-  function extractEmails(doc, text) {
+  function extractEmails(doc, text, siteHostname) {
     const emails = new Set();
 
     // mailto links
@@ -1210,29 +1242,40 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // Regex scan — use word boundary after TLD to prevent "info@email.co.uktel" type matches
     const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}(?=[^a-zA-Z]|$)/g;
-    const matches = text.match(emailRegex) || [];
+    const matches = (text || "").match(emailRegex) || [];
     for (const m of matches) {
       if (isValidEmail(m)) emails.add(m.toLowerCase());
     }
 
-    const list = [...emails];
-    // Prioritize corporate email (sales, info, contact, office)
-    list.sort((a, b) => {
-      const prio = e => {
-        if (/^sales@/i.test(e)) return 10;
-        if (/^info@/i.test(e)) return 9;
-        if (/^contact@/i.test(e)) return 8;
-        if (/^office@/i.test(e)) return 7;
-        if (/^export@/i.test(e)) return 6;
-        return 1;
-      };
-      return prio(b) - prio(a);
+    // Filter out blacklisted / system emails
+    const list = [...emails].filter(e => !/^(noreply|no-reply|careers|jobs|hr|webmaster|postmaster|abuse|spam|privacy|legal)@/i.test(e));
+
+    const domainKeyword = siteHostname ? siteHostname.replace(/^www\./i, "").split(".")[0].toLowerCase() : "";
+
+    // Prioritize corporate emails and match against site domain
+    const scored = list.map(e => {
+      let score = 0;
+      if (/^sales@/i.test(e)) score += 10;
+      else if (/^info@/i.test(e)) score += 9;
+      else if (/^contact@/i.test(e)) score += 8;
+      else if (/^office@/i.test(e)) score += 7;
+      else if (/^export@/i.test(e)) score += 6;
+      else score += 1;
+
+      // HUGE bonus for matching site domain
+      const emailDomain = (e.split("@")[1] || "").toLowerCase();
+      if (domainKeyword && domainKeyword.length >= 3 && emailDomain.includes(domainKeyword)) {
+        score += 50;
+      }
+      return { email: e, score };
     });
 
+    scored.sort((a, b) => b.score - a.score);
+
     return {
-      primaryEmail: list[0] || "",
-      secondaryEmail: list[1] || "", // Rule 10: If given, take it; if not, skip
-      allEmails: list
+      primaryEmail: scored[0]?.email || "",
+      secondaryEmail: scored[1]?.email || "",
+      allEmails: scored.map(s => s.email)
     };
   }
 
@@ -1240,6 +1283,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (!e || e.length > 80) return false;
     if (/\.(png|jpg|jpeg|gif|webp|svg|css|js)$/i.test(e)) return false;
     if (/example\.com|domain\.com|yourdomain|email@/i.test(e)) return false;
+    if (/^(noreply|no-reply|careers|jobs|hr|webmaster|postmaster|abuse|spam|privacy|legal)@/i.test(e)) return false;
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   }
 
@@ -1257,31 +1301,26 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // Fallback general numbers
     const genRegex = /(?:\+\d{1,3}[\s.-]*)?(?:\(?\d{2,4}\)?[\s.-]*)?\d{3,4}[\s.-]*\d{4}/g;
-    const genMatches = text.match(genRegex) || [];
+    const genMatches = (text || "").match(genRegex) || [];
     phoneCandidates.push(...genMatches);
 
     for (const raw of phoneCandidates) {
-      // Rule 11: DO NOT TAKE TOLL-FREE NUMBERS!
-      // Toll free prefixes: 1544, 1588, 1800, 1888, 800, 0800, 400
-      const digitsOnly = raw.replace(/\D/g, "");
-      if (/^(1544|1588|1577|1566|1800|1888|800|0800|400)/.test(digitsOnly)) {
-        continue; // Skip toll-free
-      }
-
-      // Clean country code
+      // Clean country code FIRST
       let s = raw;
       if (country?.dialCode) {
         s = s.replace(new RegExp(`^\\+?${country.dialCode}[\\s.-]*`), "");
       } else {
-        s = s.replace(/^\+(82|86|91|1|44|49|81)[\s.-]*/, "");
+        const allDialCodes = COUNTRIES.map(c => c.dialCode).filter(Boolean).sort((a, b) => b.length - a.length);
+        const dialRegex = new RegExp(`^\\+(?:${allDialCodes.join("|")})[\\s.-]*`);
+        s = s.replace(dialRegex, "");
       }
 
-      // Remove special characters and spaces
-      let cleanDigits = s.replace(/\D/g, "");
+      // Remove special characters and leading zeros
+      let cleanDigits = s.replace(/\D/g, "").replace(/^0+/, "");
 
-      // Rule 11: DO NOT TAKE NUMBERS STARTING WITH ZERO!
-      if (cleanDigits.startsWith("0")) {
-        cleanDigits = cleanDigits.replace(/^0+/, "");
+      // Only filter on TRUE toll-free prefixes (dropped 400 — not universally toll-free)
+      if (/^(1800|1888|800|0800|1544|1588|1577|1566)/.test(cleanDigits)) {
+        continue;
       }
 
       // Validate length: 7 to 12 digits
@@ -1387,12 +1426,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Primary Extractor
   function extractFromDocument(doc, textContent, url) {
     const text = clean(textContent || getElementText(doc?.body) || "");
+    let siteHostname = "";
+    try {
+      siteHostname = url ? new URL(url).hostname : "";
+    } catch { }
 
     // 1. Check Subdomain / Redirect
     const urlRules = checkUrlRules(url);
 
-    // 2. Check Forbidden Categories
-    const forbidden = checkForbiddenCategories(text);
+    // 2. Check Forbidden Categories (Rule 1)
+    const forbidden = checkForbiddenCategories(text, doc);
 
     // 3. Extract Raw Multi-Line Address (Rule 6)
     const rawAddress = findRawAddress(doc, text);
@@ -1406,10 +1449,23 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const countryObj = COUNTRIES.find(c => c.name.toLowerCase() === countryName.toLowerCase());
 
     // 6. Clean Company Address with verified country and company name (Rule 6)
-    const companyAddress = cleanAddressString(rawAddress, countryName, companyName);
+    let companyAddress = cleanAddressString(rawAddress, countryName, companyName);
+    if (companyAddress && companyAddress.split(",").length < 2) {
+      // Retry with <address> tag or [itemprop='address'] if available (most reliable)
+      const addrEl = doc?.querySelector?.("address, [itemprop='address']");
+      if (addrEl) {
+        const fallbackText = getElementText(addrEl);
+        if (fallbackText) {
+          const recovered = cleanAddressString(fallbackText, countryName, companyName);
+          if (recovered && recovered.split(",").length >= companyAddress.split(",").length) {
+            companyAddress = recovered;
+          }
+        }
+      }
+    }
 
-    // 7. Extract State & City (Rule 7 & 8)
-    const { state, city } = detectStateAndCity(rawAddress + " " + companyAddress, text);
+    // 7. Extract State & City (Rule 7 & 8) — check ONLY address string to avoid false positives
+    const { state, city } = detectStateAndCity(rawAddress + " " + companyAddress);
 
     // 7. Business Type (Rule 2)
     const businessType = detectBusinessType(text);
@@ -1418,7 +1474,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const companyProfile = detectCompanyProfile(text, doc);
 
     // 9. Emails (Rule 9 & 10)
-    const emails = extractEmails(doc, text);
+    const emails = extractEmails(doc, text, siteHostname);
 
     // 10. Phone Number (Rule 11)
     const phoneNumber = extractPhoneNumber(text, countryObj);
@@ -1434,7 +1490,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     return {
       websiteName: url,
-      websiteStatus: "Working",
+      websiteStatus: "W-Working",
       businessType,
       companyProfile,
       companyName,
@@ -1473,6 +1529,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     expandAddressAbbreviations,
     cleanAddressString,
     formatAddress: cleanAddressString,
+    detectStateAndCity,
+    detectBusinessType,
+    detectCompanyProfile,
+    detectCountry,
+    extractEmails,
+    extractPhoneNumber,
     COUNTRIES
   };
 })();

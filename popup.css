@@ -530,3 +530,11 @@ body {
 @keyframes qc-spin {
   to { transform: rotate(360deg); }
 }
+
+/* Blank field detection highlight */
+.qc-field-empty .field-input,
+.qc-field-empty .field-select,
+.qc-field-empty .field-textarea {
+  border-color: #ef4444 !important;
+  background-color: #fef2f2 !important;
+}

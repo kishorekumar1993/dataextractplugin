@@ -17,7 +17,7 @@
       label: "Website Status",
       aliases: ["websitestatus", "status", "webstatus", "sitestatus"],
       isDropdown: true,
-      defaultVal: "Working"
+      defaultVal: "W-Working"
     },
     {
       key: "businessType",
@@ -31,7 +31,7 @@
       label: "Company Profile",
       aliases: ["companyprofile", "profileofcompany", "profile", "aboutus", "companyoverview"],
       isDropdown: true,
-      defaultVal: "Available"
+      defaultVal: "Y"
     },
     {
       key: "companyName",
@@ -53,14 +53,14 @@
       label: "State",
       aliases: ["state", "statename", "province", "region"],
       isDropdown: true,
-      defaultVal: "Available"
+      defaultVal: "Y"
     },
     {
       key: "city",
       label: "City",
       aliases: ["city", "cityname", "town", "district"],
       isDropdown: true,
-      defaultVal: "Available"
+      defaultVal: "Y"
     },
     {
       key: "emailId",
@@ -174,10 +174,26 @@
 
     if (el.tagName === "SELECT") {
       const targetNorm = norm(strVal);
-      let matchedOption = [...el.options].find(o => norm(o.value) === targetNorm || norm(o.textContent) === targetNorm);
+      const synMap = {
+        "y": ["y", "available", "yes", "true", "1"],
+        "available": ["y", "available", "yes", "true", "1"],
+        "n": ["n", "notavailable", "no", "false", "0"],
+        "notavailable": ["n", "notavailable", "no", "false", "0"],
+        "wworking": ["wworking", "working"],
+        "working": ["wworking", "working"],
+        "distributer": ["distributer", "distributor"],
+        "distributor": ["distributer", "distributor"],
+        "industrialservices": ["industrialservices", "serviceprovider", "service"]
+      };
+      const validVariants = synMap[targetNorm] || [targetNorm];
+      let matchedOption = [...el.options].find(o => validVariants.includes(norm(o.value)) || validVariants.includes(norm(o.textContent)));
 
       if (!matchedOption) {
-        matchedOption = [...el.options].find(o => norm(o.textContent).includes(targetNorm) || targetNorm.includes(norm(o.textContent)));
+        matchedOption = [...el.options].find(o => validVariants.some(v => norm(o.textContent).includes(v) || v.includes(norm(o.textContent))));
+      }
+
+      if (!matchedOption) {
+        matchedOption = [...el.options].find(o => norm(o.value) === targetNorm || norm(o.textContent) === targetNorm);
       }
 
       if (matchedOption) {
