@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Website Scraping & QC Helper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+          <h1>Website QC & Data Grabber</h1>
+          <div class="version-tag">Universal Portal Auto-Fill • v2.0</div>
+        </div>
+      </div>
+      <div id="portal-status" class="portal-status-badge" title="Active Portal Tab Status">
+        <span class="status-dot"></span>
+        <span id="portal-tab-name">Portal Connected</span>
+      </div>
+    </header>
+
+    <!-- Target URL Card -->
+    <div class="url-card">
+      <div class="url-label-row">
+        <label for="url" class="url-label">Website Name / URL</label>
+        <button id="btn-detect-url" class="btn-grab-url" title="Read URL from the active portal page">
+          🔄 Grab from Portal
+        </button>
+      </div>
+      <div class="input-group">
+        <input id="url" class="url-input" type="url" placeholder="http://www.example.com" spellcheck="false">
+        <button id="btn-clear-url" class="btn-clear-url" title="Clear URL" style="display:none;">✕</button>
+      </div>
+      <div class="actions-row">
+        <button id="btn-grab-and-fill" class="btn-primary" title="Crawl website and immediately auto-fill portal">
+          <span class="btn-icon">⚡</span>
+          <span>Grab & Fill (1-Click)</span>
+        </button>
+        <button id="btn-extract-only" class="btn-secondary" title="Crawl and review extracted fields below">
+          <span class="btn-icon">🔍</span>
+          <span>Extract Only</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Status Banner -->
+    <div id="status-banner" class="status-banner">
+      Ready. Enter or detect URL above to grab all 15 details.
+    </div>
+
+    <!-- Rule Compliance Alert (Forbidden Categories / Subdomain warning) -->
+    <div id="compliance-alert" class="status-banner err" style="display:none; font-weight:600;"></div>
+
+    <!-- Social Verification Links (Rule 5 & Important Notes: Facebook, LinkedIn) -->
+    <div id="social-links-row" style="display:none; font-size:11px; padding:6px 12px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; align-items:center; gap:8px;">
+      <span style="font-weight:600; color:#1e40af;">Social Media Verification:</span>
+      <a id="link-fb" href="#" target="_blank" style="color:#2563eb; text-decoration:none; display:none;">Facebook ↗</a>
+      <span id="social-sep" style="color:#cbd5e1; display:none;">•</span>
+      <a id="link-li" href="#" target="_blank" style="color:#2563eb; text-decoration:none; display:none;">LinkedIn ↗</a>
+    </div>
+
+    <!-- 15 Portal Fields (Organized in 4 Sections) -->
+    <div class="fields-container">
+
+      <!-- Section 1: Website & Status -->
+      <div class="section-card">
+        <div class="section-header">🌐 Website & Business Status</div>
+        <div class="grid-3">
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-websiteStatus" class="field-label">Website Status</label>
+            </div>
+            <select id="field-websiteStatus" class="field-select">
+              <option value="Working">Working</option>
+              <option value="Not Working">Not Working</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-businessType" class="field-label">Business Type</label>
+            </div>
+            <select id="field-businessType" class="field-select">
+              <option value="Manufacturer">Manufacturer</option>
+              <option value="Trader">Trader</option>
+              <option value="Wholesaler">Wholesaler</option>
+              <option value="Exporter">Exporter</option>
+              <option value="Supplier">Supplier</option>
+              <option value="Service Provider">Service Provider</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-companyProfile" class="field-label">Company Profile</label>
+            </div>
+            <select id="field-companyProfile" class="field-select">
+              <option value="Available">Available</option>
+              <option value="Not Available">Not Available</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: Company Details -->
+      <div class="section-card">
+        <div class="section-header">🏢 Company Information</div>
+        <div class="form-item">
+          <div class="field-label-row">
+            <label for="field-companyName" class="field-label">Company Name</label>
+            <button class="btn-copy-field" data-copy="field-companyName" title="Copy">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            </button>
+          </div>
+          <input id="field-companyName" class="field-input" type="text" placeholder="e.g. REZONTECH CO., LTD.">
+        </div>
+
+        <div class="form-item full-width">
+          <div class="field-label-row">
+            <label for="field-companyAddress" class="field-label">Company Address</label>
+            <button class="btn-copy-field" data-copy="field-companyAddress" title="Copy">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            </button>
+          </div>
+          <textarea id="field-companyAddress" class="field-textarea" rows="2" placeholder="Street, Building, City, State..."></textarea>
+        </div>
+
+        <div class="grid-3">
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-countryName" class="field-label">Country Name</label>
+              <button class="btn-copy-field" data-copy="field-countryName" title="Copy">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              </button>
+            </div>
+            <input id="field-countryName" class="field-input" type="text" placeholder="South Korea">
+          </div>
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-state" class="field-label">State</label>
+            </div>
+            <select id="field-state" class="field-select">
+              <option value="Available">Available</option>
+              <option value="Not Available">Not Available</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-city" class="field-label">City</label>
+            </div>
+            <select id="field-city" class="field-select">
+              <option value="Available">Available</option>
+              <option value="Not Available">Not Available</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 3: Contact Details -->
+      <div class="section-card">
+        <div class="section-header">📞 Contact Information</div>
+        <div class="grid-2">
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-emailId" class="field-label">Email Id (Primary)</label>
+              <button class="btn-copy-field" data-copy="field-emailId" title="Copy">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              </button>
+            </div>
+            <input id="field-emailId" class="field-input" type="email" placeholder="sales@example.com">
+          </div>
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-secondaryEmailId" class="field-label">Secondary Email Id</label>
+              <button class="btn-copy-field" data-copy="field-secondaryEmailId" title="Copy">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              </button>
+            </div>
+            <input id="field-secondaryEmailId" class="field-input" type="email" placeholder="info@example.com">
+          </div>
+        </div>
+        <div class="form-item">
+          <div class="field-label-row">
+            <label for="field-phoneNumber" class="field-label">Phone Number</label>
+            <button class="btn-copy-field" data-copy="field-phoneNumber" title="Copy">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            </button>
+          </div>
+          <input id="field-phoneNumber" class="field-input" type="text" placeholder="313484246">
+        </div>
+      </div>
+
+      <!-- Section 4: Products & Media -->
+      <div class="section-card">
+        <div class="section-header">📦 Products & Descriptions</div>
+        <div class="grid-3">
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-numberOfProduct" class="field-label">Number of Product</label>
+            </div>
+            <select id="field-numberOfProduct" class="field-select">
+              <option value="3">3</option>
+              <option value="2">2</option>
+              <option value="1">1</option>
+              <option value="0">0</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-imageProduct" class="field-label">Image Product</label>
+            </div>
+            <select id="field-imageProduct" class="field-select">
+              <option value="3">3</option>
+              <option value="2">2</option>
+              <option value="1">1</option>
+              <option value="0">0</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <div class="field-label-row">
+              <label for="field-noOfProductDescription" class="field-label">No. of Product Desc</label>
+            </div>
+            <select id="field-noOfProductDescription" class="field-select">
+              <option value="3">3</option>
+              <option value="2">2</option>
+              <option value="1">1</option>
+              <option value="0">0</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- QC Checklist Summary -->
+      <div id="qc-section" class="qc-card" style="display:none;">
+        <div class="qc-header">
+          <span>Quality Check (QC) Summary</span>
+          <span id="qc-score-badge" class="qc-badge" style="background:#10b981; color:white;">All Pass</span>
+        </div>
+        <div id="qc-checklist" class="qc-list"></div>
+      </div>
+    </div>
+
+    <!-- Bottom Actions -->
+    <div class="footer-row">
+      <button id="btn-fill-portal" class="btn-fill-portal" disabled>
+        <span>📝 Fill Portal Form</span>
+      </button>
+      <button id="btn-copy-all" class="btn-copy-all" title="Copy all 15 fields as JSON">
+        <span>📋 Copy JSON</span>
+      </button>
+      <button id="btn-open-target" class="btn-copy-all" title="Open target website in new tab">
+        <span>🌐 Open Site</span>
+      </button>
+    </div>
+  </div>
+
+  <script src="extractor.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Entry Portal Test - QC Verification</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #f1f5f9;
+      color: #1e293b;
+      padding: 30px 20px;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+      border: 1px solid #e2e8f0;
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 24px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .header h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1e293b;
+    }
+    .form-body {
+      padding: 24px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px 24px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+    }
+    .btn-click-here {
+      background: #0ea5e9;
+      color: #ffffff;
+      border: none;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn-click-here:hover {
+      background: #0284c7;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #0f172a;
+      background: #ffffff;
+      outline: none;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+    textarea {
+      resize: vertical;
+      min-height: 40px;
+      height: 40px;
+    }
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid #f1f5f9;
+    }
+    .btn-submit {
+      background: #10b981;
+      color: white;
+      border: none;
+      padding: 9px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-submit:hover {
+      background: #059669;
+    }
+    .btn-reset {
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 9px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-reset:hover {
+      background: #dc2626;
+    }
+    .hint-banner {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-bottom: 24px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    /* Filled highlight animation */
+    .qc-field-filled-highlight {
+      border-color: #10b981 !important;
+      background-color: rgba(16, 185, 129, 0.1) !important;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25) !important;
+      transition: all 0.5s ease;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <h2>Data Entry</h2>
+    </div>
+
+    <div class="form-body">
+      <div class="hint-banner">
+        <span>💡 <strong>QC Test Mode:</strong> Enter any website URL or click "Grab & Fill" using the extension to auto-fill all 15 fields.</span>
+        <span>Target: <code>http://www.rezontech.co.kr</code></span>
+      </div>
+
+      <form id="data-entry-form" onsubmit="event.preventDefault(); alert('Form submitted successfully!');">
+        <div class="form-grid">
+          
+          <!-- Row 1 -->
+          <div class="form-group">
+            <div class="label-row">
+              <label for="websiteName">Website Name:</label>
+              <a href="http://www.rezontech.co.kr" target="_blank" class="btn-click-here">click here</a>
+            </div>
+            <input type="text" id="websiteName" name="websiteName" value="http://www.rezontech.co.kr" placeholder="http://www.example.com">
+          </div>
+
+          <div class="form-group">
+            <label for="websiteStatus">Website Status:</label>
+            <select id="websiteStatus" name="websiteStatus">
+              <option value="">Select Status</option>
+              <option value="Working">Working</option>
+              <option value="Not Working">Not Working</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="businessType">Business Type:</label>
+            <select id="businessType" name="businessType">
+              <option value="">Select Type</option>
+              <option value="Manufacturer">Manufacturer</option>
+              <option value="Trader">Trader</option>
+              <option value="Wholesaler">Wholesaler</option>
+              <option value="Exporter">Exporter</option>
+              <option value="Supplier">Supplier</option>
+              <option value="Service Provider">Service Provider</option>
+            </select>
+          </div>
+
+          <!-- Row 2 -->
+          <div class="form-group">
+            <label for="companyProfile">Company Profile:</label>
+            <select id="companyProfile" name="companyProfile">
+              <option value="">Select Profile</option>
+              <option value="Available">Available</option>
+              <option value="Not Available">Not Available</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="companyName">Company Name:</label>
+            <input type="text" id="companyName" name="companyName" placeholder="Company Name">
+          </div>
+
+          <div class="form-group">
+            <label for="companyAddress">Company Address:</label>
+            <textarea id="companyAddress" name="companyAddress" placeholder="Company Address"></textarea>
+          </div>
+
+          <!-- Row 3 -->
+          <div class="form-group">
+            <label for="countryName">Country Name:</label>
+            <input type="text" id="countryName" name="countryName" placeholder="Country Name">
+          </div>
+
+          <div class="form-group">
+            <label for="state">State:</label>
+            <select id="state" name="state">
+              <option value="">Select State</option>
+              <option value="Available">Available</option>
+              <option value="Not Available">Not Available</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="city">City:</label>
+            <select id="city" name="city">
+              <option value="">Select City</option>
+              <option value="Available">Available</option>
+              <option value="Not Available">Not Available</option>
+            </select>
+          </div>
+
+          <!-- Row 4 -->
+          <div class="form-group">
+            <label for="emailId">Email Id:</label>
+            <input type="email" id="emailId" name="emailId" placeholder="Primary Email">
+          </div>
+
+          <div class="form-group">
+            <label for="secondaryEmailId">Secondary Email Id:</label>
+            <input type="email" id="secondaryEmailId" name="secondaryEmailId" placeholder="Secondary Email">
+          </div>
+
+          <div class="form-group">
+            <label for="phoneNumber">Phone Number:</label>
+            <input type="text" id="phoneNumber" name="phoneNumber" placeholder="Phone Number">
+          </div>
+
+          <!-- Row 5 -->
+          <div class="form-group">
+            <label for="numberOfProduct">Number of Product:</label>
+            <select id="numberOfProduct" name="numberOfProduct">
+              <option value="">Select</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="imageProduct">Image Product:</label>
+            <select id="imageProduct" name="imageProduct">
+              <option value="">Select</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="noOfProductDescription">No. of Product Description:</label>
+            <select id="noOfProductDescription" name="noOfProductDescription">
+              <option value="">Select</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </div>
+
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-submit">💾 Submit</button>
+          <button type="reset" class="btn-reset">🔄 Reset</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</body>
+</html>

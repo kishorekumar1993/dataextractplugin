@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>QC Engine & Portal Auto-Fill Comprehensive Verification</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 24px;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin-bottom: 16px;
+      color: #1e293b;
+    }
+
+    .test-box {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 12px;
+      margin-right: 8px;
+    }
+
+    .pass {
+      background: #dcfce7;
+      color: #15803d;
+    }
+
+    .fail {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+
+    pre {
+      background: #f1f5f9;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      overflow-x: auto;
+      margin-top: 8px;
+    }
+
+    .field-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .field-key {
+      font-weight: 600;
+      width: 180px;
+    }
+
+    .field-val {
+      color: #334155;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>🔍 QC Engine & Portal Auto-Fill Automated Verification</h1>
+  <div id="results"></div>
+
+  <!-- Embed a replica of the Data Entry Portal to verify filling directly -->
+  <div class="test-box">
+    <h2>Data Entry Portal Target Form</h2>
+    <form id="portal-form" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px;">
+      <div>
+        <label for="websiteName">Website Name:</label>
+        <input type="text" id="websiteName" name="websiteName" value="http://www.rezontech.co.kr">
+      </div>
+      <div>
+        <label for="websiteStatus">Website Status:</label>
+        <select id="websiteStatus" name="websiteStatus">
+          <option value="">Select</option>
+          <option value="Working">Working</option>
+          <option value="Not Working">Not Working</option>
+        </select>
+      </div>
+      <div>
+        <label for="businessType">Business Type:</label>
+        <select id="businessType" name="businessType">
+          <option value="">Select</option>
+          <option value="Manufacturer">Manufacturer</option>
+          <option value="Wholesaler">Wholesaler</option>
+        </select>
+      </div>
+      <div>
+        <label for="companyProfile">Company Profile:</label>
+        <select id="companyProfile" name="companyProfile">
+          <option value="">Select</option>
+          <option value="Available">Available</option>
+          <option value="Not Available">Not Available</option>
+        </select>
+      </div>
+      <div>
+        <label for="companyName">Company Name:</label>
+        <input type="text" id="companyName" name="companyName" placeholder="Company Name">
+      </div>
+      <div>
+        <label for="companyAddress">Company Address:</label>
+        <textarea id="companyAddress" name="companyAddress" placeholder="Company Address"></textarea>
+      </div>
+      <div>
+        <label for="countryName">Country Name:</label>
+        <input type="text" id="countryName" name="countryName" placeholder="Country Name">
+      </div>
+      <div>
+        <label for="state">State:</label>
+        <select id="state" name="state">
+          <option value="">Select</option>
+          <option value="Available">Available</option>
+          <option value="Not Available">Not Available</option>
+        </select>
+      </div>
+      <div>
+        <label for="city">City:</label>
+        <select id="city" name="city">
+          <option value="">Select</option>
+          <option value="Available">Available</option>
+          <option value="Not Available">Not Available</option>
+        </select>
+      </div>
+      <div>
+        <label for="emailId">Email Id:</label>
+        <input type="email" id="emailId" name="emailId">
+      </div>
+      <div>
+        <label for="secondaryEmailId">Secondary Email Id:</label>
+        <input type="email" id="secondaryEmailId" name="secondaryEmailId">
+      </div>
+      <div>
+        <label for="phoneNumber">Phone Number:</label>
+        <input type="text" id="phoneNumber" name="phoneNumber">
+      </div>
+      <div>
+        <label for="numberOfProduct">Number of Product:</label>
+        <select id="numberOfProduct" name="numberOfProduct">
+          <option value="">Select</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+      </div>
+      <div>
+        <label for="imageProduct">Image Product:</label>
+        <select id="imageProduct" name="imageProduct">
+          <option value="">Select</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+      </div>
+      <div>
+        <label for="noOfProductDescription">No. of Product Description:</label>
+        <select id="noOfProductDescription" name="noOfProductDescription">
+          <option value="">Select</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+      </div>
+    </form>
+  </div>
+
+  <script src="extractor.js"></script>
+  <script>
+    const resultsContainer = document.getElementById("results");
+
+    function renderTest(title, passed, details) {
+      const box = document.createElement("div");
+      box.className = "test-box";
+      box.innerHTML = `
+        <h3><span class="badge ${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}</span> ${title}</h3>
+        <pre>${JSON.stringify(details, null, 2)}</pre>
+      `;
+      resultsContainer.appendChild(box);
+    }
+
+    // TEST 1: Rezontech (South Korea)
+    const htmlKorea = `
+      <!DOCTYPE html>
+      <html>
+      <head><title>REZONTECH - Flame Detectors</title></head>
+      <body>
+        <h1>REZONTECH</h1>
+        <p>Manufacturer of world-class flame detectors.</p>
+        <a href="/about">About Us</a>
+        <footer>
+          <p>REZONTECH CO., LTD.</p>
+          <p>A-602, Megavalley, 268, Hagui-ro, Dongan-gu,<br>Anyang-si, Gyeonggi-do, Korea 14056</p>
+          <p>Tel: +82-31-420-0000 | Fax: +82-31-420-0001 | Email: sales@rezontech.com</p>
+          <p>COPYRIGHT (C) 2018 REZONTECH CO., LTD. ALL RIGHTS RESERVED.</p>
+        </footer>
+      </body>
+      </html>
+    `;
+    const resKorea = Extractor.extractFromHtml(htmlKorea, "http://www.rezontech.co.kr");
+    const passKorea = (
+      resKorea.countryName === "South Korea" &&
+      resKorea.companyName === "Rezontech Company Limited" &&
+      resKorea.companyAddress.includes("Anyang-si") &&
+      resKorea.companyAddress.includes("Gyeonggi-do") &&
+      !resKorea.companyAddress.includes("14056") &&
+      !resKorea.companyAddress.toLowerCase().includes("korea")
+    );
+    renderTest("Test 1: South Korea Site (Rezontech) - Complete multi-line address, legal name & dynamic country", passKorea, {
+      countryName: resKorea.countryName,
+      companyName: resKorea.companyName,
+      companyAddress: resKorea.companyAddress,
+      state: resKorea.state,
+      city: resKorea.city,
+      primaryEmail: resKorea.emailId,
+      phone: resKorea.phoneNumber
+    });
+
+    // TEST 2: German Site (Must detect Germany, NEVER South Korea!)
+    const htmlGermany = `
+      <!DOCTYPE html>
+      <html>
+      <head><title>Bavaria Industrial Automation GmbH</title></head>
+      <body>
+        <h1>Bavaria Automation</h1>
+        <p>Leading German manufacturer of robotics.</p>
+        <footer>
+          <div class="footer">
+            <p>BAVARIA AUTOMATION GMBH</p>
+            <p>Industriestrasse 42, 80331 Munich, Bavaria, Germany</p>
+            <p>Tel: +49 89 1234567 | info@bavaria-auto.de</p>
+          </div>
+        </footer>
+      </body>
+      </html>
+    `;
+    const resGermany = Extractor.extractFromHtml(htmlGermany, "https://www.bavaria-auto.de");
+    const passGermany = (
+      resGermany.countryName === "Germany" &&
+      resGermany.companyName === "Bavaria Automation Gesellschaft mit beschränkter Haftung" &&
+      resGermany.companyAddress.includes("Industriestrasse 42") &&
+      resGermany.companyAddress.includes("Munich") &&
+      !resGermany.companyAddress.toLowerCase().includes("germany")
+    );
+    renderTest("Test 2: Germany Site (.de) - Dynamic German detection, complete address without hardcoding", passGermany, {
+      countryName: resGermany.countryName,
+      companyName: resGermany.companyName,
+      companyAddress: resGermany.companyAddress,
+      state: resGermany.state,
+      city: resGermany.city
+    });
+
+    // TEST 3: United Kingdom Site (Rule 5: Locality priority -> England!)
+    const htmlUK = `
+      <!DOCTYPE html>
+      <html>
+      <head><title>Apex Engineering Limited</title></head>
+      <body>
+        <h1>Apex Engineering</h1>
+        <p>Manufacturer of precision gears.</p>
+        <footer>
+          <address>
+            Apex Engineering Limited<br>
+            15 London Wall, EC2M 5QD<br>
+            London, England, United Kingdom<br>
+            Tel: +44 20 7946 0123 | sales@apex-eng.co.uk
+          </address>
+        </footer>
+      </body>
+      </html>
+    `;
+    const resUK = Extractor.extractFromHtml(htmlUK, "https://www.apex-eng.co.uk");
+    const passUK = (
+      resUK.countryName === "England" && // Rule 5: England > United Kingdom!
+      resUK.companyName === "Apex Engineering Limited" &&
+      resUK.companyAddress.includes("15 London Wall") &&
+      resUK.companyAddress.includes("London") &&
+      !resUK.companyAddress.includes("EC2M 5QD") &&
+      !resUK.companyAddress.toLowerCase().includes("united kingdom")
+    );
+    renderTest("Test 3: UK Site (.co.uk) - Rule 5 Locality Priority (England > United Kingdom) & Postal Code Removal", passUK, {
+      countryName: resUK.countryName,
+      companyName: resUK.companyName,
+      companyAddress: resUK.companyAddress,
+      state: resUK.state,
+      city: resUK.city
+    });
+
+    // TEST 4: United States Site (Schema.org addressCountry: US)
+    const htmlUSA = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Silicon Valley Electronics Inc.</title>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Corporation",
+          "name": "Silicon Valley Electronics Inc.",
+          "address": {
+            "@type": "PostalAddress",
+            "streetAddress": "400 Technology Way",
+            "addressLocality": "San Jose",
+            "addressRegion": "California",
+            "postalCode": "95110",
+            "addressCountry": "US"
+          }
+        }
+        <\/script>
+      </head>
+      <body>
+        <h1>Silicon Valley Electronics</h1>
+        <footer>
+          <p>Silicon Valley Electronics Inc.</p>
+          <p>400 Technology Way, San Jose, California 95110, USA</p>
+          <p>Tel: +1 (408) 555-0199 | sales@svelectronics.com</p>
+        </footer>
+      </body>
+      </html>
+    `;
+    const resUSA = Extractor.extractFromHtml(htmlUSA, "https://www.svelectronics.com");
+    const passUSA = (
+      resUSA.countryName === "United States Of America" &&
+      resUSA.companyName === "Silicon Valley Electronics Incorporated" &&
+      resUSA.companyAddress.includes("400 Technology Way") &&
+      resUSA.companyAddress.includes("San Jose") &&
+      resUSA.companyAddress.includes("California")
+    );
+    renderTest("Test 4: United States Site - Schema.org ISO conversion (US -> United States Of America) & Complete Address", passUSA, {
+      countryName: resUSA.countryName,
+      companyName: resUSA.companyName,
+      companyAddress: resUSA.companyAddress,
+      state: resUSA.state,
+      city: resUSA.city
+    });
+
+    // TEST 5: Accurite Industries Site (Extended Content / Footer Legal Suffix: Accurite Industries Ltd -> Accurite Industries Limited)
+    const htmlAccurite = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>UK Stockist of new, refurbished and second-hand stone machinery | Accurite Industries</title>
+        <meta property="og:site_name" content="Accurite Industries">
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@graph": [
+            { "@type": "WebSite", "name": "Accurite Industries" },
+            { "@type": "Organization", "name": "Accurite Industries" }
+          ]
+        }
+        <\/script>
+      </head>
+      <body>
+        <div class="footer-address">
+          Accurite Industries Ltd<br>
+          Low Mill Business Park<br>
+          Morecambe Road<br>
+          Ulverston<br>
+          Cumbria LA12 9EE
+        </div>
+        <div class="footer-copyright">
+          © 2026 Accurite Industries Ltd | All rights reserved
+        </div>
+      </body>
+      </html>
+    `;
+    const resAccurite = Extractor.extractFromHtml(htmlAccurite, "http://www.accurite.co.uk");
+    const passAccurite = (
+      resAccurite.companyName === "Accurite Industries Limited" &&
+      resAccurite.countryName === "England" &&
+      resAccurite.companyAddress.includes("Low Mill Business Park") &&
+      resAccurite.companyAddress.includes("Ulverston") &&
+      !resAccurite.companyAddress.includes("LA12 9EE")
+    );
+    renderTest("Test 5: Accurite Site - Extended Content & Legal Suffix Retention (Accurite Industries Ltd -> Accurite Industries Limited)", passAccurite, {
+      companyName: resAccurite.companyName,
+      countryName: resAccurite.countryName,
+      companyAddress: resAccurite.companyAddress
+    });
+
+    // TEST 6: Section 5.3 International Legal Suffix Reference Expansion Test
+    const suffixTestCases = [
+      { raw: "Kolorbond Ltd.", expected: "Kolorbond Limited" },
+      { raw: "Tata Consultancy Services Pvt. Ltd.", expected: "Tata Consultancy Services Private Limited" },
+      { raw: "Apple Inc.", expected: "Apple Incorporated" },
+      { raw: "Microsoft Corp.", expected: "Microsoft Corporation" },
+      { raw: "Google LLC", expected: "Google Limited Liability Company" },
+      { raw: "BT Group PLC", expected: "BT Group Public Limited Company" },
+      { raw: "AirAsia Sdn. Bhd.", expected: "AirAsia Sendirian Berhad" },
+      { raw: "BHP Group Pty Ltd", expected: "BHP Group Proprietary Limited" },
+      { raw: "Siemens AG", expected: "Siemens Aktiengesellschaft" },
+      { raw: "BMW GmbH & Co. KG", expected: "BMW Gesellschaft mit beschränkter Haftung & Co. Kommanditgesellschaft" },
+      { raw: "Grupo Bimbo S.A. de C.V.", expected: "Grupo Bimbo Sociedad Anónima de Capital Variable" },
+      { raw: "Kolorbond (UK) Ltd.", expected: "Kolorbond UK Limited" },
+      { raw: "(주) 레존텍", expected: "Jusik Hoesa 레존텍" }
+    ];
+    let allSuffixPassed = true;
+    const suffixResults = {};
+    for (const tc of suffixTestCases) {
+      const actual = Extractor.formatCompanyName(tc.raw);
+      suffixResults[tc.raw] = actual;
+      if (actual !== tc.expected) {
+        allSuffixPassed = false;
+        console.error(`Suffix test failed for "${tc.raw}": expected "${tc.expected}", got "${actual}"`);
+      }
+    }
+    renderTest("Test 6: Section 5.3 International Legal Suffix Expansion (Full Form)", allSuffixPassed, suffixResults);
+
+    // TEST 7: Portal Form Auto-Fill Test with EXACT FIELD DISCRIMINATION
+    // Fill resKorea data into the portal form elements on this page
+    const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const controls = [...document.querySelectorAll("#portal-form input, #portal-form select, #portal-form textarea")];
+
+    function getExactLabel(ctrl) {
+      if (ctrl.labels && ctrl.labels.length > 0) {
+        const t = [...ctrl.labels].map(l => l.textContent || "").join(" ").trim();
+        if (t) return t;
+      }
+      if (ctrl.id) {
+        try {
+          const lbl = document.querySelector(`label[for="${CSS.escape(ctrl.id)}"]`);
+          if (lbl && lbl.textContent?.trim()) return lbl.textContent.trim();
+        } catch { }
+      }
+      const directParent = ctrl.parentElement;
+      if (directParent) {
+        const lbl = directParent.querySelector("label");
+        if (lbl && lbl.textContent?.trim()) return lbl.textContent.trim();
+      }
+      return "";
+    }
+
+    const FIELD_RULES = [
+      { key: "websiteStatus", isSelect: true, match: (c, l, d) => c.tagName === "SELECT" && l.includes("status") ? 50 : 0 },
+      { key: "businessType", isSelect: true, match: (c, l, d) => c.tagName === "SELECT" && l.includes("business") ? 50 : 0 },
+      { key: "companyProfile", isSelect: true, match: (c, l, d) => c.tagName === "SELECT" && l.includes("profile") ? 50 : 0 },
+      {
+        key: "companyName",
+        isSelect: false,
+        match: (c, l, d) => {
+          if (c.tagName === "SELECT") return 0;
+          if (l.includes("address") || l.includes("country") || l.includes("profile")) return 0;
+          let s = 0;
+          if (l.includes("company") && l.includes("name")) s += 60;
+          if (c.tagName === "INPUT") s += 10;
+          if (c.tagName === "TEXTAREA") s -= 20;
+          return s;
+        }
+      },
+      {
+        key: "companyAddress",
+        isSelect: false,
+        match: (c, l, d) => {
+          if (c.tagName === "SELECT") return 0;
+          if (l.includes("country") && !l.includes("address")) return 0;
+          let s = 0;
+          if (l.includes("address")) s += 60;
+          if (c.tagName === "TEXTAREA") s += 20;
+          return s;
+        }
+      },
+      {
+        key: "countryName",
+        isSelect: false,
+        match: (c, l, d) => {
+          if (l.includes("address") || l.includes("profile")) return 0;
+          let s = 0;
+          if (l.includes("country")) s += 60;
+          if (c.tagName === "INPUT") s += 10;
+          if (c.tagName === "TEXTAREA") s -= 30;
+          return s;
+        }
+      },
+      { key: "state", isSelect: true, match: (c, l, d) => c.tagName === "SELECT" && l.includes("state") ? 50 : 0 },
+      { key: "city", isSelect: true, match: (c, l, d) => c.tagName === "SELECT" && l.includes("city") ? 50 : 0 },
+      { key: "emailId", isSelect: false, match: (c, l, d) => c.tagName !== "SELECT" && !l.includes("secondary") && l.includes("email") ? 50 : 0 },
+      { key: "secondaryEmailId", isSelect: false, match: (c, l, d) => c.tagName !== "SELECT" && l.includes("secondary") ? 60 : 0 },
+      { key: "phoneNumber", isSelect: false, match: (c, l, d) => c.tagName !== "SELECT" && (l.includes("phone") || l.includes("tel")) ? 50 : 0 },
+      { key: "numberOfProduct", isSelect: true, match: (c, l, d) => c.tagName === "SELECT" && !l.includes("image") && !l.includes("desc") && l.includes("product") ? 50 : 0 },
+      { key: "imageProduct", isSelect: true, match: (c, l, d) => c.tagName === "SELECT" && l.includes("image") ? 60 : 0 },
+      { key: "noOfProductDescription", isSelect: true, match: (c, l, d) => c.tagName === "SELECT" && l.includes("desc") ? 60 : 0 }
+    ];
+
+    let filledCount = 0;
+    const used = new Set();
+    for (const rule of FIELD_RULES) {
+      const val = resKorea[rule.key] || (rule.isSelect ? "3" : "");
+      if (!val) continue;
+
+      let best = null;
+      let maxS = 0;
+      for (const ctrl of controls) {
+        if (used.has(ctrl)) continue;
+        const lbl = norm(getExactLabel(ctrl));
+        const desc = norm([ctrl.id, ctrl.name].join(" "));
+        const s = rule.match(ctrl, lbl, desc);
+        if (s > maxS) {
+          maxS = s;
+          best = ctrl;
+        }
+      }
+
+      if (best && maxS > 0) {
+        used.add(best);
+        if (best.tagName === "SELECT") {
+          const opt = [...best.options].find(o => norm(o.value) === norm(val) || norm(o.textContent) === norm(val));
+          if (opt) best.value = opt.value;
+        } else {
+          best.value = val;
+        }
+        filledCount++;
+      }
+    }
+
+    const cNameVal = document.getElementById("companyName").value;
+    const cAddrVal = document.getElementById("companyAddress").value;
+    const cCountryVal = document.getElementById("countryName").value;
+
+    const passPortal = (
+      filledCount >= 13 &&
+      cNameVal === "Rezontech Company Limited" &&
+      cAddrVal.includes("Megavalley") &&
+      !cAddrVal.includes("14056") &&
+      !cAddrVal.toLowerCase().includes("korea") &&
+      cCountryVal === "South Korea"
+    );
+
+    renderTest("Test 7: Portal Form Exact Filling (Company Name, Address, Country)", passPortal, {
+      totalFilled: `${filledCount}/14 fields`,
+      filledCompanyName: cNameVal,
+      filledCompanyAddress: cAddrVal,
+      filledCountryName: cCountryVal,
+      isCompanyNameInInput: document.getElementById("companyName").value === "Rezontech Company Limited",
+      isAddressInTextarea: document.getElementById("companyAddress").value.includes("Megavalley"),
+      isCountryInInput: document.getElementById("countryName").value === "South Korea"
+    });
+
+    window.__TEST_RESULTS__ = {
+      passKorea,
+      passGermany,
+      passUK,
+      passUSA,
+      passAccurite,
+      allSuffixPassed,
+      passPortal,
+      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && passPortal
+    };
+  </script>
+</body>
+
+</html>
