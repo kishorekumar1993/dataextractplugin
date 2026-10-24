@@ -856,112 +856,145 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   }
 
   // Find Raw Multi-Line Address from Document / Footer / Text (prioritizes HQ / Registered Office over branch/factory)
+
+
   function findRawAddress(doc, fullText = "") {
     if (!doc) return "";
 
     const candidates = [];
+    const seen = new Set();
 
     const normalizeAddress = value =>
       String(value || "")
         .replace(/\u00a0/g, " ")
-        .replace(/\s+/g, " ")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\s*,\s*/g, ", ")
         .replace(/^[\s,;:|]+|[\s,;:|]+$/g, "")
         .trim();
+
+    const isContactOnly = address =>
+      /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|website|url)\s*[:：.-]/i
+        .test(address);
+
+    const isNoise = address =>
+      !address ||
+      address.length < 10 ||
+      address.length > 350 ||
+      /@|https?:\/\/|www\.|all rights reserved/i.test(address) ||
+      isContactOnly(address);
 
     const addCandidate = (value, source, priority = 0) => {
       const address = normalizeAddress(value);
 
-      if (
-        address.length < 10 ||
-        address.length > 300 ||
-        /@|https?:\/\/|all rights reserved/i.test(address)
-      ) {
+      if (isNoise(address)) return;
+
+      // Avoid duplicate candidates from nested address elements.
+      const key = address.toLowerCase().replace(/[.,;]/g, "").trim();
+      if (seen.has(key)) {
+        const existing = candidates.find(c => c.key === key);
+        if (existing && priority > existing.priority) {
+          existing.priority = priority;
+          existing.source = source;
+        }
         return;
       }
 
-      // Reject obvious contact-only lines.
-      if (/^(?:tel|telephone|phone|fax|email|e-mail)\s*[:.-]/i.test(address)) {
-        return;
-      }
-
-      candidates.push({ address, source, priority });
+      seen.add(key);
+      candidates.push({ address, source, priority, key });
     };
 
-    // 1. Extract structured Schema.org addresses.
+    const getAddressCountry = country => {
+      if (!country) return "";
+      if (typeof country === "string") return country;
+      if (typeof country === "object") {
+        return country.name || country["@id"] || "";
+      }
+      return "";
+    };
+
+    // 1. Read Schema.org JSON-LD addresses.
     function scanStructuredData(value) {
-      if (!value) return;
+      if (!value || typeof value !== "object") return;
 
       if (Array.isArray(value)) {
         value.forEach(scanStructuredData);
         return;
       }
 
-      if (typeof value !== "object") return;
+      const types = Array.isArray(value["@type"])
+        ? value["@type"]
+        : [value["@type"]];
 
-      if (value["@graph"]) {
-        scanStructuredData(value["@graph"]);
-      }
+      const isPostalAddress = types.some(type =>
+        /PostalAddress/i.test(String(type || ""))
+      );
 
-      const address = value.address;
+      const addStructuredAddress = address => {
+        if (typeof address === "string") {
+          addCandidate(address, "schema-string", 90);
+          return;
+        }
 
-      if (address && typeof address === "object" && !Array.isArray(address)) {
+        if (!address || typeof address !== "object") return;
+
         const parts = [
           address.streetAddress,
           address.addressLocality,
           address.addressRegion,
           address.postalCode,
-          typeof address.addressCountry === "object"
-            ? address.addressCountry?.name
-            : address.addressCountry
+          getAddressCountry(address.addressCountry)
         ].filter(Boolean);
 
-        addCandidate(parts.join(", "), "schema", 100);
+        if (parts.length) {
+          addCandidate(
+            parts.join(", "),
+            "schema",
+            105
+          );
+        }
+      };
+
+      if (isPostalAddress) {
+        addStructuredAddress(value);
       }
 
-      if (
-        value["@type"] === "PostalAddress" &&
-        (value.streetAddress || value.addressLocality)
-      ) {
-        addCandidate(
-          [
-            value.streetAddress,
-            value.addressLocality,
-            value.addressRegion,
-            value.postalCode,
-            typeof value.addressCountry === "object"
-              ? value.addressCountry?.name
-              : value.addressCountry
-          ].filter(Boolean).join(", "),
-          "postal-address",
-          100
-        );
+      if (value.address) {
+        if (Array.isArray(value.address)) {
+          value.address.forEach(addStructuredAddress);
+        } else {
+          addStructuredAddress(value.address);
+        }
       }
 
-      // Some sites store address details in nested objects.
+      // Handle nested objects and @graph entries.
       for (const [key, child] of Object.entries(value)) {
-        if (key !== "@graph" && key !== "address" && child &&
-            typeof child === "object") {
+        if (
+          key !== "address" &&
+          child &&
+          typeof child === "object"
+        ) {
           scanStructuredData(child);
         }
       }
     }
 
-    for (const script of doc.querySelectorAll(
+    doc.querySelectorAll(
       'script[type="application/ld+json"]'
-    )) {
+    ).forEach(script => {
       try {
         scanStructuredData(JSON.parse(script.textContent || ""));
       } catch {
-        // Ignore invalid JSON-LD.
+        // Ignore malformed JSON-LD.
       }
-    }
+    });
 
-    // 2. Check semantic address elements and common address containers.
+    // 2. Read semantic address elements and common address containers.
     const selectors = [
       "address",
       '[itemprop="streetAddress"]',
       '[itemprop="address"]',
       '[itemprop="PostalAddress"]',
+      '[itemtype*="PostalAddress"]',
       ".company-address",
       ".office-address",
       ".head-office",
@@ -977,8 +1010,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       "[class*='headquarter']"
     ];
 
-    for (const el of doc.querySelectorAll(selectors.join(","))) {
-      // Prefer actual structured child fields when available.
+    doc.querySelectorAll(selectors.join(",")).forEach(el => {
+      const isHq = el.matches(
+        ".head-office, .headquarters, " +
+        "[class*='head-office'], [class*='headquarter'], #head-office"
+      );
+
+      // Prefer explicit child fields when available.
       const parts = [
         '[itemprop="streetAddress"]',
         '[itemprop="addressLocality"]',
@@ -990,105 +1028,171 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           ? el
           : el.querySelector(selector);
 
-        return child?.getAttribute("content") ||
-          child?.textContent || "";
+        if (!child) return "";
+
+        return (
+          child.getAttribute("content") ||
+          child.getAttribute("value") ||
+          child.textContent ||
+          ""
+        ).trim();
       }).filter(Boolean);
 
       if (parts.length) {
-        addCandidate(parts.join(", "), "semantic", 90);
+        addCandidate(
+          parts.join(", "),
+          "semantic",
+          isHq ? 110 : 95
+        );
       }
 
-      const isHqEl = el.matches(".head-office, .headquarters, [class*='head-office'], [class*='headquarter'], #head-office");
-      addCandidate(
-        getElementText(el),
-        "address-element",
-        isHqEl ? 95 : (el.matches("address") ? 85 : 65)
-      );
-    }
+      let text = "";
+      try {
+        text = typeof getElementText === "function"
+          ? getElementText(el)
+          : (el.innerText || el.textContent || "");
+      } catch {
+        text = el.innerText || el.textContent || "";
+      }
 
-    // 3. Check contact and footer sections for labelled addresses with Headquarters priority
+      addCandidate(
+        text,
+        "address-element",
+        isHq ? 100 : (el.matches("address") ? 90 : 65)
+      );
+    });
+
+    // 3. Look for labelled addresses in contact/footer sections.
     const sections = doc.querySelectorAll(
       "footer, #footer, .footer, " +
       ".contact-info, .contact-details, #contact, " +
       "#contact-us, .contact-us, [class*='contact']"
     );
 
-    const addressLabel =
-      /^(?:global\s+headquarters|headquarters|head\s+office|hq\s+address|hq|registered\s+office|corporate\s+office|company\s+address|office\s+address|factory\s+address|factory|works|plant|warehouse|branch\s+office|branch|regional\s+office|address|location)\s*[:：-]\s*/i;
+    const labelPattern =
+      /^(global\s+headquarters|headquarters|head\s+office|hq\s+address|hq|registered\s+office|corporate\s+office|company\s+address|office\s+address|factory\s+address|factory|works|plant|warehouse|branch\s+office|branch|regional\s+office|address|location)\s*[:：-]\s*/i;
+
+    const stopLinePattern =
+      /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b/i;
 
     for (const section of sections) {
-      const text = getElementText(section);
-      const lines = text
+      let text = "";
+
+      try {
+        text = typeof getElementText === "function"
+          ? getElementText(section)
+          : (section.innerText || section.textContent || "");
+      } catch {
+        text = section.innerText || section.textContent || "";
+      }
+
+      const lines = String(text || "")
         .split(/[\r\n]+/)
         .map(normalizeAddress)
         .filter(Boolean);
 
       for (let i = 0; i < lines.length; i++) {
-        if (addressLabel.test(lines[i])) {
-          const matchLabel = lines[i].match(addressLabel)[0].toLowerCase();
-          let priority = 80; // default medium: general contact address
-          if (/headquarters|head\s*office|hq/i.test(matchLabel)) {
-            priority = 110; // Highest: Explicitly labelled headquarters or head office
-          } else if (/registered\s*office|company\s*address|corporate\s*office/i.test(matchLabel)) {
-            priority = 95;  // High: Registered office or company address
-          } else if (/factory|works|plant|warehouse|branch|regional/i.test(matchLabel)) {
-            priority = 60;  // Lower: Factory, warehouse, branch, or regional office
-          }
+        const labelMatch = lines[i].match(labelPattern);
+        if (!labelMatch) continue;
 
-          const collected = [
-            lines[i].replace(addressLabel, "")
-          ];
+        const label = labelMatch[1].toLowerCase();
 
-          // Collect subsequent address lines.
-          for (
-            let j = i + 1;
-            j < Math.min(lines.length, i + 5);
-            j++
-          ) {
-            const line = lines[j];
+        let priority = 80;
 
-            if (
-              /^(?:tel|telephone|phone|fax|email|e-mail|copyright|follow us|social media|website|web)\b/i.test(line) ||
-              /@|https?:\/\/|all rights reserved/i.test(line)
-            ) {
-              break;
-            }
-
-            if (
-              /^(?:sales|support|customer service|business registration|cin|gstin)\s*[:：-]/i.test(line)
-            ) {
-              break;
-            }
-
-            collected.push(line);
-          }
-
-          addCandidate(collected.join(", "), "labelled-contact", priority);
+        if (/headquarters|head\s+office|\bhq\b/.test(label)) {
+          priority = 120;
+        } else if (
+          /registered\s+office|company\s+address|corporate\s+office/.test(label)
+        ) {
+          priority = 105;
+        } else if (/factory|works|plant|warehouse|branch|regional/.test(label)) {
+          priority = 55;
         }
+
+        const collected = [
+          lines[i].replace(labelPattern, "").trim()
+        ].filter(Boolean);
+
+        for (
+          let j = i + 1;
+          j < Math.min(lines.length, i + 6);
+          j++
+        ) {
+          const line = lines[j];
+
+          // Stop before a new labelled section or contact detail.
+          if (
+            labelPattern.test(line) ||
+            stopLinePattern.test(line) ||
+            /@|https?:\/\/|www\.|all rights reserved/i.test(line)
+          ) {
+            break;
+          }
+
+          // Do not accidentally append unrelated long paragraphs.
+          if (line.length > 150) break;
+
+          collected.push(line);
+        }
+
+        addCandidate(
+          collected.join(", "),
+          "labelled-contact",
+          priority
+        );
       }
     }
 
-    // 4. Rank candidates by source quality and address completeness.
-    // Do not assume the longest candidate is always the correct one.
+    // 4. Score candidates for completeness and source reliability.
     const scored = candidates.map(candidate => {
       const address = candidate.address;
-      const segments = address.split(",").filter(Boolean).length;
+      const segments = address
+        .split(",")
+        .map(part => part.trim())
+        .filter(Boolean);
 
       let score = candidate.priority;
-      if (segments >= 2) score += 8;
-      if (segments >= 3) score += 5;
-      if (/\d/.test(address)) score += 2;
-      if (/\b(?:street|road|avenue|industrial park|suite|building|district|province|lane|drive|way|court|place|crescent|terrace|circle|highway)\b/i.test(address)) {
-        score += 3;
+
+      // Multiple meaningful address components.
+      if (segments.length >= 2) score += 8;
+      if (segments.length >= 3) score += 8;
+      if (segments.length >= 4) score += 4;
+
+      // Street/building/location indicators.
+      if (/\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|industrial park|suite|building|district|province|lane|drive|way|court|place|crescent|terrace|circle|highway|unit|floor|block|plot|po box|p\.o\. box)\b/i.test(address)) {
+        score += 10;
       }
+
+      // Numbers may indicate a street number or postal code.
+      if (/\d/.test(address)) score += 4;
+
+      // Penalize contact details and generic page content.
+      if (/\b(?:call us|contact us|opening hours|customer service|follow us)\b/i.test(address)) {
+        score -= 25;
+      }
+
+      // Reject candidates that are probably not usable postal addresses.
+      if (segments.length < 2) score -= 20;
+      if (address.length < 20) score -= 10;
 
       return { ...candidate, score };
     });
 
     scored.sort((a, b) => b.score - a.score);
 
-    return scored[0]?.address || "";
+    // Return the best usable candidate, not simply the longest string.
+    const best = scored.find(candidate => {
+      const parts = candidate.address
+        .split(",")
+        .map(part => part.trim())
+        .filter(Boolean);
+
+      return parts.length >= 2 && candidate.address.length >= 15;
+    });
+
+    return best?.address || "";
   }
+
 
   // Sections 7.4 - 7.11: Address Abbreviations & Normalization Rules
   function expandAddressAbbreviations(address) {
@@ -1267,120 +1371,160 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   }
 
   // Clean Address according to Rule 6 & Sections 7.4 - 7.11
-  // Clean Address according to Rule 6 & Sections 7.4 - 7.11
+
   function cleanAddressString(rawAddr, countryName, companyName) {
     if (!rawAddr) return "";
-    let addr = clean(rawAddr);
 
-    // 1. Remove brackets
+    let addr = clean(String(rawAddr));
+
+    // 1. Remove brackets and normalize whitespace.
     addr = removeBrackets(addr);
+    addr = addr
+      .replace(/\u00a0/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
 
-    // 2. Remove leading labels (Address:, Head Office:, Location:, etc.)
-    addr = addr.replace(/^(?:(?:office|corporate|registered|factory|head|postal|physical|mailing|our|company)\s+)?(?:address|location|headquarters|hq|add|addr|works|plant|site|visit\s+us|find\s+us|contact\s+(?:info|details)?|주소|본사|地址|所在地)\s*[:.\-–—]\s*/i, "");
-    addr = addr.replace(/^(?:head\s+office|registered\s+office|corporate\s+office|factory\s+address|works|location)\s*[:.\-–—]\s*/i, "");
+    // 2. Remove leading address labels.
+    const leadingLabel =
+      /^(?:(?:office|corporate|registered|factory|head|postal|physical|mailing|our|company)\s+)?(?:address|location|headquarters|hq|add|addr|works|plant|site|visit\s+us|find\s+us|contact\s+(?:info|details)?|주소|본사|地址|所在地)\s*[:.\-–—]\s*/i;
 
-    // 3. Remove trailing contact noise (Tel:, Phone:, Email:, Website:, etc.)
-    const trailingContactRegex = /\b(?:tel|telephone|phone|t\.|p\.|mob|mobile|cell|fax|f\.|email|e-mail|mail|web|website|url|cin|gstin|gst|tax\s+id|vat|ein|abn|acn|copyright|all\s+rights|©|\(c\))\s*[:.\-–—]/i;
-    const splitParts = addr.split(trailingContactRegex);
-    if (splitParts.length > 1 && splitParts[0].trim().length >= 10) {
-      addr = splitParts[0].trim();
+    const officeLabel =
+      /^(?:head\s+office|registered\s+office|corporate\s+office|factory\s+address|works|location)\s*[:.\-–—]\s*/i;
+
+    addr = addr.replace(leadingLabel, "").replace(officeLabel, "");
+
+    // 3. Remove contact details without removing the address before them.
+    const contactStart =
+      /\b(?:tel(?:ephone)?|phone|mobile|cell|fax|email|e-mail|website|url|cin|gstin|gst|tax\s+id|vat|ein|abn|acn|copyright|all\s+rights\s+reserved)\s*[:：\-–—]/i;
+
+    const contactMatch = contactStart.exec(addr);
+    if (contactMatch && contactMatch.index >= 10) {
+      addr = addr.slice(0, contactMatch.index).trim();
     }
-    addr = addr.replace(/\s*\|\s*(?:tel|phone|fax|email|web).*$/i, "");
-    addr = addr.replace(/\s+https?:\/\/\S+/gi, "");
-    addr = addr.replace(/\s+[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, "");
 
-    // 4. Strip leading company name if present (e.g. "T2 Technology Limited, 123 Main Street")
+    addr = addr
+      .replace(/\s*\|\s*(?:tel|phone|fax|email|web)\b.*$/i, "")
+      .replace(/\s+https?:\/\/\S+/gi, "")
+      .replace(/\s+www\.\S+/gi, "")
+      .replace(/\s+[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, "")
+      .trim();
+
+    // 4. Remove the company name only when it appears at the beginning.
     if (companyName) {
-      const cLower = companyName.toLowerCase();
-      const baseName = companyName.replace(/\b(?:company\s+limited|co[.,\s]*ltd\.?|private\s+limited\s+company|private\s+limited|pvt\.?\s*ltd\.?|limited\s+liability\s+company|limited\s+liability\s+partnership|public\s+limited\s+company|limited|corporation|incorporated|gesellschaft\s+mit\s+beschr[äa]nkter\s+haftung|aktiengesellschaft|soci[eé]t[eé]\s+[aà]\s+responsabilit[eé]\s+limit[eé]e|perseroan\s+terbatas|sendirian\s+berhad|proprietary\s+limited|berhad|gmbh|inc\.?|corp\.?|llc|llp|plc|ltd\.?|co\.?)\b/gi, "").trim();
+      const escapeRegex = value =>
+        String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-      const addrLower = addr.toLowerCase();
-      if (addrLower.startsWith(cLower)) {
-        addr = addr.substring(companyName.length).trim();
-      } else if (baseName && baseName.length >= 3 && addrLower.startsWith(baseName.toLowerCase())) {
-        const nextChar = addr.charAt(baseName.length);
-        if (/[,;:\- ]/.test(nextChar)) {
-          addr = addr.substring(baseName.length).trim();
+      const company = String(companyName).trim();
+
+      if (company) {
+        const companyRegex = new RegExp(
+          "^\\s*" + escapeRegex(company) +
+          "(?=\\s*[,;:|\\-]|\\s+$|$)\\s*[,;:|\\-]?\\s*",
+          "i"
+        );
+
+        addr = addr.replace(companyRegex, "");
+      }
+    }
+
+    addr = addr.replace(/^[,;:|.\-\s]+/, "").trim();
+
+    // 5. Remove country names ONLY at the end.
+    // Do not remove UK_LOCALITIES: they may be valid city/town names.
+    const countryTerms = [];
+
+    if (countryName) {
+      countryTerms.push(String(countryName).trim());
+    }
+
+    if (Array.isArray(COUNTRIES)) {
+      for (const country of COUNTRIES) {
+        if (country?.name) countryTerms.push(country.name);
+
+        if (Array.isArray(country?.aliases)) {
+          countryTerms.push(...country.aliases);
         }
       }
     }
-    // Also strip generic leading company legal name if followed by a comma/separator
-    addr = addr.replace(/^[A-Za-z0-9\s&.'\-]+?\b(?:company\s+limited|co[.,\s]*ltd\.?|private\s+limited|pvt\.?\s*ltd\.?|limited|corporation|inc\.?|llc|gmbh|ag|sa)\b[,;:\-\s]+/i, "");
-    addr = addr.replace(/^[,;:\-.\s]+/, "").trim();
 
-    // 5. REMOVE POSTAL CODES & COUNTRY NAMES
-    // Build dynamic list of country terms
-    const allCountryTerms = [];
-    for (const c of COUNTRIES) {
-      allCountryTerms.push(escapeRegExp(c.name));
-      for (const alias of c.aliases) {
-        if (alias.length >= 3) allCountryTerms.push(escapeRegExp(alias));
+    const uniqueCountries = [...new Set(
+      countryTerms
+        .filter(Boolean)
+        .map(term => term.trim())
+        .filter(term => term.length >= 2)
+    )].sort((a, b) => b.length - a.length);
+
+    if (uniqueCountries.length) {
+      const countryPattern = uniqueCountries
+        .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+        .join("|");
+
+      const countryAtEnd = new RegExp(
+        "(?:,\\s*|\\s+)\\b(?:" + countryPattern + ")\\b\\s*[.,;]*$",
+        "i"
+      );
+
+      // Remove a country suffix, but preserve all preceding address parts.
+      addr = addr.replace(countryAtEnd, "").trim();
+    }
+
+    // 6. Remove postal codes only when they are standalone comma-separated
+    // components. Keep street/building/house numbers.
+    const postalCodePatterns = [
+      /^\d{5}(?:-\d{4})?$/,                       // US ZIP / ZIP+4
+      /^\d{6}$/,                                  // Six-digit postal code
+      /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i,    // UK postcode
+      /^(?:D|F|I|E|NL|B|CH|AT|PL)-\d{4,5}$/i     // Selected international formats
+    ];
+
+    addr = addr
+      .split(",")
+      .map(part => part.trim())
+      .filter(part => !postalCodePatterns.some(pattern => pattern.test(part)))
+      .join(", ");
+
+    // 7. Expand abbreviations using your existing helper.
+    if (typeof expandAddressAbbreviations === "function") {
+      addr = expandAddressAbbreviations(addr);
+    }
+
+    // 8. Normalize punctuation and spaces.
+    addr = addr
+      .replace(/\s+/g, " ")
+      .replace(/,\s*,+/g, ",")
+      .replace(/^[,;:|.\-\s]+|[,;:|.\-\s]+$/g, "")
+      .trim();
+
+    // 9. Apply title case while preserving common acronyms and numbers.
+    addr = addr.split(/\s+/).map(word => {
+      if (/^[A-Z]{2,6}[,;:]?$/.test(word)) return word;
+      if (/^(?:[A-Za-z]\.)+[A-Za-z]?\.?[,;:]?$/.test(word)) {
+        return word.toUpperCase();
       }
-    }
-    for (const uk of UK_LOCALITIES) {
-      allCountryTerms.push(uk.name.toLowerCase());
-    }
-    const uniqueTerms = [...new Set(allCountryTerms.map(t => t.toLowerCase()))].sort((a, b) => b.length - a.length);
-    const dynamicCountryEndRegex = new RegExp(`[,\\s.]*(?:${uniqueTerms.join("|")})(?:[,\\s.]+|$)`, "gi");
+      if (/^[\d#]/.test(word)) return word;
+      if (/^[A-Za-z]-\d+/.test(word)) return word.toUpperCase();
 
-    for (let pass = 0; pass < 3; pass++) {
-      // Remove postal codes without deleting nearby address components.
-      // Keep house numbers such as 19654 Eighth Street East.
-      addr = addr.replace(/,\s*\d{5}(?:-\d{4})?(?=\s*(?:,|$))/g, "");
-      addr = addr.replace(/(?:,\s*|\s+)\b\d{5}(?:-\d{4})?(?=\s*(?:,|$))/g, "");
-      addr = addr.replace(/(?:,\s*|\s+)\b\d{6}\b(?=\s*(?:,|$))/g, "");
+      if (word.includes("-")) {
+        return word.split("-").map(part => {
+          if (/^(?:si|gu|do|ro|dong|gun|eup|myeon|ri)$/i.test(part)) {
+            return part.toLowerCase();
+          }
 
-      // UK postcode, e.g. WS9 8UG or SW1A 1AA.
-      addr = addr.replace(/,\s*[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}(?=\s*(?:,|$))/gi, "");
-      addr = addr.replace(/(?:,\s*|\s+)\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}(?=\s*(?:,|$))/gi, "");
+          if (/^[A-Za-z]\.?$/.test(part)) return part.toUpperCase();
 
-      // International postal prefixes (D-12345, NL-1234).
-      addr = addr.replace(/,\s*(?:D-|F-|I-|E-|NL-|B-|CH-|AT-|PL-)\d{4,5}(?=\s*(?:,|$))/gi, "");
-      addr = addr.replace(/(?:,\s*|\s+)\b(?:D-|F-|I-|E-|NL-|B-|CH-|AT-|PL-)\d{4,5}(?=\s*(?:,|$))/gi, "");
-
-      addr = addr.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, "").trim();
-
-      // Remove country names at end (dynamic)
-      if (countryName) {
-        const cRegex = new RegExp(`(?:,\\s*|\\s+)\\b${escapeRegExp(countryName)}\\b[,\\s.]*$`, "gi");
-        addr = addr.replace(cRegex, "");
-      }
-      addr = addr.replace(dynamicCountryEndRegex, function (match, offset, str) {
-        const rest = str.slice(offset + match.length).trim();
-        return (rest.length === 0 || /^[,. ]*$/.test(rest)) ? " " : match;
-      });
-      addr = addr.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, "").trim();
-    }
-
-    // 6. Expand Abbreviations according to Sections 7.4 - 7.11
-    addr = expandAddressAbbreviations(addr);
-
-    // 7. Clean extra spaces, duplicate commas, and trailing/leading punctuation
-    addr = addr.replace(/\s+/g, " ");
-    if (!rawAddr.includes(",,")) {
-      addr = addr.replace(/,\s*,+/g, ",");
-    }
-    addr = addr.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, "").trim();
-
-    // 8. Apply Title Case to the final address (preserves acronyms like USA, UK, initials with dots, Roman numerals, and numeric tokens)
-    addr = addr.split(/\s+/).map(w => {
-      if (/^[A-Z]{2,6}[,;:]?$/.test(w)) return w;
-      if (/^(?:[A-Za-z]\.)+[A-Za-z]?\.?[,;:]?$/.test(w)) return w.toUpperCase();
-      if (/^(?:I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)[,;:]?$/i.test(w)) return w.toUpperCase();
-      if (/^[\d#]/.test(w) || /^[A-Za-z]\/\d+/.test(w)) return w;
-      if (/^[A-Za-z]-\d+/.test(w)) return w.toUpperCase();
-      if (w.includes("-")) {
-        return w.split("-").map(sub => {
-          if (/^(?:si|gu|do|ro|dong|gun|eup|myeon|ri)$/i.test(sub)) return sub.toLowerCase();
-          if (/^[A-Za-z]\.?$/.test(sub)) return sub.toUpperCase();
-          return sub.charAt(0).toUpperCase() + sub.slice(1).toLowerCase();
+          return part.charAt(0).toUpperCase() +
+            part.slice(1).toLowerCase();
         }).join("-");
       }
-      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+
+      return word.charAt(0).toUpperCase() +
+        word.slice(1).toLowerCase();
     }).join(" ");
 
     return addr;
   }
+
+
 
   // Rules 7 & 8: State & City (Y / N)
   // Scans ONLY the verified address (never full body text) to prevent false positives from blog posts/global offices
@@ -1462,7 +1606,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
               }
             }
           }
-        } catch {}
+        } catch { }
       }
     }
 
@@ -1480,7 +1624,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         for (const m of htmlMatches) {
           if (isValidEmail(m)) emails.add(m.toLowerCase());
         }
-      } catch {}
+      } catch { }
     }
 
     // Filter out blacklisted / system emails
@@ -1671,7 +1815,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           const resolved = new URL(href, baseUrl).href;
           if (new URL(resolved).hostname !== base.hostname) continue;
           if (/(?:contact|contact-us|contactus|location|reach-us|find-us|about\/contact|오시는길|고객센터)/i.test(href) ||
-              /\b(contact|contact us|get in touch|location|reach us|find us|our office|headquarters|오시는길)\b/i.test(text)) {
+            /\b(contact|contact us|get in touch|location|reach us|find us|our office|headquarters|오시는길)\b/i.test(text)) {
             return resolved;
           }
         } catch { }
