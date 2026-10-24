@@ -229,6 +229,55 @@ async function crawlAndExtractDirect(targetUrl) {
       }
     }
 
+    // Step 5: Dynamic Contact Page Address Check (User requirement: mostly address take from contact info check and update)
+    if (!mainData.companyAddress || mainData.companyAddress.split(",").length < 2) {
+      let contactCandidates = [];
+      try {
+        const u = new URL(tab.url || normUrl);
+        const candidates = [
+          mainData.contactUrl,
+          `${u.origin}/contact`,
+          `${u.origin}/contact-us`,
+          `${u.origin}/contact.html`,
+          `${u.origin}/contactus`,
+          `${u.origin}/about-us`
+        ];
+        contactCandidates = [...new Set(candidates.filter(Boolean))].filter(c => c !== normUrl && c !== tab.url);
+      } catch {}
+
+      for (const contactUrl of contactCandidates) {
+        try {
+          setStatus("Checking Contact page for complete address...", "info");
+          const [{ result: contactData }] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: async (url) => {
+              try {
+                const res = await fetch(url, { credentials: "omit" });
+                if (!res.ok) return null;
+                const html = await res.text();
+                if (html.length < 200) return null;
+                const doc = new DOMParser().parseFromString(html, "text/html");
+                return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
+              } catch { return null; }
+            },
+            args: [contactUrl]
+          });
+
+          if (contactData && contactData.companyAddress && contactData.companyAddress.split(",").length >= (mainData.companyAddress ? mainData.companyAddress.split(",").length : 0)) {
+            mainData.companyAddress = contactData.companyAddress;
+            if (contactData.countryName && !mainData.countryName) mainData.countryName = contactData.countryName;
+            if (["Y", "Available"].includes(contactData.state)) mainData.state = contactData.state;
+            if (["Y", "Available"].includes(contactData.city)) mainData.city = contactData.city;
+            if (contactData.phoneNumber && !mainData.phoneNumber) mainData.phoneNumber = contactData.phoneNumber;
+            if (contactData.emailId && !mainData.emailId) mainData.emailId = contactData.emailId;
+            break;
+          }
+        } catch (e) {
+          console.log("Contact page address check note:", e);
+        }
+      }
+    }
+
     return mainData;
 
   } finally {

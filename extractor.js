@@ -869,12 +869,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
-    // 2. <address> tag
+    // 2. <address> tag or [itemprop="address"] or dedicated address elements
     if (doc) {
-      const addrEl = doc.querySelector("address");
-      if (addrEl) {
+      const addrEls = doc.querySelectorAll("address, [itemprop='address'], .address-box, .company-address, .office-address, .contact-address");
+      for (const addrEl of addrEls) {
         const txt = getElementText(addrEl);
-        if (txt && txt.length >= 15 && txt.length <= 250) {
+        if (txt && txt.length >= 10 && txt.length <= 250) {
           const lines = txt.split(/[\r\n]+/).map(clean).filter(Boolean);
           const addrLines = lines.filter(l => !/^(?:tel|phone|fax|email|e-mail|url|copyright)\b/i.test(l));
           if (addrLines.length > 0) {
@@ -884,25 +884,25 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
-    // 3. Scan Footer elements for multi-line contiguous address blocks
+    const addrKeywords = /(?:building|street|road|st\.|ave|rd\.|blvd|suite|floor|fl\.|bldg|-ro|-gu|-si|-do|district|province|city|zone|industrial|lane|drive|way|park|block|no\.|p\.o\.\s*box|strasse|straße|str\.|weg|platz|allee|rue|chemin|calle|via|corso|piazza|avenida|address|addr|location|headquarters|head office|본사|주소|\b\d{4,5}\s+[A-Za-z]+)/i;
+    const stopKeywords = /^(?:tel|phone|fax|email|e-mail|대표|사업자|통신판매|copyright|all rights|©|\(c\))/i;
+
+    // 3. Scan Contact Info sections (contact-info, contact-details, #contact, .contact, etc.)
     if (doc) {
-      const footerElements = doc.querySelectorAll('footer, #footer, .footer, .foot, .ft_data, [class*="footer"], .bottom, #bottom');
-      const addrKeywords = /(?:building|street|road|st\.|ave|rd\.|blvd|suite|floor|fl\.|bldg|-ro|-gu|-si|-do|district|province|city|zone|industrial|lane|drive|way|park|block|no\.|p\.o\.\s*box|strasse|straße|str\.|weg|platz|allee|rue|chemin|calle|via|corso|piazza|avenida|address|addr|location|headquarters|head office|본사|주소|\b\d{4,5}\s+[A-Za-z]+)/i;
-      const stopKeywords = /^(?:tel|phone|fax|email|e-mail|대표|사업자|통신판매|copyright|all rights|©|\(c\))/i;
-
-      for (const f of footerElements) {
-        const fullFooterText = getElementText(f);
-        const lines = fullFooterText.split(/[\r\n]+/).map(clean).filter(Boolean);
-
+      const contactSections = doc.querySelectorAll(
+        '.contact-info, .contact-details, .contact_info, .contact_details, #contact-info, #contact-us, .contact-us, section#contact, div#contact, [class*="contact-info"], [class*="contact-detail"], [class*="contact-box"]'
+      );
+      for (const sec of contactSections) {
+        const lines = getElementText(sec).split(/[\r\n]+/).map(clean).filter(Boolean);
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
           if (addrKeywords.test(line) && !stopKeywords.test(line)) {
             const collected = [];
-            let firstLine = line.replace(/^(?:address|head office|headquarters|location|add|addr|본사|주소)\s*[:.-]\s*/i, "").trim();
+            let firstLine = line.replace(/^(?:address|office|head office|headquarters|location|add|addr|본사|주소)\s*[:.-]\s*/i, "").trim();
             firstLine = firstLine.split(/\b(?:tel|phone|fax|email|e-mail|사업자|copyright)\b/i)[0].trim();
             if (firstLine) collected.push(firstLine);
 
-            for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
+            for (let j = i + 1; j < Math.min(lines.length, i + 5); j++) {
               const nextLine = lines[j];
               if (stopKeywords.test(nextLine)) break;
               if (/(?:co[.,\s]*ltd|corporation|inc\.|all rights)/i.test(nextLine)) break;
@@ -916,7 +916,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
             }
 
             const joined = collected.join(", ");
-            if (joined.length >= 12 && joined.length <= 250) {
+            if (joined.length >= 10 && joined.length <= 250) {
               return joined;
             }
           }
@@ -924,7 +924,45 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
-    // 4. Regex fallback on text
+    // 4. Scan Footer elements for multi-line contiguous address blocks
+    if (doc) {
+      const footerElements = doc.querySelectorAll('footer, #footer, .footer, .foot, .ft_data, [class*="footer"], .bottom, #bottom');
+
+      for (const f of footerElements) {
+        const fullFooterText = getElementText(f);
+        const lines = fullFooterText.split(/[\r\n]+/).map(clean).filter(Boolean);
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (addrKeywords.test(line) && !stopKeywords.test(line)) {
+            const collected = [];
+            let firstLine = line.replace(/^(?:address|head office|headquarters|location|add|addr|본사|주소)\s*[:.-]\s*/i, "").trim();
+            firstLine = firstLine.split(/\b(?:tel|phone|fax|email|e-mail|사업자|copyright)\b/i)[0].trim();
+            if (firstLine) collected.push(firstLine);
+
+            for (let j = i + 1; j < Math.min(lines.length, i + 5); j++) {
+              const nextLine = lines[j];
+              if (stopKeywords.test(nextLine)) break;
+              if (/(?:co[.,\s]*ltd|corporation|inc\.|all rights)/i.test(nextLine)) break;
+              const cleanNext = nextLine.split(/\b(?:tel|phone|fax|email|e-mail|사업자|copyright)\b/i)[0].trim();
+              if (cleanNext && cleanNext.length >= 2 && cleanNext.length <= 120) {
+                collected.push(cleanNext);
+              }
+              if (/(?:\b\d{5,6}\b|korea|usa|japan|china|germany|uk|england)/i.test(cleanNext)) {
+                break;
+              }
+            }
+
+            const joined = collected.join(", ");
+            if (joined.length >= 10 && joined.length <= 250) {
+              return joined;
+            }
+          }
+        }
+      }
+    }
+
+    // 5. Regex fallback on text
     const textMatch = fullText.match(/(?:address|head office|headquarters|factory|location|add|addr)\s*[:.-]?\s*([A-Za-z0-9#.,\- \/]{15,180})/i);
     if (textMatch && textMatch[1]) {
       return textMatch[1].split(/\b(?:tel|phone|fax|email|e-mail|copyright)\b/i)[0].trim();
@@ -1183,12 +1221,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
     addr = addr.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, "").trim();
 
-    // 7. Apply Title Case to the final address (preserves acronyms like USA, UK, and numeric tokens)
-    addr = addr.split(/\s+/).map(w =>
-      /^[A-Z]{2,5}[,;:]?$/.test(w) ? w :
-      /^\d/.test(w) ? w :
-      w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
-    ).join(" ");
+    // 7. Apply Title Case to the final address (preserves acronyms like USA, UK, initials with dots, Roman numerals, and numeric tokens)
+    addr = addr.split(/\s+/).map(w => {
+      if (/^[A-Z]{2,5}[,;:]?$/.test(w)) return w;
+      if (/^(?:[A-Z]\.)+[A-Z]?\.?[,;:]?$/i.test(w)) return w;
+      if (/^(?:I|II|III|IV|V|VI|VII|VIII|IX|X)[,;:]?$/i.test(w)) return w.toUpperCase();
+      if (/^[\d#]/.test(w) || /^[A-Za-z]\/\d+/.test(w)) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    }).join(" ");
 
     return addr;
   }
@@ -1423,6 +1463,27 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return null;
   }
 
+  // Find Contact Us subpage URL dynamically
+  function findContactSubpage(doc, baseUrl) {
+    if (!doc) return null;
+    try {
+      const base = new URL(baseUrl);
+      for (const a of doc.querySelectorAll("a[href]")) {
+        const href = a.getAttribute("href") || "";
+        const text = clean(a.innerText || a.textContent || "").toLowerCase();
+        try {
+          const resolved = new URL(href, baseUrl).href;
+          if (new URL(resolved).hostname !== base.hostname) continue;
+          if (/(?:contact|contact-us|contactus|location|reach-us|find-us|about\/contact|오시는길|고객센터)/i.test(href) ||
+              /\b(contact|contact us|get in touch|location|reach us|find us|our office|headquarters|오시는길)\b/i.test(text)) {
+            return resolved;
+          }
+        } catch { }
+      }
+    } catch { }
+    return null;
+  }
+
   // Primary Extractor
   function extractFromDocument(doc, textContent, url) {
     const text = clean(textContent || getElementText(doc?.body) || "");
@@ -1450,14 +1511,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 6. Clean Company Address with verified country and company name (Rule 6)
     let companyAddress = cleanAddressString(rawAddress, countryName, companyName);
-    if (companyAddress && companyAddress.split(",").length < 2) {
-      // Retry with <address> tag or [itemprop='address'] if available (most reliable)
-      const addrEl = doc?.querySelector?.("address, [itemprop='address']");
-      if (addrEl) {
-        const fallbackText = getElementText(addrEl);
-        if (fallbackText) {
-          const recovered = cleanAddressString(fallbackText, countryName, companyName);
-          if (recovered && recovered.split(",").length >= companyAddress.split(",").length) {
+    if (!companyAddress || companyAddress.split(",").length < 2) {
+      // Dynamic fallback: Retry with dedicated contact elements first
+      const contactEl = doc?.querySelector?.("address, [itemprop='address'], .contact-address, .company-address, .office-address, .contact-info, .contact-details, [class*='contact'], [id*='contact']");
+      if (contactEl) {
+        const contactRaw = findRawAddress(contactEl, getElementText(contactEl)) || getElementText(contactEl);
+        if (contactRaw) {
+          const recovered = cleanAddressString(contactRaw, countryName, companyName);
+          if (recovered && (!companyAddress || recovered.split(",").length > companyAddress.split(",").length)) {
             companyAddress = recovered;
           }
         }
@@ -1485,8 +1546,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 12. Social Media (Facebook, LinkedIn)
     const social = extractSocialMedia(doc, text);
 
-    // 13. Subpage
+    // 13. Subpage (English & Contact)
     const enUrl = findEnglishSubpage(doc, url);
+    const contactUrl = findContactSubpage(doc, url);
 
     return {
       websiteName: url,
@@ -1507,7 +1569,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       forbidden,
       urlRules,
       social,
-      enUrl
+      enUrl,
+      contactUrl
     };
   }
 
@@ -1535,6 +1598,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     detectCountry,
     extractEmails,
     extractPhoneNumber,
+    findEnglishSubpage,
+    findContactSubpage,
     COUNTRIES
   };
 })();
