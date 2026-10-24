@@ -147,7 +147,13 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
     }
 
     // 6. Dynamic Contact Page Address Check (User requirement: mostly address take from contact info check and update)
-    if (!mainData.companyAddress || mainData.companyAddress.split(",").length < 2) {
+    // Step 6: Dynamic Contact Page Check (Checks if email is missing or address is incomplete/missing)
+    const needsContactCheck = !mainData.emailId ||
+                              !mainData.companyAddress ||
+                              mainData.companyAddress.split(",").length < 3 ||
+                              !mainData.phoneNumber;
+
+    if (needsContactCheck) {
       let contactCandidates = [];
       try {
         const u = new URL(normUrl);
@@ -155,9 +161,17 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
           mainData.contactUrl,
           `${u.origin}/contact`,
           `${u.origin}/contact-us`,
-          `${u.origin}/contact.html`,
           `${u.origin}/contactus`,
-          `${u.origin}/about-us`
+          `${u.origin}/contact.html`,
+          `${u.origin}/contact.php`,
+          `${u.origin}/contact-us.html`,
+          `${u.origin}/about/contact`,
+          `${u.origin}/about-us`,
+          `${u.origin}/about.html`,
+          `${u.origin}/location`,
+          `${u.origin}/reach-us`,
+          `${u.origin}/en/contact`,
+          `${u.origin}/en/contact-us`
         ];
         contactCandidates = [...new Set(candidates.filter(Boolean))].filter(c => c !== normUrl);
       } catch {}
@@ -180,14 +194,39 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
             args: [contactUrl]
           });
 
-          if (contactData && contactData.companyAddress && contactData.companyAddress.split(",").length >= (mainData.companyAddress ? mainData.companyAddress.split(",").length : 0)) {
-            mainData.companyAddress = contactData.companyAddress;
+          if (contactData && !contactData.error) {
+            // Merge Email ID & Secondary Email ID
+            if (contactData.emailId) {
+              if (!mainData.emailId) {
+                mainData.emailId = contactData.emailId;
+                if (contactData.secondaryEmailId) mainData.secondaryEmailId = contactData.secondaryEmailId;
+              } else if (contactData.emailId !== mainData.emailId && !mainData.secondaryEmailId) {
+                mainData.secondaryEmailId = contactData.emailId;
+              }
+            }
+
+            // Merge Address (prefer more complete/detailed address from contact page)
+            if (contactData.companyAddress) {
+              const cParts = contactData.companyAddress.split(",").map(p => p.trim()).filter(Boolean);
+              const mParts = (mainData.companyAddress || "").split(",").map(p => p.trim()).filter(Boolean);
+              if (!mainData.companyAddress || cParts.length >= mParts.length || contactData.companyAddress.length > mainData.companyAddress.length) {
+                mainData.companyAddress = contactData.companyAddress;
+                const { state, city } = Extractor.detectStateAndCity(contactData.companyAddress);
+                if (["Y", "Available"].includes(state)) mainData.state = state;
+                if (["Y", "Available"].includes(city)) mainData.city = city;
+              }
+            }
+
+            // Merge Country, State, City, Phone
             if (contactData.countryName && !mainData.countryName) mainData.countryName = contactData.countryName;
-            if (["Y", "Available"].includes(contactData.state)) mainData.state = contactData.state;
-            if (["Y", "Available"].includes(contactData.city)) mainData.city = contactData.city;
+            if (["Y", "Available"].includes(contactData.state) && !["Y", "Available"].includes(mainData.state)) mainData.state = contactData.state;
+            if (["Y", "Available"].includes(contactData.city) && !["Y", "Available"].includes(mainData.city)) mainData.city = contactData.city;
             if (contactData.phoneNumber && !mainData.phoneNumber) mainData.phoneNumber = contactData.phoneNumber;
-            if (contactData.emailId && !mainData.emailId) mainData.emailId = contactData.emailId;
-            break;
+
+            // Stop early if both email and multi-segment address are now resolved
+            if (mainData.emailId && mainData.companyAddress && mainData.companyAddress.split(",").length >= 2) {
+              break;
+            }
           }
         } catch (err) {
           console.log("Contact subpage candidate note:", err);

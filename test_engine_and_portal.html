@@ -489,6 +489,21 @@
       {
         raw: "Pol. Ind. Can Roca, Z.I. Nord, C/O Global Corp",
         expected: "Polígono Industrial Can Roca, Zone Industrielle Nord, Care Of Global Corp"
+      },
+      // User Provided Test Case 1 (Hayward Industrial Park, Vigo Pl -> Vigo Place, UK Postcode WS9 8UG removed, United Kingdom removed)
+      {
+        raw: "Hayward Industrial Park, Vigo Pl, Walsall WS9 8UG, United Kingdom",
+        expected: "Hayward Industrial Park, Vigo Place, Walsall"
+      },
+      // User Provided Test Case 2 (19654 Eighth Street East house number preserved, P.O. Box -> Post Office Box, 95476 & USA removed)
+      {
+        raw: "19654 Eighth Street East, P.O. Box 1608, Sonoma, CA 95476 USA",
+        expected: "19654 Eighth Street East, Post Office Box 1608, Sonoma, CA"
+      },
+      // User Provided Test Case 3 (T2 Technology Limited leading company name removed, 123 Main Street preserved, United Kingdom removed)
+      {
+        raw: "T2 Technology Limited, 123 Main Street, London, United Kingdom",
+        expected: "123 Main Street, London"
       }
     ];
 
@@ -764,6 +779,45 @@
 
     renderTest("Test 9: 18 QC Issues & Quick Fix Checklist Automated Verification", allQcIssuesPassed, qcIssuesChecks);
 
+    // TEST 10: Headquarters Priority & User Address Examples Verification
+    const fakeHqDoc = new DOMParser().parseFromString(`
+      <html>
+        <body>
+          <div class="footer">
+            <div class="branch">
+              <p>Factory Address: Plot 99, Industrial Sector 5, Dongguan, Guangdong, China</p>
+            </div>
+            <div class="hq">
+              <p>Head Office: 500 Technology Drive, Suite 200, San Jose, California, 95110, United States</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `, "text/html");
+
+    const rawHq = Extractor.cleanAddressString(Extractor.findRawAddress(fakeHqDoc));
+    const passHqPriority = rawHq.includes("Technology Drive") && !rawHq.includes("Dongguan");
+
+    // Obfuscated Email Extraction Verification
+    const fakeEmailDoc = new DOMParser().parseFromString(`
+      <html>
+        <body>
+          <a href="mailto:sales@accurite.co.uk?subject=Inquiry">Sales Link</a>
+          <p>Or write to: info [at] accurite.co.uk</p>
+        </body>
+      </html>
+    `, "text/html");
+    const testEmails = Extractor.extractEmails(fakeEmailDoc, "Contact info [at] accurite.co.uk", "www.accurite.co.uk");
+    const passEmailResilience = testEmails.primaryEmail === "sales@accurite.co.uk" || testEmails.primaryEmail === "info@accurite.co.uk";
+
+    const passTest10 = passHqPriority && passEmailResilience;
+    renderTest("Test 10: Headquarters Priority & Email Resilience Automated Verification", passTest10, {
+      headquartersAddress: rawHq,
+      headquartersPrioritizedOverFactory: passHqPriority,
+      extractedEmails: testEmails,
+      emailResiliencePass: passEmailResilience
+    });
+
     window.__TEST_RESULTS__ = {
       passKorea,
       passGermany,
@@ -774,7 +828,8 @@
       allAddressPassed,
       passPortal,
       allQcIssuesPassed,
-      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && allAddressPassed && passPortal && allQcIssuesPassed
+      passTest10,
+      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && allAddressPassed && passPortal && allQcIssuesPassed && passTest10
     };
   </script>
 </body>
