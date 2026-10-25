@@ -116,7 +116,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { country: "Canada", regex: /\b(toronto|montreal|vancouver|calgary|edmonton|ottawa|winnipeg|quebec city|hamilton|kitchener|london ontario|victoria|halifax|ontario|quebec|british columbia|alberta|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland)\b/i },
     { country: "Australia", regex: /\b(sydney|melbourne|brisbane|perth|adelaide|gold coast|canberra|newcastle nsw|wollongong|hobart|geelong|townsville|cairns|darwin|new south wales|nsw|victoria vic|queensland qld|western australia wa|south australia sa|tasmania tas)\b/i },
     { country: "Taiwan", regex: /\b(taipei|new taipei|taichung|kaohsiung|taoyuan|tainan|hsinchu)\b/i },
-    { country: "Thailand", regex: /\b(bangkok|chiang\s*mai|chiang rai|hang dong|phuket|pattaya|khon kaen|nakhon ratchasima|nonthaburi|pathum thani|chonburi|samut prakan)\b/i }
+    { country: "Thailand", regex: /\b(bangkok|chiang\s*mai|chiang rai|hang dong|phuket|pattaya|khon kaen|nakhon ratchasima|nonthaburi|pathum thani|chonburi|samut prakan)\b/i },
+    { country: "Ireland", regex: /\b(dublin|cork|galway|limerick|waterford|drogheda|dundalk|swords|bray|navan|kilkenny|ennis|carlow|tralee|newbridge|portlaoise|balbriggan|naas|athlone|mullingar|celbridge|wexford|letterkenny|sligo|malahide|greystones|clonmel|roscommon|ballinderry|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois)\b/i }
   ];
 
   // Helper clean text
@@ -131,6 +132,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (!text || !term) return false;
     if (/[^\x00-\x7F]/.test(term)) {
       return text.toLocaleLowerCase().includes(term.toLocaleLowerCase());
+    }
+    // Prevent 2/3-letter country codes (like 'uk' or 'us') from matching domain extensions (like .co.uk or .us)
+    if (term.length <= 3) {
+      return new RegExp(`(?<![.\\w])${escapeRegExp(term)}(?![.\\w])`, "i").test(text);
     }
     return new RegExp(`\\b${escapeRegExp(term)}\\b`, "i").test(text);
   }
@@ -936,8 +941,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   }
 
   // Find Raw Multi-Line Address from Document / Footer / Text (prioritizes HQ / Registered Office over branch/factory)
-
-
   function findRawAddress(doc, fullText = "", pageUrl = "", includeSource = false) {
     if (!doc) return includeSource ? { address: "", source: "" } : "";
 
@@ -947,8 +950,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     try {
       pagePath = new URL(pageUrl).pathname;
     } catch { }
-    const isContactPage = (pagePath && /(?:contact|location|locations|reach-us|reach_us|get-in-touch|about\/contact|about-us\/contact|find-us|our-offices|오시는길|고객센터|연락처)/i.test(pagePath)) ||
-      (doc?.title && /\b(?:contact|location|locations|reach us|find us|our office|our offices|headquarters)\b/i.test(doc.title)) ||
+    const isContactPage = (pagePath && /(?:contact|location|locations|reach-us|reach_us|get-in-touch|about\/contact|about-us\/contact|about-us|aboutus|find-us|our-offices|corporate-office|headquarters|branches|kontakt|contacto|contatti|오시는길|고객센터|연락처|회사위치|お問い合わせ|アクセス|联系我们)/i.test(pagePath)) ||
+      (doc?.title && /\b(?:contact|location|locations|reach us|find us|our office|our offices|headquarters|about us)\b/i.test(doc.title)) ||
       Boolean(doc?.querySelector?.("h1, h2, h3")?.innerText && /\b(?:contact us|contact|our locations|office locations|get in touch|reach us)\b/i.test(doc.querySelector("h1, h2, h3").innerText));
 
     const normalizeAddress = value => {
@@ -956,15 +959,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .replace(/\u00a0/g, " ")
         .replace(/\s*(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "")
         .replace(/\s+(?:tel(?:ephone)?|phone|mobile|fax)\s*[:：]?\s*.*$/i, "")
-        .replace(/\(?\+\d{1,3}\)?(?:[\s().-]*\d){7,}[\s\S]*$/i, "")
+        .replace(/\(?\+\d{1,3}\)?(?:[\s().-]*\d){7,}[\s\S]*$/i, "");
 
       const legalNotice = /©|\bcopyright\b|\ball rights reserved\b|\|\s*privacy(?:\s+policy)?\b|\bprivacy\s+policy\b|\|\s*terms(?:\s+of\s+use)?\b|\bterms\s+of\s+use\b/i.exec(address);
       if (legalNotice) address = address.slice(0, legalNotice.index);
 
+      // Clean leading address labels like "Address:", "Location:", "HQ:", "Headquarters:"
+      address = address.replace(/^[\s•\-\*#|>📍🏢🏠🏬📌]*(?:our\s+)?(?:global\s+headquarters|headquarters|head\s+office|registered\s+office|corporate\s+office|corporate\s+headquarters|corporate\s+address|company\s+address|office\s+address|office\s+location|postal\s+address|physical\s+address|mailing\s+address|street\s+address|business\s+address|main\s+office|office|address|location|hq|주소|본사|사업장\s*주소|회사위치|소재지|所在地|住所|本社|営業所|地址|公司地址|总部地址|联系地址|adresse|standort|firmensitz|dirección|sede|indirizzo|siège)\s*(?:[:：\-–—]|[\r\n,]+|\s*$)\s*/i, "");
+
+      // Replace semicolons with commas to prevent premature rejection
+      address = address.replace(/;/g, ", ");
+
       return address
         .replace(/\s*\n+\s*/g, ", ")
         .replace(/[ \t]+/g, " ")
-        .replace(/\s*,\s*/g, ", ")
+        .replace(/\s*,\s*(?:,\s*)*/g, ", ")
         .replace(/^[\s,;:|]+|[\s,;:|]+$/g, "")
         .trim();
     };
@@ -990,22 +999,20 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(address);
     };
 
-        const isAddressShaped = address => {
-      // 1. Reject if it contains a domain name (e.g. "Dhtonline.Co.Uk", "example.com")
-      if (/\b(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|mil|int|ie|uk|us|ca|au|de|fr|cn|jp|in|br|ru|es|it|nl|kr|tw|hk|sg|my|vn|th|id|ph|tr|ae|sa|mx|pl|ch|se|be|bg|hr|cy|at|dk|no|fi|nz|za|eg|il|pk|bd|cz|gr)\b/i.test(address)) {
+    const isAddressShaped = address => {
+      if (!address || typeof address !== "string" || address.length < 10) return false;
+
+      // 1. Reject if candidate is ONLY a URL / domain name
+      if (/^(?:https?:\/\/|www\.)\S+$/i.test(address.trim())) {
         return false;
       }
 
-      const segments = address.split(",").map(segment => segment.trim()).filter(Boolean);
-
-      // 2. Reject if it looks like a menu/list (4+ segments, no digits, short words)
-      if (!/\d/.test(address) && segments.length >= 4 && segments.every(s => s.split(/\s+/).length <= 5)) {
-        return false;
-      }
+      const cleaned = address.replace(/;/g, ", ");
+      const segments = cleaned.split(",").map(segment => segment.trim()).filter(Boolean);
 
       const countryMatch = COUNTRIES.some(country =>
         [country.name, ...(country.aliases || [])]
-          .some(term => term && matchesCountryTerm(address, term))
+          .some(term => term && matchesCountryTerm(cleaned, term))
       );
       
       const isCountrySegment = segment =>
@@ -1018,19 +1025,36 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const regionMatch = POSTAL_REGION_NAMES_REGEX.test(nonCountryAddress);
       const cityMatch = CITY_STATE_COUNTRY_MAP.some(mapping => mapping.regex.test(nonCountryAddress));
       
-      // 👇 FIX: Removed pageUrl here so it doesn't false-positive on the .ie TLD 👇
-      const detectedCountry = detectCountry(null, address, address, "", ""); 
-      
+      const detectedCountry = detectCountry(null, cleaned, cleaned, "", ""); 
       const detectedLocation = detectStateAndCity(nonCountryAddress);
-      const streetNumberMatch =
-        /\b\d+[^\n]{0,25}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway|district|zone|block|sector|plot|suite|ste\.?|floor|fl\.?|unit|building|bldg\.?|tower|house)\b/i
-          .test(address);
-      const postalMatch = hasPostalCode(address, streetNumberMatch);
 
-      if (!streetNumberMatch) {
-        if (/\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\b/i.test(address)) return false;
-        if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2}\b/i.test(address)) return false;
-        if (/\b\d{1,2},?\s+(?:19|20)\d{2}\b/.test(address)) return false;
+      // Flexible street & building markers: matches number before marker OR marker before number (e.g. "Suite 200", "Plot 45", "PO Box 123", "No. 106-2")
+      const streetNumberMatch =
+        /\b\d+[^\n]{0,35}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway|district|zone|block|sector|plot|suite|ste\.?|floor|fl\.?|unit|building|bldg\.?|tower|house|apartment|apt\.?|flat|level|phase)\b/i.test(cleaned) ||
+        /\b(?:plot|sector|suite|ste\.?|unit|building|bldg\.?|tower|apartment|apt\.?|flat|level|floor|fl\.?|p\.?o\.?\s*box|post\s+office\s+box|no\.?)\b[^\n]{0,25}\d+/i.test(cleaned);
+
+      const postalMatch = hasPostalCode(cleaned, streetNumberMatch);
+
+      const hasKnownLocation = countryMatch || postalMatch || regionMatch || cityMatch ||
+        Boolean(detectedCountry) ||
+        detectedLocation.state !== "N" ||
+        detectedLocation.city !== "N" ||
+        streetNumberMatch ||
+        /\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway|district|zone|block|sector|plot|suite|ste\.?|floor|fl\.?|unit|building|bldg\.?|tower|house|apartment|apt\.?|flat|level|phase|county|\bco\.)\b/i.test(cleaned);
+
+      // 2. Reject if it looks like a menu/list (4+ segments, no digits, short words, NO known location signal)
+      if (!hasKnownLocation && !/\d/.test(cleaned) && segments.length >= 4 && segments.every(s => s.split(/\s+/).length <= 5)) {
+        return false;
+      }
+
+      // Rejections: timestamps and article publication dates
+      if (/\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)\b/i.test(cleaned)) return false;
+      if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2}\b/i.test(cleaned)) return false;
+      if (!streetNumberMatch && /\b\d{1,2},?\s+(?:19|20)\d{2}\b/.test(cleaned)) return false;
+
+      // Reject country lists / service location directories
+      if (countrySegmentCount >= 3 || (countrySegmentCount >= 2 && !streetNumberMatch)) {
+        return false;
       }
 
       if (!(countryMatch || postalMatch || regionMatch || cityMatch || streetNumberMatch ||
@@ -1038,29 +1062,20 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         return false;
       }
 
-      if (/:\s+[A-Z]/.test(address) || /;/.test(address)) return false;
+      // Reject only if 3+ distinct colon headers exist indicating full form metadata (e.g. Phone:... Fax:... Email:...)
+      const colonHeaderCount = (cleaned.match(/\b[A-Za-z]{2,15}\s*:\s+[A-Za-z0-9]/g) || []).length;
+      if (colonHeaderCount >= 3) return false;
 
-      if (
-        countrySegmentCount >= 3 &&
-        !postalMatch &&
-        !regionMatch &&
-        !cityMatch &&
-        !streetNumberMatch &&
-        detectedLocation.state === "N" &&
-        detectedLocation.city === "N"
-      ) {
+      // Reject only if segment is excessively long prose (> 25 words)
+      if (segments.some(segment => segment.split(/\s+/).filter(Boolean).length > 25)) {
         return false;
       }
 
-      if (segments.some(segment => segment.split(/\s+/).filter(Boolean).length > 8)) {
-        return false;
-      }
-
-      const tokens = address.toLowerCase().split(/\s+/).filter(Boolean);
-      const proseHits = (address.toLowerCase().match(
+      const tokens = cleaned.toLowerCase().split(/\s+/).filter(Boolean);
+      const proseHits = (cleaned.toLowerCase().match(
         /\b(?:for|with|using|the|that|which|this|is|are|can|will|from|into|it|its|their|our|your|we|you|they)\b/g
       ) || []).length;
-      if (tokens.length && proseHits / tokens.length > 0.3) return false;
+      if (tokens.length && proseHits / tokens.length > 0.35) return false;
 
       const locationSignal = countryMatch || postalMatch || regionMatch || cityMatch ||
         Boolean(detectedCountry) ||
@@ -1068,90 +1083,35 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         detectedLocation.city !== "N";
       return locationSignal || streetNumberMatch;
     };
-    
-    // const isAddressShaped = address => {
-    //   const countryMatch = COUNTRIES.some(country =>
-    //     [country.name, ...(country.aliases || [])]
-    //       .some(term => term && matchesCountryTerm(address, term))
-    //   );
-    //   const segments = address.split(",").map(segment => segment.trim()).filter(Boolean);
-    //   const isCountrySegment = segment =>
-    //     COUNTRIES.some(country =>
-    //       [country.name, ...(country.aliases || [])]
-    //         .some(term => term && matchesCountryTerm(segment, term))
-    //     );
-    //   const countrySegmentCount = segments.filter(isCountrySegment).length;
-    //   const nonCountryAddress = segments.filter(segment => !isCountrySegment(segment)).join(", ");
-    //   const regionMatch = POSTAL_REGION_NAMES_REGEX.test(nonCountryAddress);
-    //   const cityMatch = CITY_STATE_COUNTRY_MAP.some(mapping => mapping.regex.test(nonCountryAddress));
-    //   const detectedCountry = detectCountry(null, address, address, pageUrl, "");
-    //   const detectedLocation = detectStateAndCity(nonCountryAddress);
-    //   const streetNumberMatch =
-    //     /\b\d+[^\n]{0,25}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway|district|zone|block|sector|plot|suite|ste\.?|floor|fl\.?|unit|building|bldg\.?|tower|house)\b/i
-    //       .test(address);
-    //   const postalMatch = hasPostalCode(address, streetNumberMatch);
-
-    //   if (!streetNumberMatch) {
-    //     if (/\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\b/i.test(address)) return false;
-    //     if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2}\b/i.test(address)) return false;
-    //     if (/\b\d{1,2},?\s+(?:19|20)\d{2}\b/i.test(address)) return false;
-    //   }
-
-    //   if (!(countryMatch || postalMatch || regionMatch || cityMatch || streetNumberMatch ||
-    //       detectedCountry || detectedLocation.state !== "N" || detectedLocation.city !== "N")) {
-    //     return false;
-    //   }
-
-    //   if (/:\s+[A-Z]/.test(address) || /;/.test(address)) return false;
-
-    //   if (
-    //     countrySegmentCount >= 3 &&
-    //     !postalMatch &&
-    //     !regionMatch &&
-    //     !cityMatch &&
-    //     !streetNumberMatch &&
-    //     detectedLocation.state === "N" &&
-    //     detectedLocation.city === "N"
-    //   ) {
-    //     return false;
-    //   }
-
-    //   if (segments.some(segment => segment.split(/\s+/).filter(Boolean).length > 8)) {
-    //     return false;
-    //   }
-
-    //   const tokens = address.toLowerCase().split(/\s+/).filter(Boolean);
-    //   const proseHits = (address.toLowerCase().match(
-    //     /\b(?:for|with|using|the|that|which|this|is|are|can|will|from|into|it|its|their|our|your|we|you|they)\b/g
-    //   ) || []).length;
-    //   if (tokens.length && proseHits / tokens.length > 0.3) return false;
-
-    //   const locationSignal = countryMatch || postalMatch || regionMatch || cityMatch ||
-    //     Boolean(detectedCountry) ||
-    //     detectedLocation.state !== "N" ||
-    //     detectedLocation.city !== "N";
-    //   return locationSignal || streetNumberMatch;
-    // };
 
     const addCandidate = (value, source, priority = 0) => {
       const address = normalizeAddress(value);
 
       if (isNoise(address) || !isAddressShaped(address)) return;
-      if (isContactPage && !/^(?:contact-detail-|footer-)/.test(source)) return;
+
+      // On a contact page, ensure non-footer sources carry the contact-detail trust
+      let effectiveSource = source;
+      let effectivePriority = priority;
+      if (isContactPage) {
+        if (!effectiveSource.startsWith("footer-") && !effectiveSource.startsWith("contact-detail-")) {
+          effectiveSource = `contact-detail-${effectiveSource}`;
+        }
+        effectivePriority = Math.max(effectivePriority, 120);
+      }
 
       // Avoid duplicate candidates from nested address elements.
       const key = address.toLowerCase().replace(/[.,;]/g, "").trim();
       if (seen.has(key)) {
         const existing = candidates.find(c => c.key === key);
-        if (existing && priority > existing.priority) {
-          existing.priority = priority;
-          existing.source = source;
+        if (existing && effectivePriority > existing.priority) {
+          existing.priority = effectivePriority;
+          existing.source = effectiveSource;
         }
         return;
       }
 
       seen.add(key);
-      candidates.push({ address, source, priority, key });
+      candidates.push({ address, source: effectiveSource, priority: effectivePriority, key });
     };
 
     const isFooterElement = el => {
@@ -1285,6 +1245,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     });
 
+    const labelPattern =
+      /^(?:[\s•\-\*#|>📍🏢🏠🏬📌]+\s*)?(?:our\s+)?(global\s+headquarters|headquarters|head\s+office|hq\s+address|hq|registered\s+office|corporate\s+office|corporate\s+headquarters|corporate\s+address|company\s+address|office\s+address|office\s+location|office\s+locations|postal\s+address|physical\s+address|mailing\s+address|street\s+address|business\s+address|contact\s+address|contact\s+details|contact\s+info|contact\s+information|contact\s+us|main\s+office|visit\s+us|find\s+us|reach\s+us|where\s+to\s+find\s+us|factory\s+address|factory\s+location|factory|works|plant|warehouse|branch\s+office|branch\s+address|branch|regional\s+office|address|location|office|주소|본사|사업장\s*주소|회사위치|소재지|所在地|住所|本社|営業所|地址|公司地址|总部地址|联系地址|adresse|standort|firmensitz|dirección|sede|indirizzo|siège\s+social)(?:\s*[:：\-–—]\s*|\s*$)/i;
+
     // 2. Read semantic address elements and common address containers.
     const selectors = [
       "address",
@@ -1304,12 +1267,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       "[class*='address']",
       "[id*='address']",
       "[class*='head-office']",
-      "[class*='headquarter']"
+      "[class*='headquarter']",
+      "[class*='contact-info']",
+      "[class*='contact-detail']",
+      "[class*='contact-card']",
+      "[class*='contact-box']",
+      "[class*='location-info']",
+      "[class*='office-location']",
+      "[data-testid*='address']",
+      "[data-testid*='location']",
+      "[data-testid*='contact']"
     ];
 
     doc.querySelectorAll(selectors.join(",")).forEach(el => {
       const isFooter = isFooterElement(el);
-      const isContactDetail = isContactDetailElement(el);
+      const isContactDetail = isContactDetailElement(el) || (isContactPage && !isFooter);
       const isContactHeader = !isContactDetail && !isFooter && isContactHeaderElement(el);
       const contactHeaderSource = isContactPage ? "contact-detail-header" : "contact-header";
       const contactHeaderPriority = isContactPage ? 130 : 55;
@@ -1357,23 +1329,34 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         text = el.innerText || el.textContent || "";
       }
 
+      const firstLine = text.split(/[\r\n]+/)[0]?.trim() || "";
+      const hasAddressLabelHeading = Boolean(
+        el.querySelector?.("h1, h2, h3, h4, h5, h6, strong, b, dt, legend") &&
+        labelPattern.test(el.querySelector("h1, h2, h3, h4, h5, h6, strong, b, dt, legend").textContent || "")
+      ) || labelPattern.test(firstLine);
+
+      const effectiveElementSource = hasAddressLabelHeading
+        ? (isContactDetail ? "contact-detail-labelled" : (isFooter ? "footer-labelled" : (isContactHeader ? `${contactHeaderSource}-labelled` : "page-labelled")))
+        : (isContactDetail ? "contact-detail-element" : (isFooter ? "footer-element" : (isContactHeader ? `${contactHeaderSource}-element` : "page-element")));
+
+      const effectiveElementPriority = hasAddressLabelHeading
+        ? (isContactDetail ? (isHq ? 160 : 145) : (isFooter ? 70 : (isContactHeader ? contactHeaderPriority : (isHq ? 120 : 35))))
+        : (isContactDetail ? (isHq ? 150 : 135) : (isFooter ? 60 : (isContactHeader ? contactHeaderPriority : (isHq ? 100 : 25))));
+
       addCandidate(
         text,
-        isContactDetail ? "contact-detail-element" : (isFooter ? "footer-element" : (isContactHeader ? `${contactHeaderSource}-element` : "page-element")),
-        isContactDetail ? (isHq ? 150 : 135) : (isFooter ? 60 : (isContactHeader ? contactHeaderPriority : (isHq ? 100 : 25)))
+        effectiveElementSource,
+        effectiveElementPriority
       );
     });
 
     // 3. Look for labelled addresses in contact/footer sections.
-    let sectionQuery = "header, #header, .header, .site-header, .top-bar, footer, #footer, .footer, .contact-info, .contact-details, #contact, #contact-us, .contact-us, [class*='contact']";
+    let sectionQuery = "header, #header, .header, .site-header, .top-bar, footer, #footer, .footer, footer section, #footer section, .footer section, footer .widget, #footer .widget, .footer .widget, footer [class*='widget'], #footer [class*='widget'], .footer-widget, .contact-info, .contact-details, #contact, #contact-us, .contact-us, [class*='contact']";
     if (isContactPage) {
       sectionQuery += ", main, #main, .main, article, #content, .content, .container, section, .office, .locations, [class*='location'], [class*='branch'], [id*='location']";
     }
-    sectionQuery += ", table, tbody, tr, td";
+    sectionQuery += ", table, tbody, tr, td, dl, dt, dd";
     const sections = doc.querySelectorAll(sectionQuery);
-
-    const labelPattern =
-      /^(?:our\s+)?(global\s+headquarters|headquarters|head\s+office|hq\s+address|hq|registered\s+office|corporate\s+office|company\s+address|office\s+address|factory\s+address|factory|works|plant|warehouse|branch\s+office|branch|regional\s+office|address|location)(?:\s*[:：-]\s*|\s*$)/i;
 
     const stopLinePattern =
       /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|contact|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b/i;
@@ -2060,16 +2043,20 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 2. Remove leading address labels.
     const leadingLabel =
-      /^(?:(?:office|corporate|registered|factory|head|postal|physical|mailing|our|company)\s+)?(?:address|location|headquarters|hq|add|addr|works|plant|site|visit\s+us|find\s+us|contact\s+(?:info|details)?|주소|본사|地址|所在地)\s*[:,.\-–—]\s*/i;
+      /^(?:[\s•\-\*#|>📍🏢🏠🏬📌]+\s*)?(?:(?:office|corporate|registered|factory|head|postal|physical|mailing|our|company|main|global|business|street)\s+)?(?:address|location|headquarters|hq|add|addr|works|plant|site|visit\s+us|find\s+us|reach\s+us|where\s+to\s+find\s+us|contact\s+(?:info|details|us)?|office|주소|본사|사업장\s*주소|회사위치|소재지|所在地|住所|本社|営業所|地址|公司地址|总部地址|联系地址|adresse|standort|firmensitz|dirección|sede|indirizzo|siège)\s*[:,.\-–—]\s*/i;
 
     const officeLabel =
-      /^(?:head\s+office|registered\s+office|corporate\s+office|factory\s+address|works|location)\s*[:.\-–—]\s*/i;
+      /^(?:head\s+office|registered\s+office|corporate\s+office|corporate\s+headquarters|factory\s+address|branch\s+office|main\s+office|works|location|office)\s*[:.\-–—]\s*/i;
+
+    // Strip noise preamble if an address label appears in the middle (e.g. "Certification ... Address ADS Doors, ...")
+    const embeddedAddressLabel = /\b(?:approved\s+installer|certification|installers?)\b[\s\S]*?\b(?:our\s+)?address\s*[:：\-–—]?\s+/i;
+    addr = addr.replace(embeddedAddressLabel, "");
 
     addr = addr.replace(leadingLabel, "").replace(officeLabel, "");
 
     // 3. Remove contact details without removing the address before them.
     const contactStart =
-      /\b(?:tel(?:ephone)?|phone|mobile|cell|fax|email|e-mail|website|url|cin|gstin|gst|tax\s+id|vat|ein|abn|acn|copyright|all\s+rights\s+reserved)\s*[:：\-–—]/i;
+      /\b(?:tel(?:ephone)?|phone|mobile|cell|fax|email|e-mail|website|url|cin|gstin|gst|tax\s+id|vat|ein|abn|acn|copyright|all\s+rights\s+reserved|ph|t|p)\s*[:：\-–—]|\b(?:tel(?:ephone)?|phone|mobile|cell|fax)\s+[+(0-9]|\bcontact\b\s*$/i;
 
     const contactMatch = contactStart.exec(addr);
     if (contactMatch && contactMatch.index >= 10) {
@@ -2077,6 +2064,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
 
     addr = addr
+      .replace(/\s*[,;.-]?\s*\bcontact\b\s*$/i, "")
       .replace(/\s*\|\s*(?:tel|phone|fax|email|web)\b.*$/i, "")
       .replace(/\s+https?:\/\/\S+/gi, "")
       .replace(/\s+www\.\S+/gi, "")
@@ -2273,12 +2261,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // State indicators in address
     if (state === "N" && (POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
         POSTAL_REGION_US_CODES_REGEX.test(address || "") ||
-        /(?:county|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland)/i.test(addrLower))) {
+        /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin)/i.test(addrLower))) {
       state = "Y";
     }
 
     // City indicators in address
-    if (city === "N" && /(?:town|district|municipality|city|-si\b|-gu\b|troy|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|nof hagalil|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei)/i.test(addrLower)) {
+    if (city === "N" && (/(?:town|district|municipality|city|-si\b|-gu\b|troy|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|nof hagalil|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei|ballinderry|four mile house)/i.test(addrLower) ||
+        CITY_STATE_COUNTRY_MAP.some(m => m.regex.test(addrLower)))) {
       city = "Y";
     }
 
@@ -2660,18 +2649,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let companyAddress = cleanAddressString(rawAddress, countryName, companyName);
     if (!companyAddress || companyAddress.split(",").length < 2) {
       // Dynamic fallback: Retry with dedicated contact elements first
-      const contactEl = doc?.querySelector?.("address, [itemprop='address'], .contact-address, .company-address, .office-address, .contact-info, .contact-details, [class*='contact'], [id*='contact'], [class*='location']");
-      if (contactEl) {
-        const fallbackAddress = findRawAddress(contactEl, getElementText(contactEl), url, true);
-        const contactRaw = fallbackAddress.address || getElementText(contactEl);
-        if (contactRaw) {
-          const recovered = cleanAddressString(contactRaw, countryName, companyName);
-          if (recovered && (!companyAddress || recovered.split(",").length > companyAddress.split(",").length)) {
-            companyAddress = recovered;
-            addressSource = fallbackAddress.source ||
-              (contactEl.closest?.("footer, #footer, .footer, [class*='footer'], [id*='footer']")
-                ? "footer-fallback"
-                : "contact-detail-fallback");
+      const contactEls = doc?.querySelectorAll?.("address, [itemprop='address'], .contact-address, .company-address, .office-address, .contact-info, .contact-details, [class*='contact'], [id*='contact'], [class*='location'], [class*='address']");
+      if (contactEls && contactEls.length) {
+        for (const contactEl of contactEls) {
+          const fallbackAddress = findRawAddress(contactEl, getElementText(contactEl), url, true);
+          const contactRaw = fallbackAddress.address || (contactEl.tagName === "ADDRESS" ? getElementText(contactEl) : "");
+          if (contactRaw) {
+            const recovered = cleanAddressString(contactRaw, countryName, companyName);
+            if (recovered && recovered.length >= 10 && (!companyAddress || recovered.split(",").length > companyAddress.split(",").length)) {
+              companyAddress = recovered;
+              addressSource = fallbackAddress.source ||
+                (contactEl.closest?.("footer, #footer, .footer, [class*='footer'], [id*='footer']")
+                  ? "footer-fallback"
+                  : "contact-detail-fallback");
+              if (companyAddress.split(",").length >= 2) break;
+            }
           }
         }
       }

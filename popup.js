@@ -50,12 +50,13 @@ function normalizeUrl(raw) {
 }
 
 function contactAddressSourcePriority(source) {
-  const value = String(source || "");
-  if (value.includes("schema")) return 5;
-  if (value.includes("labelled")) return 4;
-  if (value.includes("element")) return 3;
-  if (value.includes("semantic")) return 2;
-  if (value.includes("inline")) return 1;
+  const value = String(source || "").toLowerCase();
+  if (value.includes("schema")) return 6;
+  if (value.includes("labelled")) return 5;
+  if (value.includes("element")) return 4;
+  if (value.includes("semantic")) return 3;
+  if (value.includes("inline")) return 2;
+  if (value.includes("fallback") || value.includes("fulltext")) return 1;
   return 0;
 }
 
@@ -359,21 +360,35 @@ async function crawlAndExtractDirect(targetUrl) {
         const contactData = await extractFetchedPage(tab.id, contactUrl, isDiscoveredContactUrl);
 
         if (contactData && !contactData.error) {
-          const hasContactDetailAddress = String(contactData.addressSource || "").startsWith("contact-detail-");
-          const hasFooterAddress = String(contactData.addressSource || "").startsWith("footer-");
-          const currentHasContactDetailAddress = String(mainData.addressSource || "").startsWith("contact-detail-");
-          const takeFooterFallback = hasFooterAddress &&
-            !currentHasContactDetailAddress &&
-            !footerAddressTakenFromContactPage;
+          const contactAddr = contactData.companyAddress || "";
+          const mainAddr = mainData.companyAddress || "";
           const contactPriority = contactAddressSourcePriority(contactData.addressSource);
-          const takeContactDetail = hasContactDetailAddress && contactPriority > bestContactAddressPriority;
+          const mainPriority = contactAddressSourcePriority(mainData.addressSource);
+          const isMainFooter = String(mainData.addressSource || "").startsWith("footer-");
+          const isContactFooter = String(contactData.addressSource || "").startsWith("footer-");
 
-          if (contactData.companyAddress && contactData.companyAddress.length >= 10 &&
-              (takeContactDetail || takeFooterFallback)) {
+          let shouldTakeContactAddress = false;
+          if (contactAddr.length >= 10) {
+            if (!mainAddr || mainAddr.length < 10) {
+              shouldTakeContactAddress = true;
+            } else if (isMainFooter && !isContactFooter) {
+              shouldTakeContactAddress = true;
+            } else if (isContactFooter && !isMainFooter) {
+              shouldTakeContactAddress = false;
+            } else if (contactPriority > mainPriority) {
+              shouldTakeContactAddress = true;
+            } else if (contactPriority >= mainPriority && contactPriority > bestContactAddressPriority) {
+              shouldTakeContactAddress = true;
+            } else if (contactPriority === mainPriority && contactAddr.split(",").length > mainAddr.split(",").length) {
+              shouldTakeContactAddress = true;
+            }
+          }
+
+          if (shouldTakeContactAddress) {
             mainData.companyAddress = contactData.companyAddress;
             mainData.addressSource = contactData.addressSource;
-            if (takeContactDetail) bestContactAddressPriority = contactPriority;
-            if (takeFooterFallback) footerAddressTakenFromContactPage = true;
+            bestContactAddressPriority = Math.max(bestContactAddressPriority, contactPriority);
+            if (isContactFooter) footerAddressTakenFromContactPage = true;
 
             // Re-validate state & city from updated contact page address
             const { state, city } = Extractor.detectStateAndCity(contactData.companyAddress);

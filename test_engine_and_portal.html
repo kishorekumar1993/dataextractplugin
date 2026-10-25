@@ -1455,6 +1455,108 @@
       copyrightCleanupPass: passCopyrightCleanup
     });
 
+    // TEST 12: Comprehensive Address Possibilities Verification
+    // 1. Table with th/td
+    const tableHtml = `
+      <!DOCTYPE html><html><head><title>Company Info</title></head>
+      <body>
+        <table>
+          <tr><th>Company Name</th><td>Springfield Corp</td></tr>
+          <tr><th>Address:</th><td>742 Evergreen Terrace, Suite 10, Springfield, Oregon 97477</td></tr>
+        </table>
+      </body></html>
+    `;
+    const resTable = Extractor.extractFromHtml(tableHtml, "https://www.springfield.example/about");
+    const passTable = resTable.companyAddress.includes("742 Evergreen Terrace") &&
+      resTable.companyAddress.includes("Springfield") &&
+      resTable.companyAddress.includes("Oregon");
+
+    // 2. Definition List <dl><dt><dd>
+    const dlHtml = `
+      <!DOCTYPE html><html><head><title>Apex Innovations</title></head>
+      <body>
+        <dl>
+          <dt>Postal Address</dt>
+          <dd>100 Innovation Way, Suite 300, Austin, Texas 78759</dd>
+        </dl>
+      </body></html>
+    `;
+    const resDl = Extractor.extractFromHtml(dlHtml, "https://www.apexinno.example/contact-us");
+    const passDl = resDl.companyAddress.includes("Innovation Way") &&
+      resDl.companyAddress.includes("Austin") &&
+      resDl.companyAddress.includes("Texas");
+
+    // 3. Emojis and bullets
+    const emojiHtml = `
+      <!DOCTYPE html><html><head><title>Stanford Labs</title></head>
+      <body>
+        <p>📍 Address: 450 Serra Mall, Building 20, Stanford, California 94305</p>
+      </body></html>
+    `;
+    const resEmoji = Extractor.extractFromHtml(emojiHtml, "https://www.stanfordlabs.example/");
+    const passEmoji = resEmoji.companyAddress.includes("450 Serra Mall") &&
+      resEmoji.companyAddress.includes("Stanford") &&
+      !resEmoji.companyAddress.includes("📍");
+
+    // 4. Semicolons
+    const semicolonHtml = `
+      <!DOCTYPE html><html><head><title>Empire Tech</title></head>
+      <body>
+        <p>Location: Unit 4; 500 Park Avenue; New York, NY 10022</p>
+      </body></html>
+    `;
+    const resSemicolon = Extractor.extractFromHtml(semicolonHtml, "https://www.empiretech.example/contact");
+    const passSemicolon = resSemicolon.companyAddress.includes("500 Park Avenue") &&
+      resSemicolon.companyAddress.includes("New York") &&
+      !resSemicolon.companyAddress.includes(";");
+
+    // 5. Contact page with unclassed container
+    const contactNoClassHtml = `
+      <!DOCTYPE html><html><head><title>Contact Us - Ocean Drive Inc</title></head>
+      <body>
+        <main>
+          <div class="row">
+            <div class="col-12">
+              <h2>Visit Us</h2>
+              <p>800 Ocean Drive, Suite 200, Miami, Florida 33139</p>
+            </div>
+          </div>
+        </main>
+      </body></html>
+    `;
+    const resContactNoClass = Extractor.extractFromHtml(contactNoClassHtml, "https://www.oceandrive.example/contact-us");
+    const passContactNoClass = resContactNoClass.companyAddress.includes("800 Ocean Drive") &&
+      resContactNoClass.companyAddress.includes("Miami") &&
+      resContactNoClass.companyAddress.includes("Florida") &&
+      resContactNoClass.addressSource.startsWith("contact-detail-");
+
+    // 6. Plot / Sector address format
+    const plotHtml = `
+      <!DOCTYPE html><html><head><title>CyberTech Solutions</title></head>
+      <body>
+        <p>Corporate Office: Plot No. 45, Sector 18, Industrial Area, Electronic City, Bangalore 560100</p>
+      </body></html>
+    `;
+    const resPlot = Extractor.extractFromHtml(plotHtml, "https://www.cybertech.example/about-us");
+    const passPlot = resPlot.companyAddress.includes("Plot No. 45") || resPlot.companyAddress.includes("Sector 18");
+
+    const passTest12 = passTable && passDl && passEmoji && passSemicolon && passContactNoClass && passPlot;
+    renderTest("Test 12: Comprehensive Address Possibilities (Tables, DL, Emojis, Semicolons, Contact Containers)", passTest12, {
+      tableExtraction: resTable.companyAddress,
+      tablePass: passTable,
+      definitionListExtraction: resDl.companyAddress,
+      dlPass: passDl,
+      emojiExtraction: resEmoji.companyAddress,
+      emojiPass: passEmoji,
+      semicolonExtraction: resSemicolon.companyAddress,
+      semicolonPass: passSemicolon,
+      contactNoClassExtraction: resContactNoClass.companyAddress,
+      contactNoClassSource: resContactNoClass.addressSource,
+      contactNoClassPass: passContactNoClass,
+      plotExtraction: resPlot.companyAddress,
+      plotPass: passPlot
+    });
+
     window.__TEST_RESULTS__ = {
       passKorea,
       passGermany,
@@ -1467,7 +1569,8 @@
       allQcIssuesPassed,
       passTest10,
       passTest11,
-      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && allAddressPassed && passPortal && allQcIssuesPassed && passTest10 && passTest11
+      passTest12,
+      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && allAddressPassed && passPortal && allQcIssuesPassed && passTest10 && passTest11 && passTest12
     };
   </script>
 </body>
