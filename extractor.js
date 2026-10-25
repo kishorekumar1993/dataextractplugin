@@ -490,7 +490,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const corpSuffix = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|srl|spa|kft|zrt|nyrt|s\.r\.o\.|a\.s\.|d\.o\.o\.|pvt\.?\s*ltd\.?|private\s+limited|pte\.?\s*ltd\.?|pty\.?\s*ltd\.?|proprietary\s+limited|sdn\.?\s*bhd\.?|berhad|bhd\.?|tbk\.?|wll|pjsc|fze|fzco|fz-llc)\b/i;
 
     // Helper: checks if candidate string contains a real corporate suffix
-    const hasCorpSuffix = str => Boolean(str && corpSuffix.test(str));
+    const hasCorpSuffix = str => {
+      if (!str || /^\s*(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4}\s*$/i.test(str)) {
+        return false;
+      }
+      return corpSuffix.test(str);
+    };
 
     // Helper to validate and clean a company name candidate
     function sanitizeCandidate(str) {
@@ -649,12 +654,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 5. Title tag segment with corporate suffix
     if (!legalName && doc?.title) {
-      const titleParts = doc.title.split(/[|\-–—:·•]/).map(s => s.trim()).filter(Boolean);
+      const titleParts = doc.title.split(/\s*\|\s*|\s+[–—-]\s+|:\s*|[·•]/).map(s => s.trim()).filter(Boolean);
       const corpPart = titleParts.find(p => hasCorpSuffix(p) && p.length >= 2 && p.length <= 80);
       if (corpPart) {
         legalName = sanitizeCandidate(corpPart);
-      } else if (titleParts[0] && !brandName) {
-        brandName = sanitizeCandidate(titleParts[0]);
+      } else if (!brandName) {
+        const genericTitlePart = /^(?:home(?:page)?|welcome|contact(?:\s+us)?|about(?:\s+us)?|privacy(?:\s+policy)?|terms(?:\s+(?:and|&)\s+conditions)?|products?|services?|shop|store|furniture|blog|news|login|search)(?:\s+page)?$/i;
+        brandName = [...titleParts].reverse().find(part =>
+          part.length >= 2 && part.length <= 80 && !genericTitlePart.test(part)
+        ) || "";
       }
     }
 
@@ -1286,9 +1294,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const isContactHeader = !isContactDetail && !isFooter && isContactHeaderElement(el);
       const contactHeaderSource = isContactPage ? "contact-detail-header" : "contact-header";
       const contactHeaderPriority = isContactPage ? 130 : 55;
+      const elementText = getElementText(el);
       const isHq = el.matches(
         ".head-office, .headquarters, " +
         "[class*='head-office'], [class*='headquarter'], #head-office"
+      ) || (
+        elementText.length <= 500 &&
+        /\b(?:head office|headquarters|registered office|corporate office)\b/i.test(elementText)
       );
 
       // Prefer explicit child fields when available.
@@ -1383,6 +1395,53 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return (hasNumber && (commaSegments.length >= 2 || hasStreetMarker)) || (commaSegments.length >= 3 && hasStreetMarker);
     };
 
+    const officeMarkers = doc.querySelectorAll(
+      "h1, h2, h3, h4, h5, h6, strong, b, [class*='head-office'], [class*='headquarter']"
+    );
+    for (const marker of officeMarkers) {
+      if (!/\b(?:head office|headquarters|registered office|corporate office)\b/i.test(marker.textContent || "")) {
+        continue;
+      }
+
+      let ancestor = marker.parentElement;
+      for (let depth = 0; ancestor && ancestor !== doc.body && depth < 5; depth++, ancestor = ancestor.parentElement) {
+        const officeText = getElementText(ancestor);
+        if (officeText.length > 650) break;
+        if (
+          !/\b(?:head office|headquarters|registered office|corporate office)\b/i.test(officeText) ||
+          !/\baddress\b/i.test(officeText)
+        ) {
+          continue;
+        }
+
+        const officeLines = officeText.split(/[\r\n]+/).map(line => line.trim()).filter(Boolean);
+        const addressIndex = officeLines.findIndex(line =>
+          /^(?:our\s+)?address\s*[:：-]?\s*$/i.test(line)
+        );
+        if (addressIndex < 0) continue;
+
+        const addressParts = [];
+        for (let i = addressIndex + 1; i < officeLines.length && i < addressIndex + 7; i++) {
+          const line = officeLines[i];
+          if (labelPattern.test(line) || stopLinePattern.test(line) || /@|https?:\/\/|www\./i.test(line)) {
+            break;
+          }
+          addressParts.push(line);
+        }
+
+        const officeAddress = addressParts.join(", ");
+        if (officeAddress) {
+          addCandidate(
+            officeAddress,
+            isContactPage ? "contact-detail-labelled" : (isFooterElement(ancestor) ? "footer-labelled" : "page-labelled"),
+            250
+          );
+          break;
+        }
+      }
+      break;
+    }
+
     for (const section of sections) {
       const isFooter = isFooterElement(section);
       const isContactDetail = isContactDetailElement(section);
@@ -1410,6 +1469,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
         if (labelMatch) {
           const label = labelMatch[1].toLowerCase();
+          const nearbyContext = lines.slice(Math.max(0, i - 12), i).join(" ");
+          const isHeadOfficeContext =
+            /\b(?:head office|headquarters|registered office|corporate office)\b/i.test(nearbyContext);
+          const isShowroomContext = /\b(?:showroom|stockist)\b/i.test(nearbyContext);
 
           let priority = isTrustedContactDetail ? 145 : (isFooter ? 70 : (isContactHeader ? contactHeaderPriority : 30));
 
@@ -1422,6 +1485,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           } else if (/factory|works|plant|warehouse|branch|regional/.test(label)) {
             priority = isFooter ? 50 : 55;
           }
+
+          if (isHeadOfficeContext) priority += 120;
+          else if (isShowroomContext) priority -= 15;
 
           const collected = [
             lines[i].replace(labelPattern, "").trim()
@@ -2679,6 +2745,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 5. Extract Country (Rule 5 - dynamic, never hardcoded!)
     // Pass raw text as phoneRaw so dial codes (+82, +49 etc.) in "Tel: +82-..." can identify country
     let countryName = detectCountry(doc, rawAddress, text, url, text);
+    const addressRegionCountry = inferCountryFromAddressRegion(rawAddress);
     let countryObj = COUNTRIES.find(c => c.name.toLowerCase() === countryName.toLowerCase());
 
     // 6. Clean Company Address with verified country and company name (Rule 6)
@@ -2708,7 +2775,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // The verified physical address location ALWAYS takes priority over phone/body guesses
     if (companyAddress) {
       for (const mapping of CITY_STATE_COUNTRY_MAP) {
-        if (mapping.regex.test(companyAddress)) {
+        if (mapping.regex.test(companyAddress) &&
+            (addressRegionCountry
+              ? mapping.country === addressRegionCountry
+              : (!countryName || mapping.country === countryName))) {
           countryName = mapping.country;
           countryObj = COUNTRIES.find(c => c.name.toLowerCase() === countryName.toLowerCase());
           break;
@@ -2747,7 +2817,31 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const emails = extractEmails(doc, text, siteHostname);
 
     // 10. Phone Number (Rule 11)
-    const phoneNumber = extractPhoneNumber(text, countryObj);
+    let headOfficeText = "";
+    if (doc) {
+      const officeMarkers = doc.querySelectorAll("h1, h2, h3, h4, h5, h6, strong, b, [class*='head-office'], [class*='headquarter']");
+      for (const marker of officeMarkers) {
+        if (!/\b(?:head office|headquarters|registered office|corporate office)\b/i.test(marker.textContent || "")) {
+          continue;
+        }
+        let ancestor = marker;
+        for (let depth = 0; ancestor && ancestor !== doc.body && depth < 5; depth++, ancestor = ancestor.parentElement) {
+          const candidateText = getElementText(ancestor);
+          if (
+            candidateText.length <= 650 &&
+            /\baddress\b/i.test(candidateText) &&
+            /\b(?:call|phone|telephone|tel)\b/i.test(candidateText) &&
+            /\d{7,}/.test(candidateText.replace(/\D/g, ""))
+          ) {
+            headOfficeText = candidateText;
+            break;
+          }
+        }
+        if (headOfficeText) break;
+      }
+    }
+    const phoneNumber = (headOfficeText && extractPhoneNumber(headOfficeText, countryObj)) ||
+      extractPhoneNumber(text, countryObj);
 
     // 11. Products, Images, Descriptions (Rules 12, 13, 14)
     const counts = extractProductCounts(doc, text);
