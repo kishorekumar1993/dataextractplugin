@@ -1228,7 +1228,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .replace(/\u00a0/g, " ")
         .replace(/\s+(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "")
         .replace(/\s+(?:tel(?:ephone)?|phone|mobile|fax)\s*[:：]?\s*.*$/i, "")
-        .replace(/\(?\+\d{1,3}\)?(?:[\s().-]*\d){7,}[\s\S]*$/i, "");
+        .replace(/\(?\+\d{1,3}\)?(?:[\s().-]*\d){7,}[\s\S]*$/i, "")
+        .replace(/(?:[,;|]\s*|\s+)(?:\+?1[\s().-]*)?\(?\d{3}\)?[\s.-]+\d{3}[\s.-]+\d{4}\s*$/i, "");
 
       const legalNotice = /©|\bcopyright\b|\ball rights reserved\b|\|\s*privacy(?:\s+policy)?\b|\bprivacy\s+policy\b|\|\s*terms(?:\s+of\s+use)?\b|\bterms\s+of\s+use\b/i.exec(address);
       const webMaterialNotice = /\bthis\s+web\s*site\s+contains\s+material\b|\bwe\s+provide\s+some\s+images\b|\bour\s+logotype\b|\byou\s+may\s+(?:not\s+)?(?:print|copy|mirror|modify|reproduce|rebroadcast)\b|\byou\s+may\s+print\s+off\s+copies\b/i.exec(address);
@@ -2313,6 +2314,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // Road Extension first before Road or Extension alone
     addr = addr.replace(/\bRd\b\.?\s*Extn?\b\.?/gi, "Road Extension");
     addr = addr.replace(/\bExtn\b\.?/gi, "Extension");
+    addr = addr.replace(/\bExt\b\.?/gi, "Extension");
     addr = addr.replace(/\bOld\s+Rd\b\.?/gi, "Old Road");
     addr = addr.replace(/\bNew\s+Rd\b\.?/gi, "New Road");
     addr = addr.replace(/\bStn\b\.?\s*Rd\b\.?/gi, "Station Road");
@@ -2427,6 +2429,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .replace(/\u00a0/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+    // Remove a trailing US phone number accidentally joined to the address.
+    // Phone extraction uses the page text separately, so it remains available.
+    addr = addr.replace(/(?:[,;|]\s*|\s+)(?:\+?1[\s().-]*)?\(?\d{3}\)?[\s.-]+\d{3}[\s.-]+\d{4}\s*$/i, "").trim();
 
     const legalNotice = /©|\bcopyright\b|\ball rights reserved\b|\|\s*privacy(?:\s+policy)?\b|\bprivacy\s+policy\b|\|\s*terms(?:\s+of\s+use)?\b|\bterms\s+of\s+use\b/i.exec(addr);
     const webMaterialNotice = /\bthis\s+web\s*site\s+contains\s+material\b|\bwe\s+provide\s+some\s+images\b|\bour\s+logotype\b|\byou\s+may\s+(?:not\s+)?(?:print|copy|mirror|modify|reproduce|rebroadcast)\b|\byou\s+may\s+print\s+off\s+copies\b/i.exec(addr);
@@ -2815,6 +2820,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       ) + trailing;
     }).join(" ");
 
+    // Final safeguard for compressed US state+ZIP tokens (e.g. NY10018).
+    // Run after title-casing so it also works when country detection missed.
+    const finalUsStateCodes = Object.keys(POSTAL_REGION_ABBREVIATIONS["United States Of America"]);
+    const finalStateZipPattern = new RegExp(`\\b(${finalUsStateCodes.join("|")})\\s*\\d{5}(?:-\\d{4})?\\b`, "gi");
+    addr = addr.replace(finalStateZipPattern, (_match, stateCode) => stateCode.toUpperCase());
+
     return addr;
   }
 
@@ -2865,6 +2876,20 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const hasUkCountyOrNation = UK_COUNTIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
       /\b(?:england|scotland|wales|northern ireland)\b/i.test(addrLower);
     const hasUkCity = UK_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const usAddressSegments = String(address || "").split(",").map(segment => segment.trim());
+    const usStateNames = Object.values(POSTAL_REGION_ABBREVIATIONS["United States Of America"])
+      .map(name => name.toLowerCase());
+    const usStateCodes = Object.keys(POSTAL_REGION_ABBREVIATIONS["United States Of America"])
+      .map(code => code.toLowerCase());
+    const usStateSegmentIndex = usAddressSegments.findIndex(segment =>
+      usStateNames.includes(segment.toLowerCase()) || usStateCodes.includes(segment.toLowerCase())
+    );
+    const precedingUsLocality = usStateSegmentIndex > 0
+      ? usAddressSegments[usStateSegmentIndex - 1]
+      : "";
+    const hasUsCityBeforeState = Boolean(precedingUsLocality) &&
+      /^[\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*){0,3}$/u.test(precedingUsLocality) &&
+      !/\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|drive|dr\.?|boulevard|blvd\.?|court|ct\.?|highway|hwy\.?|parkway|pkwy\.?|square|sq\.?|floor|suite|unit)\b/i.test(precedingUsLocality);
     const hasUaeEmirate = UAE_EMIRATES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasUaeCity = UAE_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasSwedenCounty = SWEDEN_COUNTY_REGEX.test(address || "");
@@ -2898,6 +2923,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
     if (hasNewZealandCity) city = "Y";
     if (hasUaeCity) city = "Y";
+    if (hasUsCityBeforeState) city = "Y";
 
     if (hasChinaMunicipality || hasChinaCity) city = "Y";
 
