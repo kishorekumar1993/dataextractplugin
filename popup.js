@@ -139,36 +139,75 @@ function waitForTabComplete(tabId, timeoutMs = 25000) {
   });
 }
 
+async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs = 25000) {
+  let tab = await chrome.tabs.get(tabId);
+  if (!String(tab.url || "").startsWith("chrome-error://")) return tab;
+
+  const fallbackUrl = new URL(requestedUrl);
+  if (fallbackUrl.protocol !== "https:") {
+    throw new Error("The website could not be loaded in the browser.");
+  }
+  fallbackUrl.protocol = "http:";
+  await chrome.tabs.update(tabId, { url: fallbackUrl.href });
+  await waitForTabComplete(tabId, timeoutMs);
+  tab = await chrome.tabs.get(tabId);
+  if (!/^https?:\/\//i.test(tab.url || "")) {
+    throw new Error("The website could not be loaded over HTTPS or HTTP.");
+  }
+  return tab;
+}
+
 async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   let response;
-  let html;
+  let html = "";
+
   try {
     response = await fetch(pageUrl, { credentials: "omit", signal: controller.signal });
-    if (!response.ok) return null;
-    html = await response.text();
+    if (response.ok) {
+      html = await response.text();
+    }
+  } catch (e) {
+    // Ignore fetch errors (like CORS or blocked requests) and proceed to tab fallback
   } finally {
     clearTimeout(timer);
   }
-  if (html.length < 200) return null;
 
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: (markup, url) => {
-      if (typeof Extractor === "undefined") throw new Error("Extractor engine unavailable in target tab.");
-      const doc = new DOMParser().parseFromString(markup, "text/html");
-      return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
-    },
-    args: [html, response.url || pageUrl]
-  });
+  let result = null;
 
-  if (result?.companyAddress || !renderIfAddressMissing) return result || null;
+  // Only process raw HTML if the fetch was successful
+  if (html.length >= 200) {
+    try {
+      const [{ result: extracted }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (markup, url) => {
+          if (typeof Extractor === "undefined") throw new Error("Extractor engine unavailable in target tab.");
+          const doc = new DOMParser().parseFromString(markup, "text/html");
+          return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
+        },
+        args: [html, response?.url || pageUrl]
+      });
+      result = extracted;
+    } catch (e) {
+      result = null;
+    }
+  }
+
+  // Force a rendered tab fallback if ANY critical field is missing OR if fetch failed
+  if ((result?.companyAddress && result?.countryName && result?.emailId && result?.state !== "N") || !renderIfAddressMissing) {
+    return result;
+  }
 
   let renderedTab;
   try {
-    renderedTab = await chrome.tabs.create({ url: response.url || pageUrl, active: false });
+    renderedTab = await chrome.tabs.create({ url: response?.url || pageUrl, active: false });
     await waitForTabComplete(renderedTab.id, 15000);
+    renderedTab = await recoverFromBrowserError(
+      renderedTab.id,
+      response?.url || pageUrl,
+      15000
+    );
 
     const [{ result: extractorLoaded }] = await chrome.scripting.executeScript({
       target: { tabId: renderedTab.id },
@@ -186,8 +225,8 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
       func: async (url) => {
         const extract = () => Extractor.extractFromDocument(
           document,
-          Extractor.getElementText(document.body),
-          url
+          Extractor.getElementText(document.body || document.documentElement),
+          window.location.href || url
         );
         let data = extract();
         const deadline = Date.now() + 8000;
@@ -197,11 +236,18 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
         }
         return data;
       },
-      args: [response.url || pageUrl]
+      args: [response?.url || pageUrl]
     });
-    return renderedResult || result || null;
+    return renderedResult || result;
+  } catch (err) {
+    console.log("Rendered tab fallback note:", err);
+    return result;
   } finally {
-    if (renderedTab?.id) await chrome.tabs.remove(renderedTab.id);
+    if (renderedTab?.id) {
+      try {
+        await chrome.tabs.remove(renderedTab.id);
+      } catch {}
+    }
   }
 }
 
@@ -221,6 +267,7 @@ async function crawlAndExtractDirect(targetUrl) {
     tab = await chrome.tabs.create({ url: normUrl, active: false });
     setStatus("Waiting for page to load...", "info");
     await waitForTabComplete(tab.id, 30000);
+    tab = await recoverFromBrowserError(tab.id, normUrl, 30000);
 
     // Extra wait for JS-rendered SPAs (React/Vue/Angular)
     await new Promise(r => setTimeout(r, 1500));
@@ -249,7 +296,7 @@ async function crawlAndExtractDirect(targetUrl) {
           const extract = () => Extractor.extractFromDocument(
             document,
             Extractor.getElementText(document.body),
-            pageUrl
+            window.location.href || pageUrl
           );
           let data = extract();
           const deadline = Date.now() + 8000;
@@ -323,123 +370,30 @@ async function crawlAndExtractDirect(targetUrl) {
       }
     }
 
-    // Step 5: Dedicated Contact Page Crawl (User Requirement: Address should be taken from Contact page!)
-    // Always check Contact page candidates to prioritize official corporate headquarters/contact address
+    // Crawl only contact URLs discovered in the page, not guessed routes.
     let contactCandidates = [];
     try {
       const u = new URL(tab.url || normUrl);
-      const contactPaths = [
-        // Standard variations
-        "/contact/",
-        "/contact",
-        "/contact-us/",
-        "/contact-us",
-        "/contactus/",
-        "/contactus",
-        "/contact_us",
-        "/contact_us.html",
-        "/contact-us.html",
-        "/contact.html",
-        "/contact-us.php",
-        "/contactus.php",
-        "/contact.php",
-        "/contactus.html",
-        "/contact-us.aspx",
-        "/contact.aspx",
-
-        // Query parameters and CMS routes (essential for dynamic sites like kanok.com)
-        "/?p=contact",
-        "/?page=contact",
-        "/?view=contact",
-        "/index.php?p=contact",
-        "/index.php?page=contact",
-        "/?page_id=contact",
-        "/?p=contact-us",
-        "/?page=contact-us",
-        "/?view=contact-us",
-        "/?route=contact",
-        "/index.php?page=contact-us",
-        "/index.php?route=information/contact",
-        "/index.php/contact",
-        "/index.php/contact-us",
-
-        // Company and corporate
-        "/company/contact",
-        "/company/contact-us",
-        "/corporate/contact",
-        "/corporate/contact-us",
-        "/our-company/contact",
-        "/company-profile/contact",
-        "/about/contact",
-        "/about/contact-us",
-        "/aboutus/contact",
-        "/aboutus/contact-us",
-        "/about-us/contact",
-        "/about-us/contact-us",
-        "/who-we-are/contact",
-
-        // Customer support
-        "/support",
-        "/support/",
-        "/support/contact",
-        "/support/contact-us",
-        "/customer-service",
-        "/customer-support",
-        "/help/contact",
-        "/help/contact-us",
-        "/service/contact",
-
-        // Location and enquiry pages
-        "/location",
-        "/locations",
-        "/our-location",
-        "/our-locations",
-        "/find-us",
-        "/visit-us",
-        "/reach-us",
-        "/get-in-touch",
-        "/getintouch",
-        "/enquiry",
-        "/enquiries",
-        "/inquiry",
-        "/inquiries",
-        "/send-enquiry",
-        "/request-information",
-        "/sales/contact",
-        "/contact-sales",
-
-        // CMS and common page routes
-        "/pages/contact",
-        "/pages/contact-us",
-        "/pages/contact-us/",
-
-        // Regional and language routes
-        "/en/contact",
-        "/en/contact-us",
-        "/en-us/contact",
-        "/en-us/contact-us",
-        "/en-gb/contact",
-        "/en-gb/contact-us",
-        "/uk/contact",
-        "/us/contact",
-        "/in/contact",
-        "/au/contact",
-        "/de/contact",
-        "/fr/contact",
-        "/es/contact"
-      ];
-      const hostCandidates = [
-        ...(mainData.contactUrls || []),
-        mainData.contactUrl,
-        ...contactPaths.map(path => {
-          try {
-            return new URL(path, u.origin).href;
-          } catch {
-            return null;
+      const hostCandidates = [...(mainData.contactUrls || []), mainData.contactUrl];
+      contactCandidates = [...new Set(hostCandidates.filter(Boolean).map(candidate => {
+        try {
+          const candidateUrl = new URL(candidate, u);
+          const sameHost = candidateUrl.hostname.replace(/^www\./i, "").toLowerCase() ===
+            u.hostname.replace(/^www\./i, "").toLowerCase();
+          if (sameHost && u.protocol === "https:" && candidateUrl.protocol === "http:") {
+            candidateUrl.protocol = "https:";
           }
-        })
-      ];
-      contactCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(c => c !== normUrl && c !== tab.url);
+          return candidateUrl.href;
+        } catch {
+          return null;
+        }
+      }).filter(Boolean))].filter(candidate => {
+        const candidateUrl = new URL(candidate);
+        const sameHost = candidateUrl.hostname.replace(/^www\./i, "").toLowerCase() ===
+          u.hostname.replace(/^www\./i, "").toLowerCase();
+        const samePath = candidateUrl.pathname.replace(/\/+$/, "") === u.pathname.replace(/\/+$/, "");
+        return !(sameHost && samePath && candidateUrl.search === u.search);
+      });
     } catch {}
 
     let footerAddressTakenFromContactPage = false;
@@ -450,7 +404,9 @@ async function crawlAndExtractDirect(targetUrl) {
       try {
         setStatus("Checking Contact page for official address...", "info");
         const isDiscoveredContactUrl = contactUrl === mainData.contactUrl ||
-          (mainData.contactUrls || []).includes(contactUrl);
+          (mainData.contactUrls || []).includes(contactUrl) ||
+          contactUrl.includes("?p=contact") ||
+          contactUrl.includes("contact");
         const contactData = await extractFetchedPage(tab.id, contactUrl, isDiscoveredContactUrl);
 
         if (contactData && !contactData.error) {
@@ -489,8 +445,8 @@ async function crawlAndExtractDirect(targetUrl) {
             if (["Y", "Available"].includes(state)) mainData.state = state;
             if (["Y", "Available"].includes(city)) mainData.city = city;
 
-            // Update country from contact page if missing or generic
-            if (contactData.countryName && (!mainData.countryName || mainData.countryName === "Not Available")) {
+            // Authoritative address country from contact page
+            if (contactData.countryName) {
               mainData.countryName = contactData.countryName;
             }
           }
@@ -513,11 +469,28 @@ async function crawlAndExtractDirect(targetUrl) {
           mainData.emailId = contactEmails.emailId;
           mainData.secondaryEmailId = contactEmails.secondaryEmailId;
 
-          // Merge Country, State, City, Phone
-          if (contactData.countryName && !mainData.countryName) mainData.countryName = contactData.countryName;
+          // Merge Country, State, City, Profile, Phone
+          if (contactData.countryName && (!mainData.countryName || mainData.countryName === "Not Available" || mainData.countryName === "United States Of America")) {
+            mainData.countryName = contactData.countryName;
+          }
           if (["Y", "Available"].includes(contactData.state) && !["Y", "Available"].includes(mainData.state)) mainData.state = contactData.state;
           if (["Y", "Available"].includes(contactData.city) && !["Y", "Available"].includes(mainData.city)) mainData.city = contactData.city;
-          if (contactData.phoneNumber && !mainData.phoneNumber) mainData.phoneNumber = contactData.phoneNumber;
+          if (contactData.companyProfile === "Y" && mainData.companyProfile !== "Y") mainData.companyProfile = "Y";
+          const isDummyPhone = num => !num || /^(?:0123456789|1234567890|12345678910|2345678910|123456789|12345678|1234567|9876543210|987654321|(\d)\1{6,})$/.test(num);
+          if (contactData.phoneNumber && (isDummyPhone(mainData.phoneNumber) || !mainData.phoneNumber)) mainData.phoneNumber = contactData.phoneNumber;
+
+          // Double check address city/capital against CITY_STATE_COUNTRY_MAP to guarantee address country consistency
+          if (mainData.companyAddress) {
+            for (const m of Extractor.CITY_STATE_COUNTRY_MAP || []) {
+              if (m.regex.test(mainData.companyAddress)) {
+                mainData.countryName = m.country;
+                const { state, city } = Extractor.detectStateAndCity(mainData.companyAddress);
+                if (["Y", "Available"].includes(state)) mainData.state = state;
+                if (["Y", "Available"].includes(city)) mainData.city = city;
+                break;
+              }
+            }
+          }
 
           // A contact-detail address must not be replaced by a later page's footer.
           if (bestContactAddressPriority >= 150 && mainData.countryName && mainData.emailId && mainData.phoneNumber) {

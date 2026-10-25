@@ -476,8 +476,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   // Rule 3: Company Profile (Y / N)
   function detectCompanyProfile(text, doc) {
-    const hasProfile = /\b(about us|company profile|company overview|greetings|history|management philosophy|organization|회사소개|회사개요|인사말)\b/i.test(text || "") ||
-      Boolean(doc?.querySelector?.('a[href*="about"], a[href*="ab0"], a[href*="company"], a[href*="profile"]'));
+    const hasProfile = /\b(about(\s+us)?|company\s+profile|company\s+overview|greetings|history|management\s+philosophy|organization|presentation|our\s+strength|our\s+strengths|our\s+story|who\s+we\s+are|corporate\s+info|our\s+company|production\s+process|turnkey\s+solutions|회사소개|회사개요|인사말)\b/i.test(text || "") ||
+      Boolean(doc?.querySelector?.('a[href*="about"], a[href*="ab0"], a[href*="company"], a[href*="profile"], a[href*="presentation"], a[href*="strength"]'));
     return hasProfile ? "Y" : "N";
   }
 
@@ -902,13 +902,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     } catch { }
 
-    // 7. Match Phone Number Dial Code (e.g. +82 -> South Korea, +49 -> Germany, +91 -> India, +44 -> England)
+    // 7. Match Phone Number Dial Code (e.g. +82 -> South Korea, +49 -> Germany, +91 -> India, +44 -> England, 66(0) -> Thailand)
     const phoneToTest = `${phoneRaw || ""} ${fullText || ""}`;
-    const dialCodeMatches = phoneToTest.match(/(?:Tel|Phone|Telephone|T\.)\s*[:.-]?\s*\+([0-9]{1,4})/gi) || [];
+    const dialCodeMatches = phoneToTest.match(/(?:\b(?:Tel(?:ephone)?|Phone|Mob(?:ile)?|Cell|Fax)\b[:：.-]?|\b[TPMF][:：.-])\s*(?:\+([0-9]{1,4})|([0-9]{2,4})\s*(?:\(0\)|0))/gi) || [];
     for (const d of dialCodeMatches) {
-      const codeMatch = d.match(/\+([0-9]{1,4})/);
-      if (codeMatch && codeMatch[1]) {
-        const code = codeMatch[1];
+      const codeMatch = d.match(/(?:\b(?:Tel(?:ephone)?|Phone|Mob(?:ile)?|Cell|Fax)\b[:：.-]?|\b[TPMF][:：.-])\s*(?:\+([0-9]{1,4})|([0-9]{2,4})\s*(?:\(0\)|0))/i);
+      const code = codeMatch?.[1] || codeMatch?.[2];
+      if (code) {
         if (code === "44") {
           for (const uk of UK_LOCALITIES) {
             if (uk.regex.test(combinedFull)) return uk.name;
@@ -2376,13 +2376,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           console.debug("Skipping invalid JSON-LD while extracting email addresses.", error);
         }
       }
-
-      // 3. Scan raw markup for hidden addresses or simple script/CSS encodings.
-      addFrom(doc.documentElement?.innerHTML || "");
     }
 
-    // 4. Scan visible or otherwise extracted page text.
-    addFrom(text);
+    // 3. Scan visible or otherwise extracted page text.
+    addFrom(text || (doc?.body ? getElementText(doc.body) : ""));
 
     // Filter out blacklisted / system emails
     const list = [...emails].filter(e => !/^(noreply|no-reply|careers|jobs|hr|webmaster|postmaster|abuse|spam|privacy|legal)@/i.test(e));
@@ -2466,18 +2463,32 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     phoneCandidates.push(...genMatches);
 
     for (const raw of phoneCandidates) {
+      // Reject dummy / test placeholder numbers immediately before any stripping
+      const rawDigits = raw.replace(/\D/g, "");
+      if (/^(?:0123456789|1234567890|12345678910|2345678910|123456789|12345678|1234567|9876543210|987654321|(\d)\1{6,})$/.test(rawDigits)) {
+        continue;
+      }
+
       // Clean country code FIRST
       let s = raw;
       if (country?.dialCode) {
-        s = s.replace(new RegExp(`^\\+?${country.dialCode}[\\s.-]*`), "");
+        s = s.replace(new RegExp(`^\\+?${country.dialCode}[\\s.-]*(?:\\(0\\)|0)?[\\s.-]*`), "");
       } else {
         const allDialCodes = COUNTRIES.map(c => c.dialCode).filter(Boolean).sort((a, b) => b.length - a.length);
-        const dialRegex = new RegExp(`^\\+(?:${allDialCodes.join("|")})[\\s.-]*`);
+        const dialRegex = new RegExp(`^\\+(?:${allDialCodes.join("|")})[\\s.-]*|^(?:${allDialCodes.join("|")})[\\s.-]*(?:\\(0\\)|0)[\\s.-]*`);
         s = s.replace(dialRegex, "");
       }
 
       // Remove special characters and leading zeros
       let cleanDigits = s.replace(/\D/g, "").replace(/^0+/, "");
+      if (country?.dialCode && cleanDigits.startsWith(country.dialCode)) {
+        cleanDigits = cleanDigits.slice(country.dialCode.length).replace(/^0+/, "");
+      }
+
+      // Filter out dummy/placeholder numbers, sequential digits, or repeating digits
+      if (/^(?:0123456789|1234567890|12345678910|2345678910|123456789|12345678|1234567|9876543210|987654321|(\d)\1{6,})$/.test(cleanDigits)) {
+        continue;
+      }
 
       // Only filter on TRUE toll-free prefixes (dropped 400 — not universally toll-free)
       if (/^(1800|1888|800|0800|1544|1588|1577|1566)/.test(cleanDigits)) {
@@ -2667,8 +2678,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 5. Extract Country (Rule 5 - dynamic, never hardcoded!)
     // Pass raw text as phoneRaw so dial codes (+82, +49 etc.) in "Tel: +82-..." can identify country
-    const countryName = detectCountry(doc, rawAddress, text, url, text);
-    const countryObj = COUNTRIES.find(c => c.name.toLowerCase() === countryName.toLowerCase());
+    let countryName = detectCountry(doc, rawAddress, text, url, text);
+    let countryObj = COUNTRIES.find(c => c.name.toLowerCase() === countryName.toLowerCase());
 
     // 6. Clean Company Address with verified country and company name (Rule 6)
     let companyAddress = cleanAddressString(rawAddress, countryName, companyName);
@@ -2691,6 +2702,35 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
             }
           }
         }
+      }
+    }
+
+    // The verified physical address location ALWAYS takes priority over phone/body guesses
+    if (companyAddress) {
+      for (const mapping of CITY_STATE_COUNTRY_MAP) {
+        if (mapping.regex.test(companyAddress)) {
+          countryName = mapping.country;
+          countryObj = COUNTRIES.find(c => c.name.toLowerCase() === countryName.toLowerCase());
+          break;
+        }
+      }
+      for (const c of COUNTRIES) {
+        for (const alias of c.aliases) {
+          if (matchesCountryTerm(companyAddress, alias)) {
+            countryName = c.name;
+            countryObj = c;
+            break;
+          }
+        }
+      }
+    }
+
+    // Refresh country if missing using verified address
+    if (!countryName && (companyAddress || rawAddress)) {
+      countryName = detectCountry(doc, companyAddress || rawAddress, text, url, text);
+      if (countryName) {
+        countryObj = COUNTRIES.find(c => c.name.toLowerCase() === countryName.toLowerCase());
+        companyAddress = cleanAddressString(companyAddress || rawAddress, countryName, companyName);
       }
     }
 
@@ -2776,6 +2816,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     findEnglishSubpage,
     findContactSubpages,
     findContactSubpage,
+    CITY_STATE_COUNTRY_MAP,
     COUNTRIES
   };
 })();

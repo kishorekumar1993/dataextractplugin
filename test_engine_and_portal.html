@@ -1552,7 +1552,14 @@
         <body>
           <header>
             <div class="logo">KANOK FURNITURE & DECORATION</div>
-            <nav><a href="?p=contact">CONTACT</a></nav>
+            <nav>
+              <a href="?p=kanok">KANOK</a>
+              <a href="?p=turnkey">TURNKEY SOLUTIONS</a>
+              <a href="?p=strength">OUR STRENGTH</a>
+              <a href="?p=presentation">PRESENTATION</a>
+              <a href="?p=contact">CONTACT</a>
+            </nav>
+            <div class="dummy-test-line">Dummy: 12345678910</div>
           </header>
           <main class="container">
             <div class="row">
@@ -1564,6 +1571,9 @@
                 T: 66(0) 2321 0702, 66(0) 2721 5997<br>
                 F: 66(0) 2321 4493<br>
                 E-mail : info@kanok.com</p>
+                <form>
+                  <textarea name="enquiry">Please enter your message</textarea>
+                </form>
               </div>
               <div class="col-md-6 factory">
                 <h3>FACTORY</h3>
@@ -1586,14 +1596,15 @@
     const passKanokCountry = resKanok.countryName === "Thailand";
     const passKanokStateCity = resKanok.state === "Y" && resKanok.city === "Y";
     const passKanokEmail = resKanok.emailId === "info@kanok.com";
-    const passKanokPhone = resKanok.phoneNumber === "23210702";
+    const passKanokPhone = resKanok.phoneNumber === "23210702" && resKanok.phoneNumber !== "12345678910";
+    const passKanokProfile = resKanok.companyProfile === "Y";
     const passCdnRejected = !Extractor.isValidEmail("//cdn.jsdelivr.net/npm/bootstrap@4.6.0") &&
       resKanok.emailId !== "//cdn.jsdelivr.net/npm/bootstrap@4.6.0";
     const passKanokSubpageDiscovery = Extractor.findContactSubpages(
       new DOMParser().parseFromString(kanokHtml, "text/html"),
       "http://www.kanok.com/"
     ).some(url => url.includes("?p=contact"));
-    const passKanok = passKanokAddress && passKanokCountry && passKanokStateCity && passKanokEmail && passKanokPhone && passCdnRejected && passKanokSubpageDiscovery;
+    const passKanok = passKanokAddress && passKanokCountry && passKanokStateCity && passKanokEmail && passKanokPhone && passKanokProfile && passCdnRejected && passKanokSubpageDiscovery;
 
     // 8. Rollerdoors Ireland (ADS Doors, Ballinderry, Four Mile House, Co. Roscommon, Ireland)
     const rollerdoorsHtml = `
