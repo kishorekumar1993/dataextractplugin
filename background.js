@@ -435,8 +435,16 @@ async function crawlInTab(targetUrl, timeoutMs = 15000) {
           }
           // Double check address city/capital against CITY_STATE_COUNTRY_MAP to guarantee address country consistency
           if (mainData.companyAddress) {
+            let domainCountry = "";
+            try {
+              const siteHost = new URL(tab.url || normUrl).hostname.toLowerCase();
+              if (siteHost.endsWith(".com.au") || siteHost.endsWith(".au")) domainCountry = "Australia";
+            } catch {}
+            if (domainCountry) mainData.countryName = domainCountry;
+
             for (const m of Extractor.CITY_STATE_COUNTRY_MAP || []) {
-              if (m.regex.test(mainData.companyAddress)) {
+              if (m.regex.test(mainData.companyAddress) &&
+                  (!mainData.countryName || m.country === mainData.countryName)) {
                 mainData.countryName = m.country;
                 const { state, city } = Extractor.detectStateAndCity(mainData.companyAddress);
                 if (["Y", "Available"].includes(state)) mainData.state = "Available";
@@ -455,6 +463,15 @@ async function crawlInTab(targetUrl, timeoutMs = 15000) {
         console.log("Contact subpage candidate note:", err);
       }
     }
+
+    // Keep a country-code domain from being overwritten by ambiguous locality
+    // names such as "Victoria", which exists in both Canada and Australia.
+    try {
+      const siteHost = new URL(tab.url || normUrl).hostname.toLowerCase();
+      if ((siteHost.endsWith(".com.au") || siteHost.endsWith(".au")) && mainData.companyAddress) {
+        mainData.countryName = "Australia";
+      }
+    } catch {}
 
     return {
       success: true,

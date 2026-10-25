@@ -1123,6 +1123,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const regionCountry = inferCountryFromAddressRegion(addressText);
     if (regionCountry) return regionCountry;
 
+    // Resolve country-specific domains before generic city matches. Some place
+    // names are shared across countries (notably Victoria in Canada and Australia).
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      if (host.endsWith(".uk") || host.endsWith(".co.uk")) {
+        for (const uk of UK_LOCALITIES) {
+          if (uk.regex.test(combinedFull)) return uk.name;
+        }
+        return "England";
+      }
+      for (const c of COUNTRIES) {
+        if ((c.tlds || []).some(tld => host.endsWith(tld))) return c.name;
+      }
+    } catch { }
+
     // 5. Match address text against City/State to Country Map
     if (addressText) {
       for (const mapping of CITY_STATE_COUNTRY_MAP) {
@@ -1313,6 +1328,17 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         detectedLocation.city !== "N" ||
         streetNumberMatch ||
         /\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway|district|zone|block|sector|plot|suite|ste\.?|floor|fl\.?|unit|building|bldg\.?|tower|house|apartment|apt\.?|flat|level|phase|county|\bco\.)\b/i.test(cleaned);
+
+      // Navigation and product menus can inherit a city/country signal from
+      // nearby page content. Several comma-delimited segments without any
+      // number are not a usable postal address.
+      if (segments.length >= 4 && !/\d/.test(cleaned) && !streetNumberMatch) {
+        return false;
+      }
+      if (/\b(?:home|our company|what we offer|product development|manufacturing|services)\b/i.test(cleaned) &&
+          !/\d/.test(cleaned) && !streetNumberMatch) {
+        return false;
+      }
 
       // 2. Reject if it looks like a menu/list (4+ segments, no digits, short words, NO known location signal)
       if (!hasKnownLocation && !/\d/.test(cleaned) && segments.length >= 4 && segments.every(s => s.split(/\s+/).length <= 5)) {
@@ -3075,7 +3101,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .toLowerCase();
 
     // Prioritize corporate emails and match against site domain
-    const scored = list.map(e => {
+    const scored = list
+      // Avoid treating navigation/footer text appended to a site email as part
+      // of a second, fabricated domain (e.g. .com.auinformationterms).
+      .filter(e => {
+        const domain = (e.split("@")[1] || "").toLowerCase();
+        return !hostname || !domain.startsWith(hostname) || domain === hostname || domain.startsWith(`${hostname}.`);
+      })
+      .map(e => {
       let score = 0;
       if (/^sales@/i.test(e)) score += 10;
       else if (/^info@/i.test(e)) score += 9;
