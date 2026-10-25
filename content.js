@@ -16,22 +16,19 @@
       key: "websiteStatus",
       label: "Website Status",
       aliases: ["websitestatus", "status", "webstatus", "sitestatus"],
-      isDropdown: true,
-      defaultVal: "W-Working"
+      isDropdown: true
     },
     {
       key: "businessType",
       label: "Business Type",
-      aliases: ["businesstype", "natureofbusiness", "business", "type", "industrytype"],
-      isDropdown: true,
-      defaultVal: "Manufacturer"
+      aliases: ["businesstype", "natureofbusiness", "business", "industrytype"],
+      isDropdown: true
     },
     {
       key: "companyProfile",
       label: "Company Profile",
-      aliases: ["companyprofile", "profileofcompany", "profile", "aboutus", "companyoverview"],
-      isDropdown: true,
-      defaultVal: "Y"
+      aliases: ["companyprofile", "profileofcompany", "aboutus", "companyoverview"],
+      isDropdown: true
     },
     {
       key: "companyName",
@@ -52,15 +49,13 @@
       key: "state",
       label: "State",
       aliases: ["state", "statename", "province", "region"],
-      isDropdown: true,
-      defaultVal: "Y"
+      isDropdown: true
     },
     {
       key: "city",
       label: "City",
       aliases: ["city", "cityname", "town", "district"],
-      isDropdown: true,
-      defaultVal: "Y"
+      isDropdown: true
     },
     {
       key: "emailId",
@@ -80,26 +75,24 @@
     {
       key: "numberOfProduct",
       label: "Number of Product",
-      aliases: ["numberofproduct", "noofproduct", "productcount", "products", "numproducts"],
-      isDropdown: true,
-      defaultVal: "3"
+      aliases: ["numberofproduct", "noofproduct", "productcount", "numproducts"],
+      isDropdown: true
     },
     {
       key: "imageProduct",
       label: "Image Product",
       aliases: ["imageproduct", "productimage", "productimages", "imagesproduct", "imagecount"],
-      isDropdown: true,
-      defaultVal: "3"
+      isDropdown: true
     },
     {
       key: "noOfProductDescription",
       label: "No. of Product Description",
       aliases: ["noofproductdescription", "numberofproductdescription", "productdescription", "productdescriptions"],
-      isDropdown: true,
-      defaultVal: "3"
+      isDropdown: true
     }
   ];
 
+  const PORTAL_FIELD_COUNT = FIELD_DEFINITIONS.length;
   let cachedExtractedData = null;
 
   const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -171,6 +164,7 @@
   function setControlValue(el, val) {
     if (!el || val === undefined || val === null) return false;
     const strVal = String(val).trim();
+    let expectedValue = strVal;
 
     if (el.tagName === "SELECT") {
       const targetNorm = norm(strVal);
@@ -189,18 +183,13 @@
       let matchedOption = [...el.options].find(o => validVariants.includes(norm(o.value)) || validVariants.includes(norm(o.textContent)));
 
       if (!matchedOption) {
-        matchedOption = [...el.options].find(o => validVariants.some(v => norm(o.textContent).includes(v) || v.includes(norm(o.textContent))));
+        return false;
       }
 
-      if (!matchedOption) {
-        matchedOption = [...el.options].find(o => norm(o.value) === targetNorm || norm(o.textContent) === targetNorm);
-      }
-
-      if (matchedOption) {
-        el.value = matchedOption.value;
-        el.selectedIndex = matchedOption.index;
-      }
-      // NOTE: Do NOT fallback to selectedIndex = 1 blindly — if no match found, leave as-is
+      el.value = matchedOption.value;
+      el.selectedIndex = matchedOption.index;
+      if (el.value !== matchedOption.value || el.selectedIndex !== matchedOption.index) return false;
+      expectedValue = matchedOption.value;
     } else {
       const proto = el.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
       const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
@@ -216,6 +205,8 @@
     el.dispatchEvent(new Event("change", { bubbles: true }));
     el.dispatchEvent(new Event("blur", { bubbles: true }));
 
+    if (el.value !== expectedValue) return false;
+
     el.classList.add("qc-field-filled-highlight");
     setTimeout(() => {
       el.classList.remove("qc-field-filled-highlight");
@@ -226,6 +217,17 @@
 
   // Discriminative matching rules matching popup.js
   const FIELD_RULES = [
+    {
+      key: "websiteName",
+      label: "Website Name",
+      isSelect: false,
+      match: (ctrl, label, desc) => {
+        if (ctrl.tagName === "SELECT") return 0;
+        if (label.includes("websitename") || label === "website") return 60;
+        if (desc.includes("websitename") || desc.includes("targeturl") || desc.includes("siteurl")) return 50;
+        return 0;
+      }
+    },
     {
       key: "websiteStatus",
       label: "Website Status",
@@ -243,7 +245,7 @@
       isSelect: true,
       match: (ctrl, label, desc) => {
         if (ctrl.tagName !== "SELECT") return 0;
-        if (label.includes("business") || label.includes("nature") || (label.includes("type") && !label.includes("status"))) return 50;
+        if (label.includes("businesstype") || label.includes("natureofbusiness")) return 50;
         if (desc.includes("businesstype") || desc.includes("natureofbusiness")) return 40;
         return 0;
       }
@@ -254,8 +256,8 @@
       isSelect: true,
       match: (ctrl, label, desc) => {
         if (ctrl.tagName !== "SELECT") return 0;
-        if (label.includes("profile")) return 50;
-        if (desc.includes("companyprofile") || desc.includes("profile")) return 40;
+        if (label.includes("companyprofile")) return 50;
+        if (desc.includes("companyprofile") || desc.includes("profileofcompany")) return 40;
         return 0;
       }
     },
@@ -412,7 +414,16 @@
 
   // Auto-fill all portal fields based on extracted data
   function fillAllPortalFields(data) {
-    if (!data) return { filled: 0, total: 15 };
+    if (!data) return { filled: 0, total: PORTAL_FIELD_COUNT, details: [] };
+    if (data.forbidden?.isForbidden) {
+      showToast(data.forbidden.message || "This website is not eligible for processing.");
+      return {
+        filled: 0,
+        total: PORTAL_FIELD_COUNT,
+        blocked: true,
+        details: [{ status: "blocked", message: data.forbidden.message || "Forbidden website." }]
+      };
+    }
 
     const controls = getCandidateControls();
     const usedControls = new Set();
@@ -420,8 +431,11 @@
     let filledCount = 0;
 
     for (const rule of FIELD_RULES) {
-      const val = data[rule.key] ?? (rule.isSelect ? "3" : "");
-      if (val === undefined || val === null || val === "") continue;
+      const val = data[rule.key];
+      if (val === undefined || val === null || String(val).trim() === "") {
+        results.push({ field: rule.label, status: "missing" });
+        continue;
+      }
 
       let bestCtrl = null;
       let maxScore = 0;
@@ -446,17 +460,20 @@
       }
 
       if (bestCtrl && maxScore > 0) {
-        setControlValue(bestCtrl, val);
-        usedControls.add(bestCtrl);
-        filledCount++;
-        results.push({ field: rule.label, status: "filled", val });
+        if (setControlValue(bestCtrl, val)) {
+          usedControls.add(bestCtrl);
+          filledCount++;
+          results.push({ field: rule.label, status: "filled", val });
+        } else {
+          results.push({ field: rule.label, status: "missing", reason: "No matching option or value was accepted." });
+        }
       } else {
         results.push({ field: rule.label, status: "missing" });
       }
     }
 
-    showToast(`✅ ${filledCount}/14 Fields Filled! Review before submit.`);
-    return { filled: filledCount, total: 14, details: results };
+    showToast(`✅ ${filledCount}/${PORTAL_FIELD_COUNT} Fields Filled! Review before submit.`);
+    return { filled: filledCount, total: PORTAL_FIELD_COUNT, details: results };
   }
 
   // Show floating toast
@@ -613,7 +630,8 @@
           previewBtn.style.display = "inline-flex";
 
           if (response.data.forbidden?.isForbidden) {
-            showToast(response.data.forbidden.message);
+            fillAllPortalFields(response.data);
+            return;
           } else if (response.data.urlRules?.isSubdomain) {
             showToast(response.data.urlRules.warning);
           }

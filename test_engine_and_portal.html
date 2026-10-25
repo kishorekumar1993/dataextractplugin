@@ -1128,9 +1128,18 @@
       </html>
     `, "text/html");
     const foundContactUrls = Extractor.findContactSubpages(fakeContactNavDoc, "http://www.mycompany.com");
+    const fakeSubdomainContactDoc = new DOMParser().parseFromString(
+      '<a href="https://contact.mycompany.com/contact-us">Contact Us</a>',
+      "text/html"
+    );
+    const foundSubdomainContactUrls = Extractor.findContactSubpages(
+      fakeSubdomainContactDoc,
+      "https://www.mycompany.com"
+    );
     const passContactSubpageDiscovery = foundContactUrls.length >= 2 &&
       foundContactUrls[0].includes("contact-us") &&
-      foundContactUrls[1].includes("our-locations");
+      foundContactUrls[1].includes("our-locations") &&
+      foundSubdomainContactUrls.includes("https://contact.mycompany.com/contact-us");
 
     // Contact page address extraction inside <main> container (not just footer)
     const fakeContactPageHtml = `
@@ -1173,6 +1182,45 @@
     const passContactEmailPriority =
       mergedContactEmails.emailId === "contact@globalapex.com" &&
       mergedContactEmails.secondaryEmailId === "newsletter@globalapex.com";
+
+    const encodedEmailHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <script type="application/ld+json">
+            {"@graph":[{"@type":"Organization","contactPoint":{"email":"office@globalapex.com"}}]}
+          <\/script>
+        </head>
+        <body>
+          <main>
+            <p>Sales: sales [at] globalapex [dot] com</p>
+            <a href="mailto:contact%40globalapex%2Ecom">Contact us</a>
+            <span data-email="info&#64;globalapex&#46;com">Email</span>
+          </main>
+        </body>
+      </html>
+    `;
+    const resEncodedEmails = Extractor.extractFromHtml(encodedEmailHtml, "https://www.globalapex.com");
+    const extractedEmailSet = Extractor.extractEmails(
+      new DOMParser().parseFromString(encodedEmailHtml, "text/html"),
+      "",
+      "www.globalapex.com"
+    ).allEmails;
+    const passEncodedEmailExtraction =
+      extractedEmailSet.includes("sales@globalapex.com") &&
+      extractedEmailSet.includes("contact@globalapex.com") &&
+      extractedEmailSet.includes("info@globalapex.com") &&
+      extractedEmailSet.includes("office@globalapex.com") &&
+      resEncodedEmails.emailId === "sales@globalapex.com";
+    const duplicateContactEmailMerge = Extractor.mergeContactEmails(
+      "newsletter@globalapex.com",
+      "contact@globalapex.com",
+      "contact@globalapex.com",
+      "support@globalapex.com"
+    );
+    const passDuplicateContactEmailMerge =
+      duplicateContactEmailMerge.emailId === "contact@globalapex.com" &&
+      duplicateContactEmailMerge.secondaryEmailId === "newsletter@globalapex.com";
 
     const fakeFooterFallbackHtml = `
       <!DOCTYPE html>
@@ -1228,9 +1276,10 @@
 
     const passTest11 = passContactSubpageDiscovery && passContactPageAddress &&
       passFooterFallback && passFooterOverGenericPageAddress && passCopyrightCleanup &&
-      passContactEmailPriority;
+      passContactEmailPriority && passEncodedEmailExtraction && passDuplicateContactEmailMerge;
     renderTest("Test 11: Contact Page Subpage Discovery & Contact Page Address Extraction", passTest11, {
       discoveredContactUrls: foundContactUrls,
+      discoveredSubdomainContactUrls: foundSubdomainContactUrls,
       contactSubpageDiscoveryPass: passContactSubpageDiscovery,
       contactPageExtractedAddress: resContactPage.companyAddress,
       state: resContactPage.state,
@@ -1239,6 +1288,10 @@
       contactPageEmail: resContactPage.emailId,
       prioritizedEmailMerge: mergedContactEmails,
       contactEmailPriorityPass: passContactEmailPriority,
+      encodedEmailsFound: extractedEmailSet,
+      encodedEmailExtractionPass: passEncodedEmailExtraction,
+      duplicateContactEmailMerge,
+      duplicateContactEmailMergePass: passDuplicateContactEmailMerge,
       footerFallbackAddress: resFooterFallback.companyAddress,
       contactAddressSource: resContactPage.addressSource,
       footerAddressSource: resFooterFallback.addressSource,

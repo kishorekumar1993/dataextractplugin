@@ -25,6 +25,7 @@ const ALL_FIELD_KEYS = [
   "imageProduct",
   "noOfProductDescription"
 ];
+const PORTAL_FIELD_COUNT = ALL_FIELD_KEYS.length + 1;
 
 // Display status banner
 function setStatus(msg, type = "info") {
@@ -46,6 +47,16 @@ function normalizeUrl(raw) {
   } catch {
     return null;
   }
+}
+
+function contactAddressSourcePriority(source) {
+  const value = String(source || "");
+  if (value.includes("schema")) return 5;
+  if (value.includes("labelled")) return 4;
+  if (value.includes("element")) return 3;
+  if (value.includes("semantic")) return 2;
+  if (value.includes("inline")) return 1;
+  return 0;
 }
 
 // Get active tab in current window
@@ -99,24 +110,62 @@ async function detectPortalUrl() {
 // Wait for tab load completion
 function waitForTabComplete(tabId, timeoutMs = 25000) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
       chrome.tabs.onUpdated.removeListener(listener);
-      reject(new Error("Website load timed out."));
+    };
+    const finish = error => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => {
+      finish(new Error("Website load timed out."));
     }, timeoutMs);
 
     function listener(id, info) {
       if (id === tabId && info.status === "complete") {
-        clearTimeout(timer);
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
+        finish();
       }
     }
     chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.get(tabId).then(tab => {
+      if (tab.status === "complete") finish();
+    }).catch(finish);
   });
 }
 
-// Main Crawl & Extract Engine — always uses a background tab for full JS rendering
-// This is CORS-proof and works on 100% of websites including SPAs and JS-heavy pages
+async function extractFetchedPage(tabId, pageUrl) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  let response;
+  let html;
+  try {
+    response = await fetch(pageUrl, { credentials: "omit", signal: controller.signal });
+    if (!response.ok) return null;
+    html = await response.text();
+  } finally {
+    clearTimeout(timer);
+  }
+  if (html.length < 200) return null;
+
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (markup, url) => {
+      if (typeof Extractor === "undefined") throw new Error("Extractor engine unavailable in target tab.");
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
+    },
+    args: [html, response.url || pageUrl]
+  });
+  return result || null;
+}
+
+// Main crawl uses a background tab for the rendered homepage; subpages are fetched
+// by the extension context so host permissions cover cross-origin contact links.
 async function crawlAndExtractDirect(targetUrl) {
   const normUrl = normalizeUrl(targetUrl);
   if (!normUrl) {
@@ -186,20 +235,7 @@ async function crawlAndExtractDirect(targetUrl) {
     for (const testUrl of enCandidates) {
       try {
         setStatus("Checking English version of site...", "info");
-        const [{ result: enData }] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: async (url) => {
-            try {
-              const res = await fetch(url, { credentials: "omit" });
-              if (!res.ok) return null;
-              const html = await res.text();
-              if (html.length < 200) return null;
-              const doc = new DOMParser().parseFromString(html, "text/html");
-              return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
-            } catch { return null; }
-          },
-          args: [testUrl]
-        });
+        const enData = await extractFetchedPage(tab.id, testUrl);
 
         if (enData && !enData.error) {
           // Prefer Latin-alphabet company name from English subpage
@@ -214,10 +250,14 @@ async function crawlAndExtractDirect(targetUrl) {
             mainData.addressSource = enData.addressSource;
           }
           // Merge email
-          if (enData.emailId && enData.emailId !== mainData.emailId) {
-            if (mainData.emailId) mainData.secondaryEmailId = mainData.emailId;
-            mainData.emailId = enData.emailId;
-          }
+          const englishEmails = Extractor.mergeContactEmails(
+            mainData.emailId,
+            enData.emailId || enData.secondaryEmailId,
+            "",
+            mainData.secondaryEmailId
+          );
+          mainData.emailId = englishEmails.emailId;
+          mainData.secondaryEmailId = englishEmails.secondaryEmailId;
           // Merge country / state / city
           if (enData.countryName && !mainData.countryName) mainData.countryName = enData.countryName;
           if (["Y", "Available"].includes(enData.state) && !["Y", "Available"].includes(mainData.state)) mainData.state = enData.state;
@@ -256,26 +296,14 @@ async function crawlAndExtractDirect(targetUrl) {
       contactCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(c => c !== normUrl && c !== tab.url);
     } catch {}
 
-    let addressTakenFromContact = false;
     let footerAddressTakenFromContactPage = false;
+    let bestContactAddressPriority = -1;
+    let contactEmailPrioritySet = false;
 
     for (const contactUrl of contactCandidates) {
       try {
         setStatus("Checking Contact page for official address...", "info");
-        const [{ result: contactData }] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: async (url) => {
-            try {
-              const res = await fetch(url, { credentials: "omit" });
-              if (!res.ok) return null;
-              const html = await res.text();
-              if (html.length < 200) return null;
-              const doc = new DOMParser().parseFromString(html, "text/html");
-              return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
-            } catch { return null; }
-          },
-          args: [contactUrl]
-        });
+        const contactData = await extractFetchedPage(tab.id, contactUrl);
 
         if (contactData && !contactData.error) {
           const hasContactDetailAddress = String(contactData.addressSource || "").startsWith("contact-detail-");
@@ -284,12 +312,14 @@ async function crawlAndExtractDirect(targetUrl) {
           const takeFooterFallback = hasFooterAddress &&
             !currentHasContactDetailAddress &&
             !footerAddressTakenFromContactPage;
+          const contactPriority = contactAddressSourcePriority(contactData.addressSource);
+          const takeContactDetail = hasContactDetailAddress && contactPriority > bestContactAddressPriority;
 
           if (contactData.companyAddress && contactData.companyAddress.length >= 10 &&
-              (hasContactDetailAddress || takeFooterFallback)) {
+              (takeContactDetail || takeFooterFallback)) {
             mainData.companyAddress = contactData.companyAddress;
             mainData.addressSource = contactData.addressSource;
-            addressTakenFromContact = hasContactDetailAddress;
+            if (takeContactDetail) bestContactAddressPriority = contactPriority;
             if (takeFooterFallback) footerAddressTakenFromContactPage = true;
 
             // Re-validate state & city from updated contact page address
@@ -304,12 +334,20 @@ async function crawlAndExtractDirect(targetUrl) {
           }
 
           // Merge Email ID & Secondary Email ID
-          const contactEmails = Extractor.mergeContactEmails(
-            mainData.emailId,
-            mainData.secondaryEmailId,
-            contactData.emailId,
-            contactData.secondaryEmailId
-          );
+          const contactEmails = contactEmailPrioritySet
+            ? Extractor.mergeContactEmails(
+                mainData.emailId,
+                mainData.secondaryEmailId,
+                "",
+                contactData.emailId || contactData.secondaryEmailId
+              )
+            : Extractor.mergeContactEmails(
+                mainData.emailId,
+                mainData.secondaryEmailId,
+                contactData.emailId,
+                contactData.secondaryEmailId
+              );
+          if (!contactEmailPrioritySet && contactData.emailId) contactEmailPrioritySet = true;
           mainData.emailId = contactEmails.emailId;
           mainData.secondaryEmailId = contactEmails.secondaryEmailId;
 
@@ -320,9 +358,6 @@ async function crawlAndExtractDirect(targetUrl) {
           if (contactData.phoneNumber && !mainData.phoneNumber) mainData.phoneNumber = contactData.phoneNumber;
 
           // A contact-detail address must not be replaced by a later page's footer.
-          if (addressTakenFromContact) {
-            break;
-          }
         }
       } catch (e) {
         console.log("Contact page check note:", e);
@@ -508,6 +543,11 @@ async function performExtraction(targetUrl) {
   currentExtractedData = data;
   populateFields(currentExtractedData);
 
+  if (data.forbidden?.isForbidden) {
+    setStatus(data.forbidden.message || "This website is not eligible for processing.", "err");
+    return currentExtractedData;
+  }
+
   const name = data.companyName ? `"${data.companyName}"` : "no name detected";
   setStatus(`✅ Done! Company: ${name}. Review all fields before filling.`, "ok");
   return currentExtractedData;
@@ -515,6 +555,11 @@ async function performExtraction(targetUrl) {
 
 // Fill directly into portal tab via executeScript (no sendMessage, 100% reliable)
 async function fillPortal(data) {
+  if (data?.forbidden?.isForbidden) {
+    setStatus(data.forbidden.message || "This website is not eligible for processing.", "err");
+    return { filled: 0, total: PORTAL_FIELD_COUNT, blocked: true };
+  }
+
   if (!portalTabId) {
     const tab = await getActiveTab();
     portalTabId = tab.id;
@@ -569,6 +614,15 @@ async function fillPortal(data) {
 
       const FIELD_RULES = [
         {
+          key: "websiteName",
+          match: (ctrl, label, desc) => {
+            if (ctrl.tagName === "SELECT") return 0;
+            if (label.includes("websitename") || label === "website") return 60;
+            if (desc.includes("websitename") || desc.includes("targeturl") || desc.includes("siteurl")) return 50;
+            return 0;
+          }
+        },
+        {
           key: "websiteStatus",
           isSelect: true,
           match: (ctrl, label, desc) => {
@@ -583,7 +637,7 @@ async function fillPortal(data) {
           isSelect: true,
           match: (ctrl, label, desc) => {
             if (ctrl.tagName !== "SELECT") return 0;
-            if (label.includes("business") || label.includes("nature") || (label.includes("type") && !label.includes("status"))) return 50;
+            if (label.includes("businesstype") || label.includes("natureofbusiness")) return 50;
             if (desc.includes("businesstype") || desc.includes("natureofbusiness")) return 40;
             return 0;
           }
@@ -593,8 +647,8 @@ async function fillPortal(data) {
           isSelect: true,
           match: (ctrl, label, desc) => {
             if (ctrl.tagName !== "SELECT") return 0;
-            if (label.includes("profile")) return 50;
-            if (desc.includes("companyprofile") || desc.includes("profile")) return 40;
+            if (label.includes("companyprofile")) return 50;
+            if (desc.includes("companyprofile") || desc.includes("profileofcompany")) return 40;
             return 0;
           }
         },
@@ -740,10 +794,14 @@ async function fillPortal(data) {
 
       let filled = 0;
       const used = new Set();
+      const details = [];
 
       for (const rule of FIELD_RULES) {
         const val = formData[rule.key];
-        if (val === undefined || val === null || val === "") continue;
+        if (val === undefined || val === null || String(val).trim() === "") {
+          details.push({ field: rule.key, status: "missing" });
+          continue;
+        }
 
         let bestCtrl = null;
         let highestScore = 0;
@@ -768,7 +826,7 @@ async function fillPortal(data) {
         }
 
         if (bestCtrl && highestScore > 0) {
-          used.add(bestCtrl);
+          let expectedValue = String(val).trim();
           if (bestCtrl.tagName === "SELECT") {
             const wanted = norm(val);
             // Synonyms map for seamless portal compatibility
@@ -785,13 +843,17 @@ async function fillPortal(data) {
             };
             const validVariants = synMap[wanted] || [wanted];
             let opt = [...bestCtrl.options].find(o => validVariants.includes(norm(o.value)) || validVariants.includes(norm(o.textContent)));
-            if (!opt) opt = [...bestCtrl.options].find(o => validVariants.some(v => norm(o.textContent).includes(v)));
-            if (!opt) opt = [...bestCtrl.options].find(o => norm(o.value) === wanted || norm(o.textContent) === wanted);
-            if (!opt) opt = [...bestCtrl.options].find(o => norm(o.textContent).includes(wanted));
-            if (opt) {
-              bestCtrl.value = opt.value;
-              bestCtrl.selectedIndex = opt.index;
+            if (!opt) {
+              details.push({ field: rule.key, status: "missing", reason: "No matching option." });
+              continue;
             }
+            bestCtrl.value = opt.value;
+            bestCtrl.selectedIndex = opt.index;
+            if (bestCtrl.value !== opt.value || bestCtrl.selectedIndex !== opt.index) {
+              details.push({ field: rule.key, status: "missing", reason: "Option was not accepted." });
+              continue;
+            }
+            expectedValue = opt.value;
           } else {
             const proto = bestCtrl.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
             const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
@@ -800,22 +862,35 @@ async function fillPortal(data) {
             } else {
               bestCtrl.value = val;
             }
+            if (bestCtrl.value !== String(val).trim()) {
+              details.push({ field: rule.key, status: "missing", reason: "Value was not accepted." });
+              continue;
+            }
           }
+          used.add(bestCtrl);
           bestCtrl.dispatchEvent(new Event("focus", { bubbles: true }));
           bestCtrl.dispatchEvent(new Event("input", { bubbles: true }));
           bestCtrl.dispatchEvent(new Event("change", { bubbles: true }));
           bestCtrl.dispatchEvent(new Event("blur", { bubbles: true }));
+          if (bestCtrl.value !== expectedValue) {
+            details.push({ field: rule.key, status: "missing", reason: "Value changed after form events." });
+            continue;
+          }
           bestCtrl.classList.add("qc-field-filled-highlight");
           filled++;
+          details.push({ field: rule.key, status: "filled", val });
+        } else {
+          details.push({ field: rule.key, status: "missing" });
         }
       }
-      return filled;
+      return { filled, total: FIELD_RULES.length, details };
     },
     args: [data]
   });
 
-  const totalFilled = execResults?.reduce((sum, r) => sum + (r?.result || 0), 0) || 0;
-  setStatus(`✅ Filled ${totalFilled}/14 fields in portal! Review and Submit.`, "ok");
+  const totals = execResults?.map(r => r?.result).filter(Boolean) || [];
+  const totalFilled = totals.reduce((sum, result) => sum + result.filled, 0);
+  setStatus(`✅ Filled ${totalFilled}/${PORTAL_FIELD_COUNT} fields in portal! Review and Submit.`, "ok");
 }
 
 // Event Listeners on DOMContentLoaded

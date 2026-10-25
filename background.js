@@ -19,6 +19,69 @@ function normalizeUrl(raw) {
   }
 }
 
+function contactAddressSourcePriority(source) {
+  const value = String(source || "");
+  if (value.includes("schema")) return 5;
+  if (value.includes("labelled")) return 4;
+  if (value.includes("element")) return 3;
+  if (value.includes("semantic")) return 2;
+  if (value.includes("inline")) return 1;
+  return 0;
+}
+
+function waitForTabComplete(tabId, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+    };
+    const finish = error => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => {
+      finish(new Error("Website load timed out. Check if site is accessible."));
+    }, timeoutMs);
+    function listener(updatedTabId, info) {
+      if (updatedTabId === tabId && info.status === "complete") finish();
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.get(tabId).then(tab => {
+      if (tab.status === "complete") finish();
+    }).catch(finish);
+  });
+}
+
+async function extractFetchedPage(tabId, pageUrl) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  let response;
+  let html;
+  try {
+    response = await fetch(pageUrl, { credentials: "omit", signal: controller.signal });
+    if (!response.ok) return null;
+    html = await response.text();
+  } finally {
+    clearTimeout(timer);
+  }
+  if (html.length < 200) return null;
+
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (markup, url) => {
+      if (typeof Extractor === "undefined") throw new Error("Extractor engine unavailable in target tab.");
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
+    },
+    args: [html, response.url || pageUrl]
+  });
+  return result || null;
+}
+
 // Perform reliable crawling inside a background tab
 async function crawlInTab(targetUrl, timeoutMs = 30000) {
   const normUrl = normalizeUrl(targetUrl);
@@ -32,21 +95,7 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
     tab = await chrome.tabs.create({ url: normUrl, active: false });
 
     // 2. Wait for page load
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        chrome.tabs.onUpdated.removeListener(listener);
-        reject(new Error("Website load timed out. Check if site is accessible."));
-      }, timeoutMs);
-
-      function listener(tabId, info) {
-        if (tabId === tab.id && info.status === "complete") {
-          clearTimeout(timer);
-          chrome.tabs.onUpdated.removeListener(listener);
-          resolve();
-        }
-      }
-      chrome.tabs.onUpdated.addListener(listener);
-    });
+    await waitForTabComplete(tab.id, timeoutMs);
 
     // Small delay to ensure client-side JS renders
     await new Promise(r => setTimeout(r, 1200));
@@ -94,23 +143,7 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
 
     for (const candidateEnUrl of enCandidates) {
       try {
-        const [{ result: enData }] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: async (enUrl) => {
-            try {
-              const res = await fetch(enUrl);
-              if (!res.ok) return null;
-              const html = await res.text();
-              if (html.length < 200) return null;
-              const doc = new DOMParser().parseFromString(html, "text/html");
-              const enT = Extractor.getElementText(doc.body);
-              return Extractor.extractFromDocument(doc, enT, enUrl);
-            } catch {
-              return null;
-            }
-          },
-          args: [candidateEnUrl]
-        });
+        const enData = await extractFetchedPage(tab.id, candidateEnUrl);
 
         if (enData && !enData.error) {
           // Only override if original company name lacks Latin letters (Issue 13)
@@ -125,10 +158,14 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
             mainData.addressSource = enData.addressSource;
           }
           // Email priorities
-          if (enData.emailId && enData.emailId !== mainData.emailId) {
-            if (mainData.emailId) mainData.secondaryEmailId = mainData.emailId;
-            mainData.emailId = enData.emailId;
-          }
+          const englishEmails = Extractor.mergeContactEmails(
+            mainData.emailId,
+            enData.emailId || enData.secondaryEmailId,
+            "",
+            mainData.secondaryEmailId
+          );
+          mainData.emailId = englishEmails.emailId;
+          mainData.secondaryEmailId = englishEmails.secondaryEmailId;
           if (enData.countryName && !mainData.countryName) {
             mainData.countryName = enData.countryName;
           }
@@ -173,26 +210,13 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
       contactCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(c => c !== normUrl && c !== tab.url);
     } catch {}
 
-    let addressTakenFromContact = false;
     let footerAddressTakenFromContactPage = false;
+    let bestContactAddressPriority = -1;
+    let contactEmailPrioritySet = false;
 
     for (const contactUrl of contactCandidates) {
       try {
-        const [{ result: contactData }] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: async (url) => {
-            try {
-              const res = await fetch(url);
-              if (!res.ok) return null;
-              const html = await res.text();
-              if (html.length < 200) return null;
-              const doc = new DOMParser().parseFromString(html, "text/html");
-              const enT = Extractor.getElementText(doc.body);
-              return Extractor.extractFromDocument(doc, enT, url);
-            } catch { return null; }
-          },
-          args: [contactUrl]
-        });
+        const contactData = await extractFetchedPage(tab.id, contactUrl);
 
         if (contactData && !contactData.error) {
           const hasContactDetailAddress = String(contactData.addressSource || "").startsWith("contact-detail-");
@@ -201,12 +225,14 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
           const takeFooterFallback = hasFooterAddress &&
             !currentHasContactDetailAddress &&
             !footerAddressTakenFromContactPage;
+          const contactPriority = contactAddressSourcePriority(contactData.addressSource);
+          const takeContactDetail = hasContactDetailAddress && contactPriority > bestContactAddressPriority;
 
           if (contactData.companyAddress && contactData.companyAddress.length >= 10 &&
-              (hasContactDetailAddress || takeFooterFallback)) {
+              (takeContactDetail || takeFooterFallback)) {
             mainData.companyAddress = contactData.companyAddress;
             mainData.addressSource = contactData.addressSource;
-            addressTakenFromContact = hasContactDetailAddress;
+            if (takeContactDetail) bestContactAddressPriority = contactPriority;
             if (takeFooterFallback) footerAddressTakenFromContactPage = true;
 
             // Re-validate state & city from updated contact page address
@@ -221,12 +247,20 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
           }
 
           // Merge Email ID & Secondary Email ID
-          const contactEmails = Extractor.mergeContactEmails(
-            mainData.emailId,
-            mainData.secondaryEmailId,
-            contactData.emailId,
-            contactData.secondaryEmailId
-          );
+          const contactEmails = contactEmailPrioritySet
+            ? Extractor.mergeContactEmails(
+                mainData.emailId,
+                mainData.secondaryEmailId,
+                "",
+                contactData.emailId || contactData.secondaryEmailId
+              )
+            : Extractor.mergeContactEmails(
+                mainData.emailId,
+                mainData.secondaryEmailId,
+                contactData.emailId,
+                contactData.secondaryEmailId
+              );
+          if (!contactEmailPrioritySet && contactData.emailId) contactEmailPrioritySet = true;
           mainData.emailId = contactEmails.emailId;
           mainData.secondaryEmailId = contactEmails.secondaryEmailId;
 
@@ -237,9 +271,6 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
           if (contactData.phoneNumber && !mainData.phoneNumber) mainData.phoneNumber = contactData.phoneNumber;
 
           // A contact-detail address must not be replaced by a later page's footer.
-          if (addressTakenFromContact) {
-            break;
-          }
         }
       } catch (err) {
         console.log("Contact subpage candidate note:", err);

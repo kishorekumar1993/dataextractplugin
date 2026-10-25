@@ -2103,73 +2103,94 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Rule 9 & 10: Email ID & Secondary Email ID
   function extractEmails(doc, text, siteHostname) {
     const emails = new Set();
-    const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}(?=[^a-zA-Z]|$)/g;
+    const emailRegex = /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)+/g;
 
-    // 1. mailto links & a[href*="@"]
-    if (doc) {
-      for (const a of doc.querySelectorAll('a[href^="mailto:"], a[href*="@"]')) {
-        const href = a.getAttribute("href") || "";
-        const raw = href.replace(/^mailto:\s*/i, "").split("?")[0].trim().toLowerCase();
-        if (isValidEmail(raw)) emails.add(raw);
-        // Also check link text if it's an email
-        const linkTxt = clean(a.textContent || a.innerText || "");
-        if (isValidEmail(linkTxt)) emails.add(linkTxt.toLowerCase());
+    const decodeEmailText = value => {
+      let decoded = String(value || "")
+        .replace(/\\u0040|\\x40|%40/gi, "@")
+        .replace(/\\u002e|\\x2e|%2e/gi, ".");
+
+      if (doc?.createElement) {
+        const decoder = doc.createElement("textarea");
+        decoder.innerHTML = decoded;
+        decoded = decoder.value;
+      } else {
+        decoded = decoded
+          .replace(/&commat;|&#0*64;|&#x0*40;/gi, "@")
+          .replace(/&period;|&#0*46;|&#x0*2e;/gi, ".")
+          .replace(/&nbsp;|&#0*160;|&#x0*a0;/gi, " ");
       }
-    }
 
-    // 2. Data attributes and meta tags
-    if (doc) {
-      for (const el of doc.querySelectorAll('[data-email], [data-mail], meta[name*="email"], meta[property*="email"]')) {
-        const val = (el.getAttribute("data-email") || el.getAttribute("data-mail") || el.getAttribute("content") || "").trim().toLowerCase();
-        if (isValidEmail(val)) emails.add(val);
+      return decoded
+        .replace(/\s*(?:\[at\]|\(at\)|\{at\}|\s+at\s+)\s*/gi, "@")
+        .replace(/\s*(?:\[dot\]|\(dot\)|\{dot\}|\s+dot\s+)\s*/gi, ".")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    const addFrom = value => {
+      if (!value) return;
+
+      const decoded = decodeEmailText(value);
+      const matches = decoded.match(emailRegex) || [];
+      for (const match of matches) {
+        const email = match.replace(/[.,;:!?]+$/, "").toLowerCase();
+        if (isValidEmail(email)) emails.add(email);
       }
-    }
+    };
 
-    // 3. Schema.org JSON-LD
+    // 1. Links, email-related elements, and their useful attributes.
     if (doc) {
-      for (const s of doc.querySelectorAll('script[type="application/ld+json"]')) {
-        try {
-          const parsed = JSON.parse(s.textContent);
-          const objs = Array.isArray(parsed) ? parsed : [parsed];
-          const allObjs = [];
-          for (const o of objs) {
-            allObjs.push(o);
-            if (o["@graph"]) allObjs.push(...o["@graph"]);
-          }
-          for (const item of allObjs) {
-            if (item.email && isValidEmail(item.email)) emails.add(item.email.trim().toLowerCase());
-            if (item.contactPoint) {
-              const cp = Array.isArray(item.contactPoint) ? item.contactPoint : [item.contactPoint];
-              for (const p of cp) {
-                if (p.email && isValidEmail(p.email)) emails.add(p.email.trim().toLowerCase());
-              }
-            }
-          }
-        } catch { }
-      }
-    }
-
-    // 4. Regex scan over clean text
-    const textMatches = (text || "").match(emailRegex) || [];
-    for (const m of textMatches) {
-      if (isValidEmail(m)) emails.add(m.toLowerCase());
-    }
-
-    // 5. Regex scan over raw HTML (catches encoded emails, hidden elements, footer scripts)
-    if (doc) {
-      try {
-        const rawHtml = doc.body?.innerHTML || doc.documentElement?.innerHTML || "";
-        const htmlMatches = rawHtml.match(emailRegex) || [];
-        for (const m of htmlMatches) {
-          if (isValidEmail(m)) emails.add(m.toLowerCase());
+      const emailElements = doc.querySelectorAll(
+        'a[href], [data-email], [data-mail], [data-contact-email], [itemprop~="email"], ' +
+        '[class*="email" i], [id*="email" i], meta[name*="email" i], meta[property*="email" i]'
+      );
+      for (const el of emailElements) {
+        for (const attribute of [
+          "href", "data-email", "data-mail", "data-contact-email", "content",
+          "value", "aria-label", "title"
+        ]) {
+          addFrom(el.getAttribute(attribute));
         }
-      } catch { }
+        addFrom(el.textContent || el.innerText || "");
+      }
+
+      // 2. JSON-LD can nest email values in @graph and contact-point structures.
+      const visitJsonLd = value => {
+        if (!value || typeof value !== "object") return;
+        if (Array.isArray(value)) {
+          value.forEach(visitJsonLd);
+          return;
+        }
+        if (Object.prototype.hasOwnProperty.call(value, "email")) addFrom(value.email);
+        Object.entries(value).forEach(([key, child]) => {
+          if (key !== "email") visitJsonLd(child);
+        });
+      };
+      for (const script of doc.querySelectorAll('script[type="application/ld+json"]')) {
+        try {
+          visitJsonLd(JSON.parse(script.textContent || ""));
+        } catch (error) {
+          console.debug("Skipping invalid JSON-LD while extracting email addresses.", error);
+        }
+      }
+
+      // 3. Scan raw markup for hidden addresses or simple script/CSS encodings.
+      addFrom(doc.documentElement?.innerHTML || "");
     }
+
+    // 4. Scan visible or otherwise extracted page text.
+    addFrom(text);
 
     // Filter out blacklisted / system emails
     const list = [...emails].filter(e => !/^(noreply|no-reply|careers|jobs|hr|webmaster|postmaster|abuse|spam|privacy|legal)@/i.test(e));
 
-    const domainKeyword = siteHostname ? siteHostname.replace(/^www\./i, "").split(".")[0].toLowerCase() : "";
+    const hostname = String(siteHostname || "")
+      .replace(/^https?:\/\//i, "")
+      .replace(/^www\./i, "")
+      .split("/")[0]
+      .split(":")[0]
+      .toLowerCase();
 
     // Prioritize corporate emails and match against site domain
     const scored = list.map(e => {
@@ -2181,9 +2202,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       else if (/^export@/i.test(e)) score += 6;
       else score += 1;
 
-      // HUGE bonus for matching site domain
       const emailDomain = (e.split("@")[1] || "").toLowerCase();
-      if (domainKeyword && domainKeyword.length >= 3 && emailDomain.includes(domainKeyword)) {
+      if (hostname && (emailDomain === hostname || hostname.endsWith(`.${emailDomain}`))) {
         score += 50;
       }
       return { email: e, score };
@@ -2207,19 +2227,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   }
 
   function mergeContactEmails(primaryEmail, secondaryEmail, contactEmail, contactSecondaryEmail) {
-    let primary = primaryEmail || "";
-    let secondary = secondaryEmail || "";
-
-    if (contactEmail && contactEmail !== primary) {
-      if (primary && !secondary) secondary = primary;
-      primary = contactEmail;
+    const uniqueEmails = [];
+    const seen = new Set();
+    for (const value of [contactEmail, primaryEmail, contactSecondaryEmail, secondaryEmail]) {
+      const email = String(value || "").trim();
+      const key = email.toLowerCase();
+      if (email && !seen.has(key)) {
+        seen.add(key);
+        uniqueEmails.push(email);
+      }
     }
 
-    if (contactSecondaryEmail && contactSecondaryEmail !== primary && !secondary) {
-      secondary = contactSecondaryEmail;
-    }
-
-    return { emailId: primary, secondaryEmailId: secondary };
+    return {
+      emailId: uniqueEmails[0] || "",
+      secondaryEmailId: uniqueEmails[1] || ""
+    };
   }
 
   // Rule 11: Phone Number
@@ -2384,7 +2406,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           if (!["http:", "https:"].includes(resObj.protocol)) continue;
 
           const resHostNorm = resObj.hostname.replace(/^www\./i, "").toLowerCase();
-          if (resHostNorm !== baseHostNorm) continue;
+          if (resHostNorm !== baseHostNorm && !resHostNorm.endsWith(`.${baseHostNorm}`)) continue;
 
           // Don't link back to home page root
           const normPath = resObj.pathname.replace(/\/+$/, "");
