@@ -56,6 +56,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   const INDIAN_CITIES = [
     "mumbai", "delhi", "new delhi", "bengaluru", "bangalore", "hyderabad", "ahmedabad", "chennai", "kolkata", "surat", "pune", "jaipur", "lucknow", "kanpur", "nagpur", "indore", "thane", "bhopal", "visakhapatnam", "patna", "vadodara", "ghaziabad", "ludhiana", "agra", "nashik", "faridabad", "meerut", "rajkot", "varanasi", "srinagar", "aurangabad", "dhanbad", "amritsar", "allahabad", "prayagraj", "ranchi", "howrah", "coimbatore", "jodhpur", "madurai", "raipur", "kochi", "ernakulam", "thiruvananthapuram", "guwahati", "chandigarh", "dehradun", "shimla", "imphal", "gangtok", "itanagar", "panaji", "dispur", "shillong", "aizawl", "kohima", "agartala", "bhubaneswar", "vijayawada", "warangal", "mysuru", "mysore", "mangalore", "mangaluru"
   ];
+  const MALAYSIA_STATES_AND_TERRITORIES = [
+    "johor", "kedah", "kelantan", "melaka", "malacca", "negeri sembilan", "pahang", "penang", "pulau pinang", "perak", "perlis", "sabah", "sarawak", "selangor", "terengganu", "kuala lumpur", "putrajaya", "labuan"
+  ];
+  const MALAYSIA_CITIES = [
+    "kuala lumpur", "george town", "johor bahru", "ipoh", "shah alam", "petaling jaya", "subang jaya", "klang", "kuantan", "kota kinabalu", "kuching", "seremban", "malacca city", "melaka city", "alor setar", "miri", "sandakan", "tawau", "kota bharu", "kuala terengganu", "putrajaya", "cyberjaya", "kulim", "batu pahat", "kuala kedah", "sibu", "bintulu", "taiping", "teluk intan", "pasir gudang", "iskandar puteri", "bayan lepas", "butterworth", "langkawi", "port dickson", "temerloh", "kemaman", "labuan town", "ampang", "ayer keroh", "balik pulau", "bandar baru bangi", "bandar sunway", "bangsar", "batu gajah", "bukit mertajam", "gombak", "jitra", "kajang", "kampar", "kangar", "keningau", "kluang", "kuala kangsar", "kulai", "lahad datu", "muar", "nilai", "pekan", "seberang perai", "sungai petani", "simpang ampat", "tanah merah", "tampin", "bentong", "rawang", "sabak bernam", "beranang", "setapak", "cheras", "kepong", "sentul", "mont kiara", "damansara", "puchong", "seri kembangan", "shah alam", "kota damansara", "sri petaling"
+  ];
   const UK_COUNTIES = [
     "bedfordshire", "berkshire", "borders", "bristol", "buckinghamshire", "cambridgeshire", "cheshire", "cornwall", "cumbria", "derbyshire", "devon", "dorset", "durham", "east sussex", "essex", "gloucestershire", "hampshire", "herefordshire", "hertfordshire", "kent", "lancashire", "leicestershire", "lincolnshire", "merseyside", "norfolk", "northamptonshire", "northumberland", "nottinghamshire", "oxfordshire", "somerset", "south yorkshire", "staffordshire", "suffolk", "surrey", "tyne and wear", "warwickshire", "west midlands", "west sussex", "wiltshire", "worcs", "worcestershire", "north yorkshire", "west yorkshire", "isle of wight", "greater london"
   ];
@@ -2672,6 +2678,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     );
     const hasGenericStateLevel = /\b(?:region|governorate|oblast|department|territory|administrative\s+area)\b/i.test(addrLower);
     const hasIndianState = INDIAN_STATES_AND_TERRITORIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const hasMalaysiaState = MALAYSIA_STATES_AND_TERRITORIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const hasMalaysiaCity = MALAYSIA_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasUkCountyOrNation = UK_COUNTIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
       /\b(?:england|scotland|wales|northern ireland)\b/i.test(addrLower) ||
       UK_LOCALITIES.some(locality => locality.regex.test(addrLower));
@@ -2688,7 +2696,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       : null;
 
     // State indicators in address
-    if (state === "N" && (hasTaiwanCounty || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasUkCountyOrNation || hasNewZealandCity || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
+    if (state === "N" && (hasTaiwanCounty || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasMalaysiaState || hasMalaysiaCity || hasUkCountyOrNation || hasNewZealandCity || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
         POSTAL_REGION_US_CODES_REGEX.test(address || "") ||
         /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower))) {
       state = "Y";
@@ -2707,7 +2715,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       city = "Y";
     }
 
-    if (city === "N" && (NEW_ZEALAND_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
+    if (city === "N" && (hasMalaysiaCity || NEW_ZEALAND_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
         INDIAN_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
         US_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
         ITALIAN_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
@@ -2739,7 +2747,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // Completeness validation (Rule 18): If address has fewer than 2 segments, State is likely invalid
     const parts = (address || "").split(",").map(p => p.trim()).filter(Boolean);
-    if (parts.length < 2 && state === "Y") {
+    if (parts.length < 2 && state === "Y" && !hasMalaysiaState && !hasMalaysiaCity) {
       state = "N";
     }
 

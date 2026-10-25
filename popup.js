@@ -522,7 +522,13 @@ function populateFields(data) {
   for (const key of ALL_FIELD_KEYS) {
     const el = $(`field-${key}`);
     if (el && data[key] !== undefined && data[key] !== null) {
-      el.value = data[key];
+      let value = data[key];
+      if ((key === "state" || key === "city") && el.tagName === "SELECT") {
+        const normalized = String(value).toLowerCase().replace(/[^a-z]/g, "");
+        if (["available", "yes", "true"].includes(normalized)) value = "Y";
+        else if (["notavailable", "unavailable", "no", "false"].includes(normalized)) value = "N";
+      }
+      el.value = value;
     }
   }
 
@@ -837,6 +843,7 @@ async function fillPortal(data) {
             else if (desc.includes("countryname") || desc.includes("country")) score += 50;
 
             if (ctrl.tagName === "INPUT") score += 10;
+            if (ctrl.tagName === "SELECT") score += 20;
             if (ctrl.tagName === "TEXTAREA") score -= 30;
             return score;
           }
@@ -980,8 +987,19 @@ async function fillPortal(data) {
               "distributor": ["distributer", "distributor"],
               "industrialservices": ["industrialservices", "serviceprovider", "service"]
             };
-            const validVariants = synMap[wanted] || [wanted];
-            let opt = [...bestCtrl.options].find(o => validVariants.includes(norm(o.value)) || validVariants.includes(norm(o.textContent)));
+            const countryAliases = {
+              unitedstatesofamerica: ["unitedstatesofamerica", "unitedstates", "usa", "us"],
+              unitedkingdom: ["unitedkingdom", "greatbritain", "uk", "gb"],
+              southkorea: ["southkorea", "republicofkorea", "korea", "kr"],
+              malaysia: ["malaysia", "my"],
+              australia: ["australia", "au"],
+              india: ["india", "bharat", "in"]
+            };
+            const validVariants = synMap[wanted] || countryAliases[wanted] || [wanted];
+            let opt = [...bestCtrl.options].find(o => {
+              const candidates = [norm(o.value), norm(o.textContent)];
+              return validVariants.some(alias => candidates.some(candidate => candidate === alias || (alias.length >= 4 && candidate.startsWith(alias))));
+            });
             if (!opt) {
               details.push({ field: rule.key, status: "missing", reason: "No matching option." });
               continue;

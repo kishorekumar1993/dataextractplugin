@@ -180,9 +180,20 @@
         "distributor": ["distributer", "distributor"],
         "industrialservices": ["industrialservices", "serviceprovider", "service"]
       };
-      const validVariants = synMap[targetNorm] || [targetNorm];
+      const countryAliases = {
+        unitedstatesofamerica: ["unitedstatesofamerica", "unitedstates", "usa", "us"],
+        unitedkingdom: ["unitedkingdom", "greatbritain", "uk", "gb"],
+        southkorea: ["southkorea", "republicofkorea", "korea", "kr"],
+        malaysia: ["malaysia", "my"],
+        australia: ["australia", "au"],
+        india: ["india", "bharat", "in"]
+      };
+      const validVariants = synMap[targetNorm] || countryAliases[targetNorm] || [targetNorm];
       const options = [...el.options];
-      let matchedOption = options.find(o => validVariants.includes(norm(o.value)) || validVariants.includes(norm(o.textContent)));
+      let matchedOption = options.find(o => {
+        const candidates = [norm(o.value), norm(o.textContent)];
+        return validVariants.some(alias => candidates.some(candidate => candidate === alias || (alias.length >= 4 && candidate.startsWith(alias))));
+      });
 
       // Portal forms vary between Y/N, Available/Not Available, and longer
       // labels such as "Not Available (N)". Match those meanings explicitly.
@@ -326,6 +337,7 @@
         else if (desc.includes("countryname") || desc.includes("country")) score += 50;
 
         if (ctrl.tagName === "INPUT") score += 10;
+        if (ctrl.tagName === "SELECT") score += 20;
         if (ctrl.tagName === "TEXTAREA") score -= 30;
         return score;
       }
