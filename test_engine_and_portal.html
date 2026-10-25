@@ -301,10 +301,10 @@
       resUK.companyName === "Apex Engineering Limited" &&
       resUK.companyAddress.includes("15 London Wall") &&
       resUK.companyAddress.includes("London") &&
-      !resUK.companyAddress.includes("EC2M 5QD") &&
+      resUK.companyAddress.includes("EC2M 5QD") &&
       !resUK.companyAddress.toLowerCase().includes("united kingdom")
     );
-    renderTest("Test 3: UK Site (.co.uk) - Rule 5 Locality Priority (England > United Kingdom) & Postal Code Removal", passUK, {
+    renderTest("Test 3: UK Site (.co.uk) - Rule 5 Locality Priority (England > United Kingdom) & Postcode Retention", passUK, {
       countryName: resUK.countryName,
       companyName: resUK.companyName,
       companyAddress: resUK.companyAddress,
@@ -397,7 +397,7 @@
       resAccurite.countryName === "England" &&
       resAccurite.companyAddress.includes("Low Mill Business Park") &&
       resAccurite.companyAddress.includes("Ulverston") &&
-      !resAccurite.companyAddress.includes("LA12 9EE")
+      resAccurite.companyAddress.includes("LA12 9EE")
     );
     renderTest("Test 5: Accurite Site - Extended Content & Legal Suffix Retention (Accurite Industries Ltd -> Accurite Industries Limited)", passAccurite, {
       companyName: resAccurite.companyName,
@@ -581,10 +581,10 @@
         raw: "Ind. Area Phase-1",
         expected: "Industrial Area Phase 1"
       },
-      // User Provided Test Case 1 (Hayward Industrial Park, Vigo Pl -> Vigo Place, UK Postcode WS9 8UG removed, United Kingdom removed)
+      // User Provided Test Case 1 (Hayward Industrial Park, Vigo Pl -> Vigo Place, UK postcode retained)
       {
         raw: "Hayward Industrial Park, Vigo Pl, Walsall WS9 8UG, United Kingdom",
-        expected: "Hayward Industrial Park, Vigo Place, Walsall"
+        expected: "Hayward Industrial Park, Vigo Place, Walsall WS9 8UG"
       },
       // User Provided Test Case 2 (19654 Eighth Street East house number preserved, P.O. Box -> Post Office Box, 95476 & USA removed)
       {
@@ -832,6 +832,49 @@
     if (!passCosenServiceLocationAddress) {
       allAddressPassed = false;
       console.error(`Cosen service-country list was selected as an address: ${JSON.stringify(cosenServiceLocationAddress)}`);
+    }
+    const ukAddressDoc = new DOMParser().parseFromString(`
+      <html>
+        <head><title>Professional Paint Manufacturer</title></head>
+        <body>
+          <section class="contact-description">
+            Manufactured in the UK by Technispray Paints, this is a special coating designed
+            to paint PVCu, uPVC, PVC and other hard plastic.
+          </section>
+          <footer>
+            <section class="footer-contact">
+              <h2>Contact</h2>
+              <p>Email info@example.co.uk</p>
+              <p>Tel +44 (0)121 326 8020</p>
+              <p>Technispray Paints Ltd</p>
+              <p>Catherine Street, Aston</p>
+              <p>Birmingham, B6 5RS</p>
+            </section>
+          </footer>
+        </body>
+      </html>`,
+      "text/html"
+    );
+    const ukRawAddress = Extractor.findRawAddress(
+      ukAddressDoc,
+      Extractor.getElementText(ukAddressDoc.body),
+      "https://example.com/",
+      true
+    );
+    const ukCleanAddress = Extractor.cleanAddressString(ukRawAddress.address, "United Kingdom");
+    const passUkAddress =
+      ukCleanAddress.includes("Catherine Street, Aston") &&
+      ukCleanAddress.includes("Birmingham, B6 5RS") &&
+      !/Manufactured|special coating/i.test(ukCleanAddress);
+    addressResults["UK footer address wins over product copy and retains postcode"] = {
+      expected: "Catherine Street, Aston, Birmingham, B6 5RS",
+      raw: ukRawAddress,
+      actual: ukCleanAddress,
+      passed: passUkAddress
+    };
+    if (!passUkAddress) {
+      allAddressPassed = false;
+      console.error(`UK address extraction failed: ${JSON.stringify({ raw: ukRawAddress, cleaned: ukCleanAddress })}`);
     }
     const datedNewsAddressDoc = new DOMParser().parseFromString(`
       <html>

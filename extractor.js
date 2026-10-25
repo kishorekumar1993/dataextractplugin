@@ -961,12 +961,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     } catch { }
     const isContactPage = (pagePath && /(?:contact|location|locations|reach-us|reach_us|get-in-touch|about\/contact|about-us\/contact|about-us|aboutus|find-us|our-offices|corporate-office|headquarters|branches|kontakt|contacto|contatti|오시는길|고객센터|연락처|회사위치|お問い合わせ|アクセス|联系我们)/i.test(pagePath)) ||
       (doc?.title && /\b(?:contact|location|locations|reach us|find us|our office|our offices|headquarters|about us)\b/i.test(doc.title)) ||
-      Array.from(doc?.querySelectorAll?.("h1, h2, h3, h4, h5, th") || []).some(el => /\b(?:contact us|contact|our locations|office locations|get in touch|reach us|head office|headquarters)\b/i.test(el.textContent || el.innerText || ""));
+      Array.from(doc?.querySelectorAll?.("h1, h2, h3, h4, h5, th") || []).some(el =>
+        !el.closest("footer, [class*='footer'], [id*='footer']") &&
+        /\b(?:contact us|contact|our locations|office locations|get in touch|reach us|head office|headquarters)\b/i.test(el.textContent || el.innerText || "")
+      );
 
     const normalizeAddress = value => {
       let address = String(value || "")
         .replace(/\u00a0/g, " ")
-        .replace(/\s*(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "")
+        .replace(/\s+(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "")
         .replace(/\s+(?:tel(?:ephone)?|phone|mobile|fax)\s*[:：]?\s*.*$/i, "")
         .replace(/\(?\+\d{1,3}\)?(?:[\s().-]*\d){7,}[\s\S]*$/i, "");
 
@@ -1075,8 +1078,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const colonHeaderCount = (cleaned.match(/\b[A-Za-z]{2,15}\s*:\s+[A-Za-z0-9]/g) || []).length;
       if (colonHeaderCount >= 3) return false;
 
-      // Reject only if segment is excessively long prose (> 25 words)
-      if (segments.some(segment => segment.split(/\s+/).filter(Boolean).length > 25)) {
+      // Postal address fragments are short; long comma-delimited clauses are prose.
+      if (segments.some(segment => segment.split(/\s+/).filter(Boolean).length > 8)) {
         return false;
       }
 
@@ -1385,14 +1388,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     const looksLikeAddressLine = line => {
       let s = String(line || "").trim();
-      s = s.replace(/\s*(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "").trim();
+      s = s.replace(/\s+(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "").trim();
       s = s.replace(/\s+(?:tel(?:ephone)?|phone|mobile|fax)\s*[:：]?\s*.*$/i, "").trim();
       if (!s || s.length < 12 || s.length > 220) return false;
       if (stopLinePattern.test(s) || /@|https?:\/\/|www\.|all rights reserved/i.test(s)) return false;
       const hasNumber = /\d/.test(s);
       const hasStreetMarker = /\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|gu\b|si\b|do\b|ro\b|dong\b|gun\b|min\b|city\b|province\b|county\b)/i.test(s);
       const commaSegments = s.split(",").map(p => p.trim()).filter(Boolean);
-      return (hasNumber && (commaSegments.length >= 2 || hasStreetMarker)) || (commaSegments.length >= 3 && hasStreetMarker);
+      return (hasNumber && (commaSegments.length >= 2 || hasStreetMarker)) ||
+        (hasStreetMarker && commaSegments.length >= 2);
     };
 
     const officeMarkers = doc.querySelectorAll(
@@ -1602,6 +1606,17 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .filter(Boolean);
 
       let score = candidate.priority;
+
+      // Prefer complete UK postal addresses over partial candidates.
+      const ukPostcodePattern =
+        /\b(GIR\s?0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i;
+      if (
+        ukPostcodePattern.test(address) &&
+        /\b(?:United Kingdom|UK|England|Scotland|Wales|Northern Ireland|Birmingham)\b/i.test(address)
+      ) {
+        score += 25;
+      }
+
       score += Math.min(segments.length, 5) * 8;
 
       const countryMatch = COUNTRIES.some(country =>
@@ -2265,7 +2280,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       /^\d{5}(?:-\d{4})?$/,                       // US ZIP / ZIP+4
       /^\d{6}$/,                                  // Six-digit postal code
       /^[A-Z]\d[A-Z]\s*\d[A-Z]\d$/i,            // Canadian postal code
-      /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i,    // UK postcode
       /^(?:D|F|I|E|NL|B|CH|AT|PL)-\d{4,5}$/i     // Selected international formats
     ];
 
@@ -2276,7 +2290,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .join(", ");
 
     addr = addr.replace(/,\s*,\s*/g, ",, ");
-    addr = addr.replace(/(?:\s+|,\s*)(?:[A-Z]\d[A-Z]\s*\d[A-Z]\d|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}|\d{5}(?:-\d{4})?|\d{6})\s*$/i, "").trim();
+    addr = addr.replace(/(?:\s+|,\s*)(?:[A-Z]\d[A-Z]\s*\d[A-Z]\d|\d{5}(?:-\d{4})?|\d{6})\s*$/i, "").trim();
     if (addressCountry === "Australia") {
       addr = addr.replace(/(?:\s+|,\s*)\d{4}\s*$/, "").trim();
     }
@@ -2290,11 +2304,19 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .trim();
 
     // 9. Apply title case while preserving common acronyms and numbers.
-    addr = addr.split(/\s+/).map(word => {
+    addr = addr.split(/\s+/).map((word, wordIndex, words) => {
       const trailing = (word.match(/[.,;:!?]+$/) || [""])[0];
       const core = word.replace(/[.,;:!?]+$/g, "");
+      const previousCore = words[wordIndex - 1]?.replace(/[.,;:!?]+$/g, "") || "";
+      const nextCore = words[wordIndex + 1]?.replace(/[.,;:!?]+$/g, "") || "";
 
       if (!core) return word;
+      if (
+        (/^[A-Z]{1,2}\d[A-Z\d]?$/i.test(core) && /^\d[A-Z]{2}$/i.test(nextCore)) ||
+        (/^\d[A-Z]{2}$/i.test(core) && /^[A-Z]{1,2}\d[A-Z\d]?$/i.test(previousCore))
+      ) {
+        return core.toUpperCase() + trailing;
+      }
       if (/^[A-Z]{2,3}[,;:]?$/.test(core)) return core + trailing;
       if (/^(?:FL|AL|AK|AZ|AR|CA|CO|CT|DE|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)$/i.test(core)) {
         return core.toUpperCase() + trailing;
