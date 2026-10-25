@@ -504,6 +504,16 @@
       {
         raw: "T2 Technology Limited, 123 Main Street, London, United Kingdom",
         expected: "123 Main Street, London"
+      },
+      // User Provided Test Case 4 (Florida address: "FL 33405" - FL must NOT become Floor, postal code 33405 stripped)
+      {
+        raw: "500 S Australian Ave, West Palm Beach, FL 33405, USA",
+        expected: "500 South Australian Avenue, West Palm Beach, FL"
+      },
+      // User Provided Test Case 5 (Floor condition: "2f" -> "Second Floor", 2nd floor expanded properly)
+      {
+        raw: "Building 4, 2f, Industrial Area, West Palm Beach, FL 33405",
+        expected: "Building 4, Second Floor, Industrial Area, West Palm Beach, FL"
       }
     ];
 

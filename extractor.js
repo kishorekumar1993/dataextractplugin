@@ -107,7 +107,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { country: "Germany", regex: /\b(berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|leipzig|dortmund|essen|bremen|dresden|hannover|nuremberg|nürnberg|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony)\b/i },
     { country: "France", regex: /\b(paris|marseille|lyon|toulouse|nice|nantes|strasbourg|montpellier|bordeaux|lille|rennes|reims|le havre|île-de-france)\b/i },
     { country: "Italy", regex: /\b(rome|roma|milan|milano|naples|napoli|turin|torino|palermo|genoa|genova|bologna|florence|firenze|bari|catania|venice|venezia|verona|lombardy|lombardia|tuscany|toscana|piedmont|piemonte|veneto)\b/i },
-    { country: "United States Of America", regex: /\b(new york|los angeles|chicago|houston|phoenix|philadelphia|san antonio|san diego|dallas|san jose|austin|jacksonville|fort worth|columbus|charlotte|indianapolis|san francisco|seattle|denver|washington dc|boston|el paso|nashville|detroit|las vegas|portland|memphis|louisville|baltimore|milwaukee|albuquerque|tucson|fresno|sacramento|atlanta|kansas city|colorado springs|miami|raleigh|omaha|long beach|virginia beach|oakland|minneapolis|tulsa|tampa|arlington|california|texas|florida|new york state|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington state|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|west virginia|hawaii|new hampshire|maine|montana|rhode island|delaware|south dakota|north dakota|alaska|vermont|wyoming)\b/i },
+    { country: "United States Of America", regex: /\b(new york|los angeles|chicago|houston|phoenix|philadelphia|san antonio|san diego|dallas|san jose|austin|jacksonville|fort worth|columbus|charlotte|indianapolis|san francisco|seattle|denver|washington dc|boston|el paso|nashville|detroit|las vegas|portland|memphis|louisville|baltimore|milwaukee|albuquerque|tucson|fresno|sacramento|atlanta|kansas city|colorado springs|miami|west palm beach|palm beach|tampa|orlando|fort lauderdale|boca raton|raleigh|omaha|long beach|virginia beach|oakland|minneapolis|tulsa|arlington|california|texas|florida|\bfl\b|new york state|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington state|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|west virginia|hawaii|new hampshire|maine|montana|rhode island|delaware|south dakota|north dakota|alaska|vermont|wyoming)\b/i },
     { country: "Canada", regex: /\b(toronto|montreal|vancouver|calgary|edmonton|ottawa|winnipeg|quebec city|hamilton|kitchener|london ontario|victoria|halifax|ontario|quebec|british columbia|alberta|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland)\b/i },
     { country: "Australia", regex: /\b(sydney|melbourne|brisbane|perth|adelaide|gold coast|canberra|newcastle nsw|wollongong|hobart|geelong|townsville|cairns|darwin|new south wales|nsw|victoria vic|queensland qld|western australia wa|south australia sa|tasmania tas)\b/i },
     { country: "Taiwan", regex: /\b(taipei|new taipei|taichung|kaohsiung|taoyuan|tainan|hsinchu)\b/i }
@@ -1068,10 +1068,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       (doc?.title && /\b(?:contact|location|locations|reach us|find us|our office|our offices|headquarters)\b/i.test(doc.title)) ||
       Boolean(doc?.querySelector?.("h1, h2, h3")?.innerText && /\b(?:contact us|contact|our locations|office locations|get in touch|reach us)\b/i.test(doc.querySelector("h1, h2, h3").innerText));
 
-    let sectionQuery = "footer, #footer, .footer, .contact-info, .contact-details, #contact, #contact-us, .contact-us, [class*='contact']";
+    let sectionQuery = "header, #header, .header, .site-header, .top-bar, footer, #footer, .footer, .contact-info, .contact-details, #contact, #contact-us, .contact-us, [class*='contact']";
     if (isContactPage) {
       sectionQuery += ", main, #main, .main, article, #content, .content, .container, section, .office, .locations, [class*='location'], [class*='branch'], [id*='location']";
     }
+    sectionQuery += ", table, tbody, tr, td";
     const sections = doc.querySelectorAll(sectionQuery);
 
     const labelPattern =
@@ -1360,18 +1361,58 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/(?:^|(?<=[,;\s]))#\s*(\d+)/g, "Number $1");
 
     // Floor Abbreviations (Section 7.5)
+    // Floor rules MUST require a preceding digit or ordinal (e.g. 2F, 2nd Fl, 2 Fl)
+    // NEVER replace standalone 'FL' with 'Floor' because 'FL' is the US state code for Florida (e.g. FL 33405)!
     addr = addr.replace(/\b1st\s+Fl(?:oor\b|\.?)/gi, "First Floor");
     addr = addr.replace(/\b2nd\s+Fl(?:oor\b|\.?)/gi, "Second Floor");
     addr = addr.replace(/\b3rd\s+Fl(?:oor\b|\.?)/gi, "Third Floor");
     addr = addr.replace(/\b4th\s+Fl(?:oor\b|\.?)/gi, "Fourth Floor");
     addr = addr.replace(/\b5th\s+Fl(?:oor\b|\.?)/gi, "Fifth Floor");
+    addr = addr.replace(/\b6th\s+Fl(?:oor\b|\.?)/gi, "Sixth Floor");
+    addr = addr.replace(/\b7th\s+Fl(?:oor\b|\.?)/gi, "Seventh Floor");
+    addr = addr.replace(/\b8th\s+Fl(?:oor\b|\.?)/gi, "Eighth Floor");
+    addr = addr.replace(/\b9th\s+Fl(?:oor\b|\.?)/gi, "Ninth Floor");
+    addr = addr.replace(/\b10th\s+Fl(?:oor\b|\.?)/gi, "Tenth Floor");
+
     addr = addr.replace(/\b1\s+Fl(?:oor\b|\.?)/gi, "First Floor");
     addr = addr.replace(/\b2\s+Fl(?:oor\b|\.?)/gi, "Second Floor");
     addr = addr.replace(/\b3\s+Fl(?:oor\b|\.?)/gi, "Third Floor");
+    addr = addr.replace(/\b4\s+Fl(?:oor\b|\.?)/gi, "Fourth Floor");
+    addr = addr.replace(/\b5\s+Fl(?:oor\b|\.?)/gi, "Fifth Floor");
+    addr = addr.replace(/\b6\s+Fl(?:oor\b|\.?)/gi, "Sixth Floor");
+    addr = addr.replace(/\b7\s+Fl(?:oor\b|\.?)/gi, "Seventh Floor");
+    addr = addr.replace(/\b8\s+Fl(?:oor\b|\.?)/gi, "Eighth Floor");
+    addr = addr.replace(/\b9\s+Fl(?:oor\b|\.?)/gi, "Ninth Floor");
+    addr = addr.replace(/\b10\s+Fl(?:oor\b|\.?)/gi, "Tenth Floor");
+
+    // Digit + F (e.g. 2F / 2f -> Second Floor, 1F -> First Floor, 3F -> Third Floor)
+    // Only matches when preceded by boundary/space/comma/hyphen and followed by boundary/comma/period/space
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))1[Ff](?=[,;\s\.\-\/]|$)/g, "First Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))2[Ff](?=[,;\s\.\-\/]|$)/g, "Second Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))3[Ff](?=[,;\s\.\-\/]|$)/g, "Third Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))4[Ff](?=[,;\s\.\-\/]|$)/g, "Fourth Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))5[Ff](?=[,;\s\.\-\/]|$)/g, "Fifth Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))6[Ff](?=[,;\s\.\-\/]|$)/g, "Sixth Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))7[Ff](?=[,;\s\.\-\/]|$)/g, "Seventh Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))8[Ff](?=[,;\s\.\-\/]|$)/g, "Eighth Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))9[Ff](?=[,;\s\.\-\/]|$)/g, "Ninth Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))10[Ff](?=[,;\s\.\-\/]|$)/g, "Tenth Floor");
+
+    // Basement floors
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))B1[Ff]?(?=[,;\s\.\-\/]|$)/gi, "Basement First Floor");
+    addr = addr.replace(/(?:^|(?<=[,;\s\-\/]))B2[Ff]?(?=[,;\s\.\-\/]|$)/gi, "Basement Second Floor");
+
+    // Standard floor acronyms (Ground Floor, First Floor, Second Floor)
     addr = addr.replace(/(?:^|(?<=[,;\s]))G\.?F\.?(?=[,;\s]|$)/gi, "Ground Floor");
     addr = addr.replace(/(?:^|(?<=[,;\s]))F\.?F\.?(?=[,;\s]|$)/gi, "First Floor");
     addr = addr.replace(/(?:^|(?<=[,;\s]))S\.?F\.?(?=[,;\s]|$)/gi, "Second Floor");
-    addr = addr.replace(/\bFl\b\.?(?=[,;\s]|$)/gi, "Floor");
+
+    // Fl. followed by floor number (e.g. "Fl. 2" -> "Second Floor", "Fl. 1" -> "First Floor")
+    addr = addr.replace(/\bFl\b\.?\s*#?\s*1\b/gi, "First Floor");
+    addr = addr.replace(/\bFl\b\.?\s*#?\s*2\b/gi, "Second Floor");
+    addr = addr.replace(/\bFl\b\.?\s*#?\s*3\b/gi, "Third Floor");
+    addr = addr.replace(/\bFl\b\.?\s*#?\s*4\b/gi, "Fourth Floor");
+    addr = addr.replace(/\bFl\b\.?\s*#?\s*5\b/gi, "Fifth Floor");
 
     // 4. Phase (Sections 7.5, 7.6 & Example 3)
     // "1 Phase" -> "First Phase", "2 Phase" -> "Second Phase", "3 Phase" -> "Third Phase"
@@ -1600,6 +1641,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     addr = addr.replace(/,\s*,\s*/g, ",, ");
     addr = addr.replace(/(?:\s+|,\s*)(?:[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}|\d{5}(?:-\d{4})?|\d{6})\s*$/i, "").trim();
+    // Strip 5-digit postal code directly following 2-letter state code (e.g. "FL 33405" -> "FL")
+    addr = addr.replace(/(?<=\b[A-Z]{2}\s+)\d{5}(?:-\d{4})?(?=[,\s;:]|$)/g, "").trim();
 
     // 7. Expand abbreviations using your existing helper.
     if (typeof expandAddressAbbreviations === "function") {
@@ -1619,6 +1662,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       if (!core) return word;
       if (/^[A-Z]{2,6}[,;:]?$/.test(core)) return core + trailing;
+      if (/^(?:FL|AL|AK|AZ|AR|CA|CO|CT|DE|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)$/i.test(core)) {
+        return core.toUpperCase() + trailing;
+      }
       if (/^(?:[A-Za-z]\.)+[A-Za-z]?\.?[,;:]?$/.test(core)) {
         return core.toUpperCase() + trailing;
       }
@@ -1665,12 +1711,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
 
     // State indicators in address
-    if (state === "N" && /(?:county|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland)/i.test(addrLower)) {
+    if (state === "N" && /(?:county|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland)/i.test(addrLower)) {
       state = "Y";
     }
 
     // City indicators in address
-    if (city === "N" && /(?:town|district|municipality|city|-si\b|-gu\b|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei)/i.test(addrLower)) {
+    if (city === "N" && /(?:town|district|municipality|city|-si\b|-gu\b|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei)/i.test(addrLower)) {
       city = "Y";
     }
 
