@@ -1144,7 +1144,7 @@
               <h1>Contact Our Team</h1>
               <div class="office-box">
                 <p>Corporate Office: 888 Silicon Parkway, Suite 400, Austin, Texas 78759</p>
-                <p>Phone: +1 512 555 7788 | Email: contact@globalapex.com</p>
+                <p>Phone: +1 512 555 7788 | Email: <a href="mailto:contact@globalapex.com">contact@globalapex.com</a></p>
               </div>
             </div>
           </main>
@@ -1161,8 +1161,18 @@
       resContactPage.companyAddress.includes("Texas") &&
       !resContactPage.companyAddress.includes("Old Mill Road") &&
       resContactPage.addressSource.startsWith("contact-detail-") &&
+      resContactPage.emailId === "contact@globalapex.com" &&
       resContactPage.state === "Y" &&
       resContactPage.city === "Y";
+    const mergedContactEmails = Extractor.mergeContactEmails(
+      "newsletter@globalapex.com",
+      "",
+      resContactPage.emailId,
+      resContactPage.secondaryEmailId
+    );
+    const passContactEmailPriority =
+      mergedContactEmails.emailId === "contact@globalapex.com" &&
+      mergedContactEmails.secondaryEmailId === "newsletter@globalapex.com";
 
     const fakeFooterFallbackHtml = `
       <!DOCTYPE html>
@@ -1194,8 +1204,31 @@
       !resGenericPageFallback.companyAddress.includes("Random Industrial Road") &&
       resGenericPageFallback.addressSource.startsWith("footer-");
 
+    const copyrightContaminatedAddress =
+      "Newbury House, Ford Lane, Salford, © Forest Sofa 2026 | Privacy";
+    const footerCopyrightHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head><title>Contact Us - Forest Sofa</title></head>
+        <body>
+          <main><h1>Contact Us</h1></main>
+          <footer><p>${copyrightContaminatedAddress}</p></footer>
+        </body>
+      </html>
+    `;
+    const resFooterCopyright = Extractor.extractFromHtml(
+      footerCopyrightHtml,
+      "https://www.forestsofa.example/contact-us"
+    );
+    const cleanedCopyrightAddress = Extractor.cleanAddressString(copyrightContaminatedAddress);
+    const passCopyrightCleanup =
+      resFooterCopyright.companyAddress === "Newbury House, Ford Lane, Salford" &&
+      !/Forest Sofa|2026|Privacy/i.test(resFooterCopyright.companyAddress) &&
+      cleanedCopyrightAddress === "Newbury House, Ford Lane, Salford";
+
     const passTest11 = passContactSubpageDiscovery && passContactPageAddress &&
-      passFooterFallback && passFooterOverGenericPageAddress;
+      passFooterFallback && passFooterOverGenericPageAddress && passCopyrightCleanup &&
+      passContactEmailPriority;
     renderTest("Test 11: Contact Page Subpage Discovery & Contact Page Address Extraction", passTest11, {
       discoveredContactUrls: foundContactUrls,
       contactSubpageDiscoveryPass: passContactSubpageDiscovery,
@@ -1203,12 +1236,18 @@
       state: resContactPage.state,
       city: resContactPage.city,
       contactPageAddressPass: passContactPageAddress,
+      contactPageEmail: resContactPage.emailId,
+      prioritizedEmailMerge: mergedContactEmails,
+      contactEmailPriorityPass: passContactEmailPriority,
       footerFallbackAddress: resFooterFallback.companyAddress,
       contactAddressSource: resContactPage.addressSource,
       footerAddressSource: resFooterFallback.addressSource,
       footerFallbackPass: passFooterFallback,
       genericPageFallbackAddress: resGenericPageFallback.companyAddress,
-      footerPreferredOverGenericPageAddress: passFooterOverGenericPageAddress
+      footerPreferredOverGenericPageAddress: passFooterOverGenericPageAddress,
+      copyrightCleanupAddress: resFooterCopyright.companyAddress,
+      directCopyrightCleanup: cleanedCopyrightAddress,
+      copyrightCleanupPass: passCopyrightCleanup
     });
 
     window.__TEST_RESULTS__ = {

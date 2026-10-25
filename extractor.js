@@ -951,16 +951,22 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       (doc?.title && /\b(?:contact|location|locations|reach us|find us|our office|our offices|headquarters)\b/i.test(doc.title)) ||
       Boolean(doc?.querySelector?.("h1, h2, h3")?.innerText && /\b(?:contact us|contact|our locations|office locations|get in touch|reach us)\b/i.test(doc.querySelector("h1, h2, h3").innerText));
 
-    const normalizeAddress = value =>
-      String(value || "")
+    const normalizeAddress = value => {
+      let address = String(value || "")
         .replace(/\u00a0/g, " ")
         .replace(/\s*(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "")
         .replace(/\s+(?:tel(?:ephone)?|phone|mobile|fax)\s*[:：]?\s*.*$/i, "")
+
+      const legalNotice = /©|\bcopyright\b|\ball rights reserved\b|\|\s*privacy(?:\s+policy)?\b|\bprivacy\s+policy\b|\|\s*terms(?:\s+of\s+use)?\b|\bterms\s+of\s+use\b/i.exec(address);
+      if (legalNotice) address = address.slice(0, legalNotice.index);
+
+      return address
         .replace(/\s*\n+\s*/g, ", ")
         .replace(/[ \t]+/g, " ")
         .replace(/\s*,\s*/g, ", ")
         .replace(/^[\s,;:|]+|[\s,;:|]+$/g, "")
         .trim();
+    };
 
     const isContactOnly = address =>
       /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|website|url)\s*[:：.-]/i
@@ -1855,6 +1861,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .replace(/\s+/g, " ")
       .trim();
 
+    const legalNotice = /©|\bcopyright\b|\ball rights reserved\b|\|\s*privacy(?:\s+policy)?\b|\bprivacy\s+policy\b|\|\s*terms(?:\s+of\s+use)?\b|\bterms\s+of\s+use\b/i.exec(addr);
+    if (legalNotice) {
+      addr = addr.slice(0, legalNotice.index).trim();
+    }
+
     // 2. Remove leading address labels.
     const leadingLabel =
       /^(?:(?:office|corporate|registered|factory|head|postal|physical|mailing|our|company)\s+)?(?:address|location|headquarters|hq|add|addr|works|plant|site|visit\s+us|find\s+us|contact\s+(?:info|details)?|주소|본사|地址|所在地)\s*[:.\-–—]\s*/i;
@@ -2195,6 +2206,22 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   }
 
+  function mergeContactEmails(primaryEmail, secondaryEmail, contactEmail, contactSecondaryEmail) {
+    let primary = primaryEmail || "";
+    let secondary = secondaryEmail || "";
+
+    if (contactEmail && contactEmail !== primary) {
+      if (primary && !secondary) secondary = primary;
+      primary = contactEmail;
+    }
+
+    if (contactSecondaryEmail && contactSecondaryEmail !== primary && !secondary) {
+      secondary = contactSecondaryEmail;
+    }
+
+    return { emailId: primary, secondaryEmailId: secondary };
+  }
+
   // Rule 11: Phone Number
   // "remove the country code, special characters, and spaces. Do not take toll-free numbers. Do not take numbers starting with zero."
   function extractPhoneNumber(text, country) {
@@ -2512,6 +2539,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     detectCompanyProfile,
     detectCountry,
     extractEmails,
+    mergeContactEmails,
     extractPhoneNumber,
     findRawAddress,
     findEnglishSubpage,

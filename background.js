@@ -221,14 +221,14 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
           }
 
           // Merge Email ID & Secondary Email ID
-          if (contactData.emailId) {
-            if (!mainData.emailId) {
-              mainData.emailId = contactData.emailId;
-              if (contactData.secondaryEmailId) mainData.secondaryEmailId = contactData.secondaryEmailId;
-            } else if (contactData.emailId !== mainData.emailId && !mainData.secondaryEmailId) {
-              mainData.secondaryEmailId = contactData.emailId;
-            }
-          }
+          const contactEmails = Extractor.mergeContactEmails(
+            mainData.emailId,
+            mainData.secondaryEmailId,
+            contactData.emailId,
+            contactData.secondaryEmailId
+          );
+          mainData.emailId = contactEmails.emailId;
+          mainData.secondaryEmailId = contactEmails.secondaryEmailId;
 
           // Merge Country, State, City, Phone
           if (contactData.countryName && !mainData.countryName) mainData.countryName = contactData.countryName;

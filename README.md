@@ -67,7 +67,7 @@ We have included a built-in test portal `test_portal.html` that matches your rea
 5. **Modern Popup Design**:
    - Categorized card layout, individual field copy buttons, live editing, QC pass/warning badges, and 1-click JSON export.
 6. **Comprehensive Section 7 Address Normalization & Expansion**:
-   - **Address source priority**: Checks contact/location-page details first; uses a footer address only when no contact-detail address is available.
+   - **Address source priority**: Checks contact/location-page details first; uses a footer address only when no contact-detail address is available. Removes trailing copyright, privacy, and terms notices from address candidates.
    - Implements Sections 7.4 through 7.11 address rules:
      - **Street & Road Types**: `St.` -> `Street`, `Rd.` -> `Road`, `Ave.` -> `Avenue`, `Blvd.` -> `Boulevard`, `Dr.` -> `Drive`, `Ln.` -> `Lane`, `Ct.` -> `Court`, `Hwy.` -> `Highway`, `Pkwy.` -> `Parkway`, `Sq.` -> `Square`, `Pl.` -> `Place`, `Cres.` -> `Crescent`, `Ter.` -> `Terrace`, `Cir.` -> `Circle`, `Trl.` -> `Trail`, `Extn.` -> `Extension`, `Rd. Extn.` -> `Road Extension`.
      - **Context Safeguards**: Protects Saint in proper names (`St. John`, `St. Louis`, `St. Mary`) and Doctor (`Dr. B.R. Ambedkar`) from improper expansion.
