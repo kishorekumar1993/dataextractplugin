@@ -938,15 +938,24 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Find Raw Multi-Line Address from Document / Footer / Text (prioritizes HQ / Registered Office over branch/factory)
 
 
-  function findRawAddress(doc, fullText = "", pageUrl = "") {
-    if (!doc) return "";
+  function findRawAddress(doc, fullText = "", pageUrl = "", includeSource = false) {
+    if (!doc) return includeSource ? { address: "", source: "" } : "";
 
     const candidates = [];
     const seen = new Set();
+    let pagePath = pageUrl;
+    try {
+      pagePath = new URL(pageUrl).pathname;
+    } catch { }
+    const isContactPage = (pagePath && /(?:contact|location|locations|reach-us|reach_us|get-in-touch|about\/contact|about-us\/contact|find-us|our-offices|오시는길|고객센터|연락처)/i.test(pagePath)) ||
+      (doc?.title && /\b(?:contact|location|locations|reach us|find us|our office|our offices|headquarters)\b/i.test(doc.title)) ||
+      Boolean(doc?.querySelector?.("h1, h2, h3")?.innerText && /\b(?:contact us|contact|our locations|office locations|get in touch|reach us)\b/i.test(doc.querySelector("h1, h2, h3").innerText));
 
     const normalizeAddress = value =>
       String(value || "")
         .replace(/\u00a0/g, " ")
+        .replace(/\s*(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "")
+        .replace(/\s+(?:tel(?:ephone)?|phone|mobile|fax)\s*[:：]?\s*.*$/i, "")
         .replace(/\s*\n+\s*/g, ", ")
         .replace(/[ \t]+/g, " ")
         .replace(/\s*,\s*/g, ", ")
@@ -984,6 +993,48 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       candidates.push({ address, source, priority, key });
     };
 
+    const isFooterElement = el => {
+      for (let node = el; node && node !== doc.body; node = node.parentElement) {
+        const classAndId = `${node.className || ""} ${node.id || ""}`.toLowerCase();
+        if (
+          node.tagName === "FOOTER" ||
+          classAndId.includes("footer") ||
+          classAndId.includes("copyright")
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const isContactDetailElement = el => {
+      let hasContactDetailMarker = false;
+      for (let node = el; node && node !== doc.body; node = node.parentElement) {
+        const classAndId = `${node.className || ""} ${node.id || ""}`.toLowerCase();
+        if (node.tagName === "FOOTER" || classAndId.includes("footer") || classAndId.includes("copyright")) {
+          return false;
+        }
+        if (node.tagName === "ADDRESS" || /contact|location|office|head.?quarter|address|branch/.test(classAndId)) {
+          hasContactDetailMarker = true;
+        }
+      }
+      return hasContactDetailMarker || (isContactPage && !isFooterElement(el));
+    };
+
+    const isContactHeaderElement = el => {
+      for (let node = el; node && node !== doc.body; node = node.parentElement) {
+        if (isFooterElement(node)) return false;
+        const classAndId = `${node.className || ""} ${node.id || ""}`.toLowerCase();
+        if (node.tagName === "HEADER" || /(?:^|[\s_-])header(?:$|[\s_-])/.test(classAndId)) {
+          const text = typeof getElementText === "function"
+            ? getElementText(node)
+            : (node.innerText || node.textContent || "");
+          return /(?:\b(?:tel(?:ephone)?|phone|fax|email|e-mail)\b|@|\+\s?\d[\d\s().-]{5,})/i.test(text);
+        }
+      }
+      return false;
+    };
+
     const getAddressCountry = country => {
       if (!country) return "";
       if (typeof country === "string") return country;
@@ -1012,7 +1063,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       const addStructuredAddress = address => {
         if (typeof address === "string") {
-          addCandidate(address, "schema-string", 90);
+          addCandidate(address, "contact-detail-schema-string", 105);
           return;
         }
 
@@ -1029,7 +1080,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         if (parts.length) {
           addCandidate(
             parts.join(", "),
-            "schema",
+            "contact-detail-schema",
             105
           );
         }
@@ -1092,6 +1143,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     ];
 
     doc.querySelectorAll(selectors.join(",")).forEach(el => {
+      const isFooter = isFooterElement(el);
+      const isContactDetail = isContactDetailElement(el);
+      const isContactHeader = !isContactDetail && !isFooter && isContactHeaderElement(el);
+      const contactHeaderSource = isContactPage ? "contact-detail-header" : "contact-header";
+      const contactHeaderPriority = isContactPage ? 130 : 55;
       const isHq = el.matches(
         ".head-office, .headquarters, " +
         "[class*='head-office'], [class*='headquarter'], #head-office"
@@ -1122,8 +1178,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (parts.length) {
         addCandidate(
           parts.join(", "),
-          "semantic",
-          isHq ? 110 : 95
+          isContactDetail ? "contact-detail-semantic" : (isFooter ? "footer-semantic" : (isContactHeader ? `${contactHeaderSource}-semantic` : "page-semantic")),
+          isContactDetail ? (isHq ? 155 : 140) : (isFooter ? 65 : (isContactHeader ? contactHeaderPriority : (isHq ? 110 : 35)))
         );
       }
 
@@ -1138,16 +1194,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       addCandidate(
         text,
-        "address-element",
-        isHq ? 100 : (el.matches("address") ? 90 : 65)
+        isContactDetail ? "contact-detail-element" : (isFooter ? "footer-element" : (isContactHeader ? `${contactHeaderSource}-element` : "page-element")),
+        isContactDetail ? (isHq ? 150 : 135) : (isFooter ? 60 : (isContactHeader ? contactHeaderPriority : (isHq ? 100 : 25)))
       );
     });
 
     // 3. Look for labelled addresses in contact/footer sections.
-    const isContactPage = (pageUrl && /(?:contact|location|locations|reach-us|reach_us|about\/contact|about-us\/contact|find-us|our-offices|오시는길|고객센터|연락처)/i.test(pageUrl)) ||
-      (doc?.title && /\b(?:contact|location|locations|reach us|find us|our office|our offices|headquarters)\b/i.test(doc.title)) ||
-      Boolean(doc?.querySelector?.("h1, h2, h3")?.innerText && /\b(?:contact us|contact|our locations|office locations|get in touch|reach us)\b/i.test(doc.querySelector("h1, h2, h3").innerText));
-
     let sectionQuery = "header, #header, .header, .site-header, .top-bar, footer, #footer, .footer, .contact-info, .contact-details, #contact, #contact-us, .contact-us, [class*='contact']";
     if (isContactPage) {
       sectionQuery += ", main, #main, .main, article, #content, .content, .container, section, .office, .locations, [class*='location'], [class*='branch'], [id*='location']";
@@ -1172,6 +1224,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     };
 
     for (const section of sections) {
+      const isFooter = isFooterElement(section);
+      const isContactDetail = isContactDetailElement(section);
+      const isContactHeader = !isContactDetail && !isFooter && isContactHeaderElement(section);
+      const contactHeaderSource = isContactPage ? "contact-detail-header" : "contact-header";
+      const contactHeaderPriority = isContactPage ? 130 : 55;
       let text = "";
 
       try {
@@ -1193,16 +1250,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         if (labelMatch) {
           const label = labelMatch[1].toLowerCase();
 
-          let priority = isContactPage ? 105 : 80;
+          let priority = isContactDetail ? 145 : (isFooter ? 70 : (isContactHeader ? contactHeaderPriority : 30));
 
           if (/headquarters|head\s+office|\bhq\b/.test(label)) {
-            priority = isContactPage ? 140 : 120;
+            priority = isContactDetail ? 160 : (isFooter ? 80 : (isContactHeader ? contactHeaderPriority : 120));
           } else if (
             /registered\s+office|company\s+address|corporate\s+office/.test(label)
           ) {
-            priority = isContactPage ? 125 : 105;
+            priority = isContactDetail ? 150 : (isFooter ? 75 : (isContactHeader ? contactHeaderPriority : 105));
           } else if (/factory|works|plant|warehouse|branch|regional/.test(label)) {
-            priority = 55;
+            priority = isFooter ? 50 : 55;
           }
 
           const collected = [
@@ -1233,7 +1290,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
           addCandidate(
             collected.join(", "),
-            "labelled-contact",
+            isContactDetail ? "contact-detail-labelled" : (isFooter ? "footer-labelled" : (isContactHeader ? `${contactHeaderSource}-labelled` : "page-labelled")),
             priority
           );
           continue;
@@ -1265,7 +1322,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
         const joined = collected.join(", ").trim();
         if (joined && joined.split(",").filter(Boolean).length >= 2) {
-          addCandidate(joined, isContactPage ? "contact-page-inline" : "footer-inline", isContactPage ? 105 : 85);
+          addCandidate(
+            joined,
+            isContactDetail ? "contact-detail-inline" : (isFooter ? "footer-inline" : (isContactHeader ? `${contactHeaderSource}-inline` : "page-inline")),
+            isContactDetail ? 140 : (isFooter ? 65 : (isContactHeader ? contactHeaderPriority : 25))
+          );
         }
       }
     }
@@ -1295,7 +1356,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           }
           const joined = collected.join(", ").trim();
           if (joined && (joined.split(",").length >= 2 || joined.length >= 20)) {
-            addCandidate(joined, "fulltext-label", isContactPage ? 115 : 90);
+            addCandidate(joined, isContactPage ? "contact-detail-fulltext" : "fulltext-label", 90);
           }
         }
       }
@@ -1350,7 +1411,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return (parts.length >= 2 || hasStreetMarkers) && candidate.address.length >= 15;
     });
 
-    return best?.address || "";
+    const result = {
+      address: best?.address || "",
+      source: best?.source || ""
+    };
+    return includeSource ? result : result.address;
   }
 
 
@@ -2339,7 +2404,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const forbidden = checkForbiddenCategories(text, doc);
 
     // 3. Extract Raw Multi-Line Address (Rule 6)
-    const rawAddress = findRawAddress(doc, text, url);
+    const addressResult = findRawAddress(doc, text, url, true);
+    const rawAddress = addressResult.address;
+    let addressSource = addressResult.source;
 
     // 4. Extract Company Name (Rule 4) — pass url for domain-based fallback
     const companyName = extractCompanyName(doc, text, url);
@@ -2355,11 +2422,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       // Dynamic fallback: Retry with dedicated contact elements first
       const contactEl = doc?.querySelector?.("address, [itemprop='address'], .contact-address, .company-address, .office-address, .contact-info, .contact-details, [class*='contact'], [id*='contact'], [class*='location']");
       if (contactEl) {
-        const contactRaw = findRawAddress(contactEl, getElementText(contactEl), url) || getElementText(contactEl);
+        const fallbackAddress = findRawAddress(contactEl, getElementText(contactEl), url, true);
+        const contactRaw = fallbackAddress.address || getElementText(contactEl);
         if (contactRaw) {
           const recovered = cleanAddressString(contactRaw, countryName, companyName);
           if (recovered && (!companyAddress || recovered.split(",").length > companyAddress.split(",").length)) {
             companyAddress = recovered;
+            addressSource = fallbackAddress.source ||
+              (contactEl.closest?.("footer, #footer, .footer, [class*='footer'], [id*='footer']")
+                ? "footer-fallback"
+                : "contact-detail-fallback");
           }
         }
       }
@@ -2398,6 +2470,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       companyProfile,
       companyName,
       companyAddress,
+      addressSource,
       countryName,
       state,
       city,
@@ -2440,6 +2513,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     detectCountry,
     extractEmails,
     extractPhoneNumber,
+    findRawAddress,
     findEnglishSubpage,
     findContactSubpages,
     findContactSubpage,

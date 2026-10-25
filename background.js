@@ -119,8 +119,10 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
             mainData.companyName = enData.companyName;
           }
           // If English address has Latin letters, prefer it
-          if (enData.companyAddress && /[a-zA-Z]{5,}/.test(enData.companyAddress)) {
+          if (enData.companyAddress && /[a-zA-Z]{5,}/.test(enData.companyAddress) &&
+              !String(mainData.addressSource || "").startsWith("contact-detail-")) {
             mainData.companyAddress = enData.companyAddress;
+            mainData.addressSource = enData.addressSource;
           }
           // Email priorities
           if (enData.emailId && enData.emailId !== mainData.emailId) {
@@ -166,14 +168,13 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
         `${u.origin}/about/contact`,
         `${u.origin}/about-us/contact`,
         `${u.origin}/en/contact`,
-        `${u.origin}/en/contact-us`,
-        `${u.origin}/about-us`,
-        `${u.origin}/about.html`
+        `${u.origin}/en/contact-us`
       ];
       contactCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(c => c !== normUrl && c !== tab.url);
     } catch {}
 
     let addressTakenFromContact = false;
+    let footerAddressTakenFromContactPage = false;
 
     for (const contactUrl of contactCandidates) {
       try {
@@ -194,10 +195,19 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
         });
 
         if (contactData && !contactData.error) {
-          // TAKE ADDRESS FROM CONTACT PAGE (User requirement: Address should be taken from Contact page!)
-          if (contactData.companyAddress && contactData.companyAddress.length >= 10) {
+          const hasContactDetailAddress = String(contactData.addressSource || "").startsWith("contact-detail-");
+          const hasFooterAddress = String(contactData.addressSource || "").startsWith("footer-");
+          const currentHasContactDetailAddress = String(mainData.addressSource || "").startsWith("contact-detail-");
+          const takeFooterFallback = hasFooterAddress &&
+            !currentHasContactDetailAddress &&
+            !footerAddressTakenFromContactPage;
+
+          if (contactData.companyAddress && contactData.companyAddress.length >= 10 &&
+              (hasContactDetailAddress || takeFooterFallback)) {
             mainData.companyAddress = contactData.companyAddress;
-            addressTakenFromContact = true;
+            mainData.addressSource = contactData.addressSource;
+            addressTakenFromContact = hasContactDetailAddress;
+            if (takeFooterFallback) footerAddressTakenFromContactPage = true;
 
             // Re-validate state & city from updated contact page address
             const { state, city } = Extractor.detectStateAndCity(contactData.companyAddress);
@@ -226,8 +236,8 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
           if (["Y", "Available"].includes(contactData.city) && !["Y", "Available"].includes(mainData.city)) mainData.city = contactData.city;
           if (contactData.phoneNumber && !mainData.phoneNumber) mainData.phoneNumber = contactData.phoneNumber;
 
-          // Stop early once address is successfully taken from Contact page and email is present
-          if (addressTakenFromContact && mainData.emailId) {
+          // A contact-detail address must not be replaced by a later page's footer.
+          if (addressTakenFromContact) {
             break;
           }
         }

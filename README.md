@@ -67,6 +67,7 @@ We have included a built-in test portal `test_portal.html` that matches your rea
 5. **Modern Popup Design**:
    - Categorized card layout, individual field copy buttons, live editing, QC pass/warning badges, and 1-click JSON export.
 6. **Comprehensive Section 7 Address Normalization & Expansion**:
+   - **Address source priority**: Checks contact/location-page details first; uses a footer address only when no contact-detail address is available.
    - Implements Sections 7.4 through 7.11 address rules:
      - **Street & Road Types**: `St.` -> `Street`, `Rd.` -> `Road`, `Ave.` -> `Avenue`, `Blvd.` -> `Boulevard`, `Dr.` -> `Drive`, `Ln.` -> `Lane`, `Ct.` -> `Court`, `Hwy.` -> `Highway`, `Pkwy.` -> `Parkway`, `Sq.` -> `Square`, `Pl.` -> `Place`, `Cres.` -> `Crescent`, `Ter.` -> `Terrace`, `Cir.` -> `Circle`, `Trl.` -> `Trail`, `Extn.` -> `Extension`, `Rd. Extn.` -> `Road Extension`.
      - **Context Safeguards**: Protects Saint in proper names (`St. John`, `St. Louis`, `St. Mary`) and Doctor (`Dr. B.R. Ambedkar`) from improper expansion.
@@ -76,4 +77,3 @@ We have included a built-in test portal `test_portal.html` that matches your rea
      - **Directions**: `N.`, `S.`, `E.`, `W.` -> `North`, `South`, `East`, `West`; `NE`, `NW`, `SE`, `SW` -> `Northeast`, `Northwest`, `Southeast`, `Southwest`; `Old Rd.` -> `Old Road`, `New Rd.` -> `New Road`.
      - **Indian & International Terms**: `H.O.` -> `Head Office`, `S.O.` -> `Sub Office`, `P.O. Box No.` -> `Post Office Box Number`, `Vill.` -> `Village`, `Tal.` / `Tq.` -> `Taluka`, `Dist.` -> `District`, `C/O` -> `Care Of`, `B.P.` -> `Boîte Postale`, `Z.I.` -> `Zone Industrielle`, `Pol. Ind.` -> `Polígono Industrial`.
      - **Preserves Local Official Names**: Local place names like `Jalan P/1`, `Kawasan Perusahaan`, `Nagar`, `Puram`, and `Colony` are strictly preserved without distortion.
-

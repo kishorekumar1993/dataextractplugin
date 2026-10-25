@@ -1148,7 +1148,10 @@
               </div>
             </div>
           </main>
-          <footer><p>Copyright 2026 Global Apex Corp</p></footer>
+          <footer>
+            <p>Fallback Office: 10 Old Mill Road, Boston, Massachusetts 02108</p>
+            <p>Copyright 2026 Global Apex Corp</p>
+          </footer>
         </body>
       </html>
     `;
@@ -1156,17 +1159,56 @@
     const passContactPageAddress = resContactPage.companyAddress.includes("Silicon Parkway") &&
       resContactPage.companyAddress.includes("Austin") &&
       resContactPage.companyAddress.includes("Texas") &&
+      !resContactPage.companyAddress.includes("Old Mill Road") &&
+      resContactPage.addressSource.startsWith("contact-detail-") &&
       resContactPage.state === "Y" &&
       resContactPage.city === "Y";
 
-    const passTest11 = passContactSubpageDiscovery && passContactPageAddress;
+    const fakeFooterFallbackHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head><title>Contact Us - Global Apex Corp</title></head>
+        <body>
+          <main><h1>Contact Us</h1><p>Send us a message using the form below.</p></main>
+          <footer><p>10 Old Mill Road, Boston, Massachusetts 02108 info@globalapex.com</p></footer>
+        </body>
+      </html>
+    `;
+    const resFooterFallback = Extractor.extractFromHtml(fakeFooterFallbackHtml, "https://www.globalapex.com/contact-us");
+    const passFooterFallback = resFooterFallback.companyAddress.includes("Old Mill Road") &&
+      resFooterFallback.companyAddress.includes("Boston") &&
+      resFooterFallback.addressSource.startsWith("footer-");
+
+    const genericPageFallbackHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head><title>Global Apex Corp</title></head>
+        <body>
+          <main><p>12 Random Industrial Road, Somewhere, Texas</p></main>
+          <footer><p>10 Old Mill Road, Boston, Massachusetts 02108</p></footer>
+        </body>
+      </html>
+    `;
+    const resGenericPageFallback = Extractor.extractFromHtml(genericPageFallbackHtml, "https://www.globalapex.com/");
+    const passFooterOverGenericPageAddress = resGenericPageFallback.companyAddress.includes("Old Mill Road") &&
+      !resGenericPageFallback.companyAddress.includes("Random Industrial Road") &&
+      resGenericPageFallback.addressSource.startsWith("footer-");
+
+    const passTest11 = passContactSubpageDiscovery && passContactPageAddress &&
+      passFooterFallback && passFooterOverGenericPageAddress;
     renderTest("Test 11: Contact Page Subpage Discovery & Contact Page Address Extraction", passTest11, {
       discoveredContactUrls: foundContactUrls,
       contactSubpageDiscoveryPass: passContactSubpageDiscovery,
       contactPageExtractedAddress: resContactPage.companyAddress,
       state: resContactPage.state,
       city: resContactPage.city,
-      contactPageAddressPass: passContactPageAddress
+      contactPageAddressPass: passContactPageAddress,
+      footerFallbackAddress: resFooterFallback.companyAddress,
+      contactAddressSource: resContactPage.addressSource,
+      footerAddressSource: resFooterFallback.addressSource,
+      footerFallbackPass: passFooterFallback,
+      genericPageFallbackAddress: resGenericPageFallback.companyAddress,
+      footerPreferredOverGenericPageAddress: passFooterOverGenericPageAddress
     });
 
     window.__TEST_RESULTS__ = {
