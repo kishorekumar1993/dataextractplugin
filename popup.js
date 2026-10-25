@@ -229,91 +229,93 @@ async function crawlAndExtractDirect(targetUrl) {
       }
     }
 
-    // Step 5: Dynamic Contact Page Check (Checks if email is missing or address is incomplete/missing)
-    const needsContactCheck = !mainData.emailId ||
-                              !mainData.companyAddress ||
-                              mainData.companyAddress.split(",").length < 3 ||
-                              !mainData.phoneNumber;
+    // Step 5: Dedicated Contact Page Crawl (User Requirement: Address should be taken from Contact page!)
+    // Always check Contact page candidates to prioritize official corporate headquarters/contact address
+    let contactCandidates = [];
+    try {
+      const u = new URL(tab.url || normUrl);
+      const hostCandidates = [
+        ...(mainData.contactUrls || []),
+        mainData.contactUrl,
+        `${u.origin}/contact-us`,
+        `${u.origin}/contact`,
+        `${u.origin}/contactus`,
+        `${u.origin}/contact-us.html`,
+        `${u.origin}/contact.html`,
+        `${u.origin}/contact.php`,
+        `${u.origin}/location`,
+        `${u.origin}/locations`,
+        `${u.origin}/reach-us`,
+        `${u.origin}/about/contact`,
+        `${u.origin}/about-us/contact`,
+        `${u.origin}/en/contact`,
+        `${u.origin}/en/contact-us`,
+        `${u.origin}/about-us`,
+        `${u.origin}/about.html`
+      ];
+      contactCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(c => c !== normUrl && c !== tab.url);
+    } catch {}
 
-    if (needsContactCheck) {
-      let contactCandidates = [];
+    let addressTakenFromContact = false;
+
+    for (const contactUrl of contactCandidates) {
       try {
-        const u = new URL(tab.url || normUrl);
-        const candidates = [
-          mainData.contactUrl,
-          `${u.origin}/contact`,
-          `${u.origin}/contact-us`,
-          `${u.origin}/contactus`,
-          `${u.origin}/contact.html`,
-          `${u.origin}/contact.php`,
-          `${u.origin}/contact-us.html`,
-          `${u.origin}/about/contact`,
-          `${u.origin}/about-us`,
-          `${u.origin}/about.html`,
-          `${u.origin}/location`,
-          `${u.origin}/reach-us`,
-          `${u.origin}/en/contact`,
-          `${u.origin}/en/contact-us`
-        ];
-        contactCandidates = [...new Set(candidates.filter(Boolean))].filter(c => c !== normUrl && c !== tab.url);
-      } catch {}
+        setStatus("Checking Contact page for official address...", "info");
+        const [{ result: contactData }] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: async (url) => {
+            try {
+              const res = await fetch(url, { credentials: "omit" });
+              if (!res.ok) return null;
+              const html = await res.text();
+              if (html.length < 200) return null;
+              const doc = new DOMParser().parseFromString(html, "text/html");
+              return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
+            } catch { return null; }
+          },
+          args: [contactUrl]
+        });
 
-      for (const contactUrl of contactCandidates) {
-        try {
-          setStatus("Checking Contact page for email & complete address...", "info");
-          const [{ result: contactData }] = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: async (url) => {
-              try {
-                const res = await fetch(url, { credentials: "omit" });
-                if (!res.ok) return null;
-                const html = await res.text();
-                if (html.length < 200) return null;
-                const doc = new DOMParser().parseFromString(html, "text/html");
-                return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
-              } catch { return null; }
-            },
-            args: [contactUrl]
-          });
+        if (contactData && !contactData.error) {
+          // TAKE ADDRESS FROM CONTACT PAGE (User requirement: Address should be taken from Contact page!)
+          if (contactData.companyAddress && contactData.companyAddress.length >= 10) {
+            mainData.companyAddress = contactData.companyAddress;
+            addressTakenFromContact = true;
 
-          if (contactData && !contactData.error) {
-            // Merge Email ID & Secondary Email ID
-            if (contactData.emailId) {
-              if (!mainData.emailId) {
-                mainData.emailId = contactData.emailId;
-                if (contactData.secondaryEmailId) mainData.secondaryEmailId = contactData.secondaryEmailId;
-              } else if (contactData.emailId !== mainData.emailId && !mainData.secondaryEmailId) {
-                mainData.secondaryEmailId = contactData.emailId;
-              }
-            }
+            // Re-validate state & city from updated contact page address
+            const { state, city } = Extractor.detectStateAndCity(contactData.companyAddress);
+            if (["Y", "Available"].includes(state)) mainData.state = state;
+            if (["Y", "Available"].includes(city)) mainData.city = city;
 
-            // Merge Address (prefer more complete/detailed address from contact page)
-            if (contactData.companyAddress) {
-              const cParts = contactData.companyAddress.split(",").map(p => p.trim()).filter(Boolean);
-              const mParts = (mainData.companyAddress || "").split(",").map(p => p.trim()).filter(Boolean);
-              if (!mainData.companyAddress || cParts.length >= mParts.length || contactData.companyAddress.length > mainData.companyAddress.length) {
-                mainData.companyAddress = contactData.companyAddress;
-                // Re-validate state & city from updated address
-                const { state, city } = Extractor.detectStateAndCity(contactData.companyAddress);
-                if (["Y", "Available"].includes(state)) mainData.state = state;
-                if (["Y", "Available"].includes(city)) mainData.city = city;
-              }
-            }
-
-            // Merge Country, State, City, Phone
-            if (contactData.countryName && !mainData.countryName) mainData.countryName = contactData.countryName;
-            if (["Y", "Available"].includes(contactData.state) && !["Y", "Available"].includes(mainData.state)) mainData.state = contactData.state;
-            if (["Y", "Available"].includes(contactData.city) && !["Y", "Available"].includes(mainData.city)) mainData.city = contactData.city;
-            if (contactData.phoneNumber && !mainData.phoneNumber) mainData.phoneNumber = contactData.phoneNumber;
-
-            // Stop early if both email and multi-segment address are now resolved
-            if (mainData.emailId && mainData.companyAddress && mainData.companyAddress.split(",").length >= 2) {
-              break;
+            // Update country from contact page if missing or generic
+            if (contactData.countryName && (!mainData.countryName || mainData.countryName === "Not Available")) {
+              mainData.countryName = contactData.countryName;
             }
           }
-        } catch (e) {
-          console.log("Contact page check note:", e);
+
+          // Merge Email ID & Secondary Email ID
+          if (contactData.emailId) {
+            if (!mainData.emailId) {
+              mainData.emailId = contactData.emailId;
+              if (contactData.secondaryEmailId) mainData.secondaryEmailId = contactData.secondaryEmailId;
+            } else if (contactData.emailId !== mainData.emailId && !mainData.secondaryEmailId) {
+              mainData.secondaryEmailId = contactData.emailId;
+            }
+          }
+
+          // Merge Country, State, City, Phone
+          if (contactData.countryName && !mainData.countryName) mainData.countryName = contactData.countryName;
+          if (["Y", "Available"].includes(contactData.state) && !["Y", "Available"].includes(mainData.state)) mainData.state = contactData.state;
+          if (["Y", "Available"].includes(contactData.city) && !["Y", "Available"].includes(mainData.city)) mainData.city = contactData.city;
+          if (contactData.phoneNumber && !mainData.phoneNumber) mainData.phoneNumber = contactData.phoneNumber;
+
+          // Stop early once address is successfully taken from Contact page and email is present
+          if (addressTakenFromContact && mainData.emailId) {
+            break;
+          }
         }
+      } catch (e) {
+        console.log("Contact page check note:", e);
       }
     }
 

@@ -858,7 +858,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Find Raw Multi-Line Address from Document / Footer / Text (prioritizes HQ / Registered Office over branch/factory)
 
 
-  function findRawAddress(doc, fullText = "") {
+  function findRawAddress(doc, fullText = "", pageUrl = "") {
     if (!doc) return "";
 
     const candidates = [];
@@ -867,6 +867,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const normalizeAddress = value =>
       String(value || "")
         .replace(/\u00a0/g, " ")
+        .replace(/\s*\n+\s*/g, ", ")
         .replace(/[ \t]+/g, " ")
         .replace(/\s*,\s*/g, ", ")
         .replace(/^[\s,;:|]+|[\s,;:|]+$/g, "")
@@ -1063,17 +1064,31 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     });
 
     // 3. Look for labelled addresses in contact/footer sections.
-    const sections = doc.querySelectorAll(
-      "footer, #footer, .footer, " +
-      ".contact-info, .contact-details, #contact, " +
-      "#contact-us, .contact-us, [class*='contact']"
-    );
+    const isContactPage = (pageUrl && /(?:contact|location|locations|reach-us|reach_us|about\/contact|about-us\/contact|find-us|our-offices|오시는길|고객센터|연락처)/i.test(pageUrl)) ||
+      (doc?.title && /\b(?:contact|location|locations|reach us|find us|our office|our offices|headquarters)\b/i.test(doc.title)) ||
+      Boolean(doc?.querySelector?.("h1, h2, h3")?.innerText && /\b(?:contact us|contact|our locations|office locations|get in touch|reach us)\b/i.test(doc.querySelector("h1, h2, h3").innerText));
+
+    let sectionQuery = "footer, #footer, .footer, .contact-info, .contact-details, #contact, #contact-us, .contact-us, [class*='contact']";
+    if (isContactPage) {
+      sectionQuery += ", main, #main, .main, article, #content, .content, .container, section, .office, .locations, [class*='location'], [class*='branch'], [id*='location']";
+    }
+    const sections = doc.querySelectorAll(sectionQuery);
 
     const labelPattern =
       /^(global\s+headquarters|headquarters|head\s+office|hq\s+address|hq|registered\s+office|corporate\s+office|company\s+address|office\s+address|factory\s+address|factory|works|plant|warehouse|branch\s+office|branch|regional\s+office|address|location)\s*[:：-]\s*/i;
 
     const stopLinePattern =
       /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b/i;
+
+    const looksLikeAddressLine = line => {
+      const s = String(line || "").trim();
+      if (!s || s.length < 12 || s.length > 220) return false;
+      if (stopLinePattern.test(s) || /@|https?:\/\/|www\.|all rights reserved/i.test(s)) return false;
+      const hasNumber = /\d/.test(s);
+      const hasStreetMarker = /\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|gu\b|si\b|do\b|ro\b|dong\b|gun\b|min\b|city\b|province\b|county\b)/i.test(s);
+      const commaSegments = s.split(",").map(p => p.trim()).filter(Boolean);
+      return (hasNumber && (commaSegments.length >= 2 || hasStreetMarker)) || (commaSegments.length >= 3 && hasStreetMarker);
+    };
 
     for (const section of sections) {
       let text = "";
@@ -1093,34 +1108,65 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       for (let i = 0; i < lines.length; i++) {
         const labelMatch = lines[i].match(labelPattern);
-        if (!labelMatch) continue;
 
-        const label = labelMatch[1].toLowerCase();
+        if (labelMatch) {
+          const label = labelMatch[1].toLowerCase();
 
-        let priority = 80;
+          let priority = isContactPage ? 105 : 80;
 
-        if (/headquarters|head\s+office|\bhq\b/.test(label)) {
-          priority = 120;
-        } else if (
-          /registered\s+office|company\s+address|corporate\s+office/.test(label)
-        ) {
-          priority = 105;
-        } else if (/factory|works|plant|warehouse|branch|regional/.test(label)) {
-          priority = 55;
+          if (/headquarters|head\s+office|\bhq\b/.test(label)) {
+            priority = isContactPage ? 140 : 120;
+          } else if (
+            /registered\s+office|company\s+address|corporate\s+office/.test(label)
+          ) {
+            priority = isContactPage ? 125 : 105;
+          } else if (/factory|works|plant|warehouse|branch|regional/.test(label)) {
+            priority = 55;
+          }
+
+          const collected = [
+            lines[i].replace(labelPattern, "").trim()
+          ].filter(Boolean);
+
+          for (
+            let j = i + 1;
+            j < Math.min(lines.length, i + 6);
+            j++
+          ) {
+            const line = lines[j];
+
+            // Stop before a new labelled section or contact detail.
+            if (
+              labelPattern.test(line) ||
+              stopLinePattern.test(line) ||
+              /@|https?:\/\/|www\.|all rights reserved/i.test(line)
+            ) {
+              break;
+            }
+
+            // Do not accidentally append unrelated long paragraphs.
+            if (line.length > 150) break;
+
+            collected.push(line);
+          }
+
+          addCandidate(
+            collected.join(", "),
+            "labelled-contact",
+            priority
+          );
+          continue;
         }
 
-        const collected = [
-          lines[i].replace(labelPattern, "").trim()
-        ].filter(Boolean);
+        if (!looksLikeAddressLine(lines[i])) continue;
 
+        const collected = [lines[i]];
         for (
           let j = i + 1;
-          j < Math.min(lines.length, i + 6);
+          j < Math.min(lines.length, i + 5);
           j++
         ) {
           const line = lines[j];
-
-          // Stop before a new labelled section or contact detail.
           if (
             labelPattern.test(line) ||
             stopLinePattern.test(line) ||
@@ -1128,18 +1174,49 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           ) {
             break;
           }
-
-          // Do not accidentally append unrelated long paragraphs.
-          if (line.length > 150) break;
-
-          collected.push(line);
+          if (!line || line.length > 120) break;
+          if (looksLikeAddressLine(line) || line.includes(",") || /\d/.test(line)) {
+            collected.push(line);
+          } else {
+            break;
+          }
         }
 
-        addCandidate(
-          collected.join(", "),
-          "labelled-contact",
-          priority
-        );
+        const joined = collected.join(", ").trim();
+        if (joined && joined.split(",").filter(Boolean).length >= 2) {
+          addCandidate(joined, isContactPage ? "contact-page-inline" : "footer-inline", isContactPage ? 105 : 85);
+        }
+      }
+    }
+
+    // 3.5 Fallback: Scan fullText lines if no candidates were found
+    if (candidates.length === 0 && fullText) {
+      const ftLines = String(fullText || "")
+        .split(/[\r\n]+/)
+        .map(normalizeAddress)
+        .filter(Boolean);
+
+      for (let i = 0; i < ftLines.length; i++) {
+        const labelMatch = ftLines[i].match(labelPattern);
+        if (labelMatch) {
+          const collected = [ftLines[i].replace(labelPattern, "").trim()].filter(Boolean);
+          for (let j = i + 1; j < Math.min(ftLines.length, i + 5); j++) {
+            const nextL = ftLines[j];
+            if (
+              labelPattern.test(nextL) ||
+              stopLinePattern.test(nextL) ||
+              /@|https?:\/\/|www\.|all rights reserved/i.test(nextL)
+            ) {
+              break;
+            }
+            if (nextL.length > 150) break;
+            collected.push(nextL);
+          }
+          const joined = collected.join(", ").trim();
+          if (joined && (joined.split(",").length >= 2 || joined.length >= 20)) {
+            addCandidate(joined, "fulltext-label", isContactPage ? 115 : 90);
+          }
+        }
       }
     }
 
@@ -1183,11 +1260,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // Return the best usable candidate, not simply the longest string.
     const best = scored.find(candidate => {
       const parts = candidate.address
-        .split(",")
+        .split(/[,,;\n]+/)
         .map(part => part.trim())
         .filter(Boolean);
 
-      return parts.length >= 2 && candidate.address.length >= 15;
+      const hasStreetMarkers = /\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|business park)\b/i.test(candidate.address);
+
+      return (parts.length >= 2 || hasStreetMarkers) && candidate.address.length >= 15;
     });
 
     return best?.address || "";
@@ -1417,16 +1496,52 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const company = String(companyName).trim();
 
       if (company) {
-        const companyRegex = new RegExp(
-          "^\\s*" + escapeRegex(company) +
-          "(?=\\s*[,;:|\\-]|\\s+$|$)\\s*[,;:|\\-]?\\s*",
-          "i"
-        );
+        const variants = new Set([
+          company,
+          company.replace(/\bLimited\b/gi, "Ltd"),
+          company.replace(/\bIncorporated\b/gi, "Inc"),
+          company.replace(/\bCorporation\b/gi, "Corp"),
+          company.replace(/\bCompany\b/gi, "Co"),
+          company.replace(/\bLLC\b/gi, "Limited Liability Company"),
+          company.replace(/\bPrivate\s+Limited\b/gi, "Pvt Ltd"),
+          company.replace(/\bProprietary\s+Limited\b/gi, "Pty Ltd"),
+          company.replace(/\bPublic\s+Limited\b/gi, "PLC")
+        ].filter(Boolean));
 
-        addr = addr.replace(companyRegex, "");
+        for (const variant of variants) {
+          const companyRegex = new RegExp(
+            "^\\s*" + escapeRegex(variant) +
+            "\\s*[,;:|\\-]?\\s*",
+            "i"
+          );
+
+          if (companyRegex.test(addr)) {
+            addr = addr.replace(companyRegex, "");
+            break;
+          }
+        }
       }
     }
 
+    if (addr.includes(",")) {
+      const firstPart = addr.split(",")[0].trim();
+      const rest = addr.slice(addr.indexOf(",") + 1).trim();
+      const streetLike = /\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|business park|unit|suite|floor|building|block|phase|park)\b|(?<![A-Za-z])\d+\s+[A-Za-z]/i;
+      const companyLikeSuffix = /\b(?:limited|ltd|inc|incorporated|corporation|corp|company|co|llc|plc|llp|pvt|pty|gmbh|bv|sa|sarl|group|holdings|industries|technology|technologies|services|solutions)\b/i;
+      const firstWords = firstPart.split(/\s+/).filter(Boolean);
+      const seemsCompanyPrefix = firstPart &&
+        firstWords.length > 1 &&
+        !streetLike.test(firstPart) &&
+        streetLike.test(rest) &&
+        !/^\d/.test(firstPart) &&
+        companyLikeSuffix.test(firstPart);
+
+      if (seemsCompanyPrefix) {
+        addr = rest;
+      }
+    }
+
+    addr = addr.replace(/,\s*,\s*/g, ",, ");
     addr = addr.replace(/^[,;:|.\-\s]+/, "").trim();
 
     // 5. Remove country names ONLY at the end.
@@ -1460,7 +1575,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .join("|");
 
       const countryAtEnd = new RegExp(
-        "(?:,\\s*|\\s+)\\b(?:" + countryPattern + ")\\b\\s*[.,;]*$",
+        "(?:,\\s*|\\s+)\\b(?:" + countryPattern + ")\\b(?:\\s+\\d{4,10})?\\s*[.,;]*$",
         "i"
       );
 
@@ -1483,6 +1598,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .filter(part => !postalCodePatterns.some(pattern => pattern.test(part)))
       .join(", ");
 
+    addr = addr.replace(/,\s*,\s*/g, ",, ");
+    addr = addr.replace(/(?:\s+|,\s*)(?:[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}|\d{5}(?:-\d{4})?|\d{6})\s*$/i, "").trim();
+
     // 7. Expand abbreviations using your existing helper.
     if (typeof expandAddressAbbreviations === "function") {
       addr = expandAddressAbbreviations(addr);
@@ -1491,34 +1609,38 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 8. Normalize punctuation and spaces.
     addr = addr
       .replace(/\s+/g, " ")
-      .replace(/,\s*,+/g, ",")
       .replace(/^[,;:|.\-\s]+|[,;:|.\-\s]+$/g, "")
       .trim();
 
     // 9. Apply title case while preserving common acronyms and numbers.
     addr = addr.split(/\s+/).map(word => {
-      if (/^[A-Z]{2,6}[,;:]?$/.test(word)) return word;
-      if (/^(?:[A-Za-z]\.)+[A-Za-z]?\.?[,;:]?$/.test(word)) {
-        return word.toUpperCase();
-      }
-      if (/^[\d#]/.test(word)) return word;
-      if (/^[A-Za-z]-\d+/.test(word)) return word.toUpperCase();
+      const trailing = (word.match(/[.,;:!?]+$/) || [""])[0];
+      const core = word.replace(/[.,;:!?]+$/g, "");
 
-      if (word.includes("-")) {
-        return word.split("-").map(part => {
-          if (/^(?:si|gu|do|ro|dong|gun|eup|myeon|ri)$/i.test(part)) {
-            return part.toLowerCase();
+      if (!core) return word;
+      if (/^[A-Z]{2,6}[,;:]?$/.test(core)) return core + trailing;
+      if (/^(?:[A-Za-z]\.)+[A-Za-z]?\.?[,;:]?$/.test(core)) {
+        return core.toUpperCase() + trailing;
+      }
+      if (/^[\d#]/.test(core)) return core + trailing;
+      if (/^[A-Za-z]-\d+/.test(core)) return core.toUpperCase() + trailing;
+
+      if (core.includes("-")) {
+        return core.split("-").map(part => {
+          const cleanPart = part.replace(/^[.,;:!?]+|[.,;:!?]+$/g, "");
+          if (/^(?:si|gu|do|ro|dong|gun|eup|myeon|ri)$/i.test(cleanPart)) {
+            return cleanPart.toLowerCase();
           }
 
-          if (/^[A-Za-z]\.?$/.test(part)) return part.toUpperCase();
+          if (/^[A-Za-z]\.?$/.test(cleanPart)) return cleanPart.toUpperCase();
 
-          return part.charAt(0).toUpperCase() +
-            part.slice(1).toLowerCase();
-        }).join("-");
+          return cleanPart.charAt(0).toUpperCase() +
+            cleanPart.slice(1).toLowerCase();
+        }).join("-") + trailing;
       }
 
-      return word.charAt(0).toUpperCase() +
-        word.slice(1).toLowerCase();
+      return core.charAt(0).toUpperCase() +
+        core.slice(1).toLowerCase() + trailing;
     }).join(" ");
 
     return addr;
@@ -1803,25 +1925,62 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return null;
   }
 
-  // Find Contact Us subpage URL dynamically
-  function findContactSubpage(doc, baseUrl) {
-    if (!doc) return null;
+  // Find all Contact Us subpage URLs dynamically, ranked by relevance
+  function findContactSubpages(doc, baseUrl) {
+    if (!doc || !baseUrl) return [];
+    const found = [];
+    const seen = new Set();
     try {
       const base = new URL(baseUrl);
+      const baseHostNorm = base.hostname.replace(/^www\./i, "").toLowerCase();
+
+      const contactHrefRegex = /(?:contact|contact-us|contact_us|contactus|contacts|location|locations|reach-us|reach_us|find-us|about\/contact|about-us\/contact|오시는길|고객센터|연락처|회사위치|お問い合わせ|アクセス|联系我们|kontakt|contacto|contatti)/i;
+      const contactTextRegex = /\b(contact|contact us|get in touch|location|locations|reach us|find us|our office|our offices|headquarters|where to find us|office location|오시는길|고객센터|연락처|회사위치|お問い合わせ|お問合せ|アクセス|联系我们|聯繫我們|kontakt|contacto|contáctenos|contatti)\b/i;
+
       for (const a of doc.querySelectorAll("a[href]")) {
-        const href = a.getAttribute("href") || "";
+        const href = (a.getAttribute("href") || "").trim();
+        if (!href || href.startsWith("#") || /^javascript:/i.test(href) || /^mailto:/i.test(href) || /^tel:/i.test(href)) {
+          continue;
+        }
+
         const text = clean(a.innerText || a.textContent || "").toLowerCase();
+
         try {
           const resolved = new URL(href, baseUrl).href;
-          if (new URL(resolved).hostname !== base.hostname) continue;
-          if (/(?:contact|contact-us|contactus|location|reach-us|find-us|about\/contact|오시는길|고객센터)/i.test(href) ||
-            /\b(contact|contact us|get in touch|location|reach us|find us|our office|headquarters|오시는길)\b/i.test(text)) {
-            return resolved;
+          const resObj = new URL(resolved);
+          if (!["http:", "https:"].includes(resObj.protocol)) continue;
+
+          const resHostNorm = resObj.hostname.replace(/^www\./i, "").toLowerCase();
+          if (resHostNorm !== baseHostNorm) continue;
+
+          // Don't link back to home page root
+          const normPath = resObj.pathname.replace(/\/+$/, "");
+          if ((normPath === "" || normPath === "/" || normPath === base.pathname.replace(/\/+$/, "")) && !resObj.search) {
+            continue;
+          }
+
+          let score = 0;
+          if (contactHrefRegex.test(resObj.pathname)) score += 50;
+          if (contactTextRegex.test(text)) score += 40;
+          if (/\b(?:contact-us|contactus|contact)\b/i.test(resObj.pathname)) score += 30;
+          if (text === "contact us" || text === "contact") score += 30;
+
+          if (score > 0 && !seen.has(resolved)) {
+            seen.add(resolved);
+            found.push({ url: resolved, score });
           }
         } catch { }
       }
     } catch { }
-    return null;
+
+    found.sort((a, b) => b.score - a.score);
+    return found.map(f => f.url);
+  }
+
+  // Find single best Contact Us subpage URL dynamically
+  function findContactSubpage(doc, baseUrl) {
+    const list = findContactSubpages(doc, baseUrl);
+    return list.length > 0 ? list[0] : null;
   }
 
   // Primary Extractor
@@ -1839,7 +1998,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const forbidden = checkForbiddenCategories(text, doc);
 
     // 3. Extract Raw Multi-Line Address (Rule 6)
-    const rawAddress = findRawAddress(doc, text);
+    const rawAddress = findRawAddress(doc, text, url);
 
     // 4. Extract Company Name (Rule 4) — pass url for domain-based fallback
     const companyName = extractCompanyName(doc, text, url);
@@ -1853,9 +2012,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let companyAddress = cleanAddressString(rawAddress, countryName, companyName);
     if (!companyAddress || companyAddress.split(",").length < 2) {
       // Dynamic fallback: Retry with dedicated contact elements first
-      const contactEl = doc?.querySelector?.("address, [itemprop='address'], .contact-address, .company-address, .office-address, .contact-info, .contact-details, [class*='contact'], [id*='contact']");
+      const contactEl = doc?.querySelector?.("address, [itemprop='address'], .contact-address, .company-address, .office-address, .contact-info, .contact-details, [class*='contact'], [id*='contact'], [class*='location']");
       if (contactEl) {
-        const contactRaw = findRawAddress(contactEl, getElementText(contactEl)) || getElementText(contactEl);
+        const contactRaw = findRawAddress(contactEl, getElementText(contactEl), url) || getElementText(contactEl);
         if (contactRaw) {
           const recovered = cleanAddressString(contactRaw, countryName, companyName);
           if (recovered && (!companyAddress || recovered.split(",").length > companyAddress.split(",").length)) {
@@ -1888,7 +2047,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 13. Subpage (English & Contact)
     const enUrl = findEnglishSubpage(doc, url);
-    const contactUrl = findContactSubpage(doc, url);
+    const contactUrls = findContactSubpages(doc, url);
+    const contactUrl = contactUrls[0] || null;
 
     return {
       websiteName: url,
@@ -1910,7 +2070,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       urlRules,
       social,
       enUrl,
-      contactUrl
+      contactUrl,
+      contactUrls
     };
   }
 
@@ -1939,6 +2100,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     extractEmails,
     extractPhoneNumber,
     findEnglishSubpage,
+    findContactSubpages,
     findContactSubpage,
     COUNTRIES
   };

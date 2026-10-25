@@ -818,6 +818,62 @@
       emailResiliencePass: passEmailResilience
     });
 
+    // TEST 11: Contact Page Subpage Discovery & Contact Page Address Extraction
+    const fakeContactNavDoc = new DOMParser().parseFromString(`
+      <html>
+        <body>
+          <nav>
+            <a href="/">Home</a>
+            <a href="/products">Products</a>
+            <a href="/about-us">About</a>
+            <a href="/contact-us">Contact Us</a>
+            <a href="/our-locations">Our Locations</a>
+          </nav>
+        </body>
+      </html>
+    `, "text/html");
+    const foundContactUrls = Extractor.findContactSubpages(fakeContactNavDoc, "http://www.mycompany.com");
+    const passContactSubpageDiscovery = foundContactUrls.length >= 2 &&
+      foundContactUrls[0].includes("contact-us") &&
+      foundContactUrls[1].includes("our-locations");
+
+    // Contact page address extraction inside <main> container (not just footer)
+    const fakeContactPageHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head><title>Contact Us - Global Apex Corp</title></head>
+        <body>
+          <header><p>Global Apex Corp</p></header>
+          <main>
+            <div class="contact-wrapper">
+              <h1>Contact Our Team</h1>
+              <div class="office-box">
+                <p>Corporate Office: 888 Silicon Parkway, Suite 400, Austin, Texas 78759</p>
+                <p>Phone: +1 512 555 7788 | Email: contact@globalapex.com</p>
+              </div>
+            </div>
+          </main>
+          <footer><p>Copyright 2026 Global Apex Corp</p></footer>
+        </body>
+      </html>
+    `;
+    const resContactPage = Extractor.extractFromHtml(fakeContactPageHtml, "https://www.globalapex.com/contact-us");
+    const passContactPageAddress = resContactPage.companyAddress.includes("Silicon Parkway") &&
+      resContactPage.companyAddress.includes("Austin") &&
+      resContactPage.companyAddress.includes("Texas") &&
+      resContactPage.state === "Y" &&
+      resContactPage.city === "Y";
+
+    const passTest11 = passContactSubpageDiscovery && passContactPageAddress;
+    renderTest("Test 11: Contact Page Subpage Discovery & Contact Page Address Extraction", passTest11, {
+      discoveredContactUrls: foundContactUrls,
+      contactSubpageDiscoveryPass: passContactSubpageDiscovery,
+      contactPageExtractedAddress: resContactPage.companyAddress,
+      state: resContactPage.state,
+      city: resContactPage.city,
+      contactPageAddressPass: passContactPageAddress
+    });
+
     window.__TEST_RESULTS__ = {
       passKorea,
       passGermany,
@@ -829,7 +885,8 @@
       passPortal,
       allQcIssuesPassed,
       passTest10,
-      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && allAddressPassed && passPortal && allQcIssuesPassed && passTest10
+      passTest11,
+      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && allAddressPassed && passPortal && allQcIssuesPassed && passTest10 && passTest11
     };
   </script>
 </body>
