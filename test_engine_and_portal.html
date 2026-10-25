@@ -405,6 +405,25 @@
       companyAddress: resAccurite.companyAddress
     });
 
+    // Prefer a complete site name over an abbreviated structured-data name.
+    const htmlCompleteCompanyName = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta property="og:site_name" content="Metal Tech Company, Inc.">
+        <script type="application/ld+json">
+          { "@context": "https://schema.org", "@type": "Organization", "name": "Metal Tech Inc." }
+        <\/script>
+      </head>
+      <body>Metal Tech Company, Inc. provides precision metal stamping.</body>
+      </html>
+    `;
+    const resCompleteCompanyName = Extractor.extractFromHtml(htmlCompleteCompanyName, "https://example.com");
+    renderTest("Test 5a: Prefer Complete Site Name Over Abbreviated Structured Name",
+      resCompleteCompanyName.companyName === "Metal Tech Company, Incorporated",
+      { companyName: resCompleteCompanyName.companyName }
+    );
+
     // TEST 6: Section 5.3 International Legal Suffix Reference Expansion Test
     const suffixTestCases = [
       { raw: "Kolorbond Ltd.", expected: "Kolorbond Limited" },

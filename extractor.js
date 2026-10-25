@@ -502,6 +502,19 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return "";
     }
 
+    // A site name that includes a legal suffix is often more complete than
+    // the abbreviated Organization name in structured data.
+    let metadataLegalName = "";
+    if (doc) {
+      for (const selector of ['meta[property="og:site_name"]', 'meta[name="company"]']) {
+        const candidate = sanitizeCandidate(doc.querySelector(selector)?.content || "");
+        if (candidate && hasCorpSuffix(candidate)) {
+          metadataLegalName = candidate;
+          break;
+        }
+      }
+    }
+
     // --- PHASE 1: SEARCH FOR FULL LEGAL NAME WITH CORPORATE SUFFIX FIRST ---
 
     // 1. Schema.org JSON-LD (check legalName first, or name if it has a suffix)
@@ -523,7 +536,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
                 break;
               }
               const n = sanitizeCandidate(x.name || "");
-              if (n && hasCorpSuffix(n) && !legalName) {
+              if (n && hasCorpSuffix(n) && !legalName && !metadataLegalName) {
                 legalName = n;
               } else if (n && !brandName) {
                 brandName = n;
@@ -533,6 +546,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         } catch { }
         if (legalName) break;
       }
+    }
+
+    if (!legalName && metadataLegalName) {
+      legalName = metadataLegalName;
     }
 
     // 2. Footer Copyright & Footer Address lines (most common location for legal suffix)
