@@ -110,7 +110,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { country: "United States Of America", regex: /\b(new york|los angeles|chicago|houston|phoenix|philadelphia|san antonio|san diego|dallas|san jose|austin|jacksonville|fort worth|columbus|charlotte|indianapolis|san francisco|seattle|denver|washington dc|boston|el paso|nashville|detroit|las vegas|portland|memphis|louisville|baltimore|milwaukee|albuquerque|tucson|fresno|sacramento|atlanta|kansas city|colorado springs|miami|west palm beach|palm beach|tampa|orlando|fort lauderdale|boca raton|raleigh|omaha|long beach|virginia beach|oakland|minneapolis|tulsa|arlington|california|texas|florida|\bfl\b|new york state|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington state|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|west virginia|hawaii|new hampshire|maine|montana|rhode island|delaware|south dakota|north dakota|alaska|vermont|wyoming)\b/i },
     { country: "Canada", regex: /\b(toronto|montreal|vancouver|calgary|edmonton|ottawa|winnipeg|quebec city|hamilton|kitchener|london ontario|victoria|halifax|ontario|quebec|british columbia|alberta|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland)\b/i },
     { country: "Australia", regex: /\b(sydney|melbourne|brisbane|perth|adelaide|gold coast|canberra|newcastle nsw|wollongong|hobart|geelong|townsville|cairns|darwin|new south wales|nsw|victoria vic|queensland qld|western australia wa|south australia sa|tasmania tas)\b/i },
-    { country: "Taiwan", regex: /\b(taipei|new taipei|taichung|kaohsiung|taoyuan|tainan|hsinchu)\b/i }
+    { country: "Taiwan", regex: /\b(taipei|new taipei|taichung|kaohsiung|taoyuan|tainan|hsinchu)\b/i },
+    { country: "Thailand", regex: /\b(bangkok|chiang\s*mai|chiang rai|hang dong|phuket|pattaya|khon kaen|nakhon ratchasima|nonthaburi|pathum thani|chonburi|samut prakan)\b/i }
   ];
 
   // Helper clean text
@@ -781,7 +782,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
-    // 3. Match address text against country aliases
+    // 3. Match address text against country aliases.
+    // Keep this address-local only. Do not scan the entire page body here,
+    // or unrelated mentions such as a global shipping note or "Canada" footer link
+    // can override the actual country in the contact address.
     if (addressText) {
       for (const c of COUNTRIES) {
         for (const alias of c.aliases) {
