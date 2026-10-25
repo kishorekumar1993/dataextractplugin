@@ -1801,6 +1801,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const streetNumberMatch =
         /\b\d+[^\n]{0,25}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway)\b/i
           .test(address);
+      const hasLeadingStreetNumber = /^\s*\d{1,6}\s+.{1,80}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway)\b/i.test(address);
+      if (hasLeadingStreetNumber) score += 30;
       const postalMatch = hasPostalCode(address, streetNumberMatch);
       if (postalMatch) score += 15;
       if (countryMatch || detectedCountry) score += 12;
@@ -2010,12 +2012,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (regionMap) {
       for (const [abbreviation, fullName] of Object.entries(regionMap)) {
         const postalCode = "(?:\\d{5}(?:-\\d{4})?|[A-Z]\\d[A-Z]\\s*\\d[A-Z]\\d|\\d{4})";
-        const postalCodeSuffix = addressCountry === "United States Of America"
-          ? ""
-          : `(?:\\s+${postalCode})?`;
+        const postalCodeSuffix = `(?:\\s+${postalCode})?`;
         const codePattern = new RegExp(
-          `(^|[,;]\\s*)${abbreviation}(?=${postalCodeSuffix}\\s*(?:[,;]|$))`,
-          "g"
+          `(^|[,;]\\s*|\\s+)${abbreviation}(?=${postalCodeSuffix}\\s*(?:[,;]|$))`,
+          "gi"
         );
         addr = addr.replace(codePattern, (match, prefix) => `${prefix}${fullName}`);
       }
@@ -2294,7 +2294,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (!rawAddr) return "";
 
     let addr = clean(String(rawAddr));
-    const addressCountry = getAddressCountryContext(rawAddr, countryName);
+    const addressCountry = getAddressCountryContext(rawAddr, countryName) ||
+      detectCountry(null, rawAddr, rawAddr, "", "");
 
     // 1. Remove brackets and normalize whitespace.
     addr = removeBrackets(addr);
@@ -2320,6 +2321,33 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(embeddedAddressLabel, "");
 
     addr = addr.replace(leadingLabel, "").replace(officeLabel, "");
+
+    // Contact cards sometimes prepend a heading such as "Charlotte Location"
+    // to the address. Drop that heading, and use it to correct a one-character
+    // typo in the repeated city name when the city is in the US locality list.
+    const cityLocationHeading = addr.match(/^\s*([\p{L}][\p{L}'’-]*(?:\s+[\p{L}][\p{L}'’-]*){0,2})\s+location\s*[,;:]\s*/iu);
+    if (cityLocationHeading && addressCountry === "United States Of America") {
+      const headingCity = US_CITIES.find(city => city.toLowerCase() === cityLocationHeading[1].toLowerCase());
+      if (headingCity) {
+        addr = addr.slice(cityLocationHeading[0].length);
+        const distanceAtMostOne = (left, right) => {
+          if (Math.abs(left.length - right.length) > 1) return false;
+          let i = 0, j = 0, edits = 0;
+          while (i < left.length && j < right.length) {
+            if (left[i] === right[j]) { i++; j++; continue; }
+            if (++edits > 1) return false;
+            if (left.length > right.length) i++;
+            else if (right.length > left.length) j++;
+            else { i++; j++; }
+          }
+          return edits + (i < left.length || j < right.length ? 1 : 0) <= 1;
+        };
+        addr = addr.replace(/\b[\p{L}][\p{L}'’-]*\b/gu, token => {
+          const correction = US_CITIES.find(city => !city.includes(" ") && distanceAtMostOne(token.toLowerCase(), city));
+          return correction || token;
+        });
+      }
+    }
 
     // 3. Remove contact details without removing the address before them.
     const contactStart =
@@ -2480,13 +2508,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     );
     // Standard numeric postal codes are usually five or six digits. Remove
     // these wherever they occur, not only when they happen to be a final token.
-    addr = addr.replace(/\b(?:\d{5}(?:-\d{4})?|\d{6})\b(?!\s+(?:street|road|avenue|drive|lane|boulevard|highway)\b)/gi, " ");
+    const firstPart = addr.split(",", 1)[0];
+    const leadingHouseNumber = firstPart.match(/^\s*(\d{1,6})\s+/);
+    const hasLeadingStreetNumber = Boolean(leadingHouseNumber) &&
+      /\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|parkway|pkwy\.?|highway|hwy\.?|terrace|ter\.?|way)\b/i.test(firstPart);
+    const isLeadingHouseNumber = (match, offset) => hasLeadingStreetNumber &&
+      offset === addr.search(new RegExp(`\\b${escapeRegExp(leadingHouseNumber[1])}\\b`));
+    addr = addr.replace(/\b(?:\d{5}(?:-\d{4})?|\d{6})\b(?!\s+(?:street|road|avenue|drive|lane|boulevard|highway)\b)/gi, (match, offset) =>
+      isLeadingHouseNumber(match, offset) ? match : " "
+    );
     addr = addr.replace(/\b\d{4}\s?[A-Z]{2}\b/gi, " "); // Netherlands-style postcode
-    if (postalCountry === "australia") addr = addr.replace(/\b\d{4}\b/g, " ");
-    if (postalCountry === "new zealand" || postalCountry === "nz") addr = addr.replace(/\b\d{4}\b/g, " ");
-    if (postalCountry === "india" || postalCountry === "bharat") addr = addr.replace(/\b\d{6}\b/g, " ");
+    if (/^(?:australia|new zealand|nz)$/.test(postalCountry)) {
+      addr = addr.replace(/\b\d{4}\b/g, (match, offset) => isLeadingHouseNumber(match, offset) ? match : " ");
+    }
     if (/^(?:united states(?: of america)?|usa|u\.?s\.?a?\.?)$/.test(postalCountry)) {
-      addr = addr.replace(/\b\d{5}(?:-\d{4})?\b/g, " ");
+      addr = addr.replace(/\b\d{5}(?:-\d{4})?\b/g, (match, offset) => isLeadingHouseNumber(match, offset) ? match : " ");
     }
     addr = addr.replace(/(?:,\s*){2,}/g, ", ").replace(/\s+,/g, ",");
     if (countryInfo?.iso === "CA") addr = addr.replace(/\b[A-Z]\d[A-Z]\s*\d[A-Z]\d\b/gi, " ");
@@ -2498,13 +2534,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
     if (/^(?:united kingdom|england|scotland|wales|northern ireland|uk|great britain)$/.test(postalCountry)) {
       addr = addr.replace(/\b(?:GIR\s?0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/gi, " ");
-    }
-    if (/^(?:india|bharat)$/.test(postalCountry)) {
-      // India PIN codes are six digits and can appear mid-line before the city.
-      addr = addr.replace(/\b\d{6}\b/g, " ");
-    }
-    if (/^(?:united states(?: of america)?|usa|u\.?s\.?a?\.?)$/.test(postalCountry)) {
-      addr = addr.replace(/\b\d{5}(?:-\d{4})?\b/g, " ");
     }
     if (addressCountry === "Italy" || String(countryName || "").toLowerCase() === "italy") {
       // Italian CAP codes are five digits and may be separated by an en dash
