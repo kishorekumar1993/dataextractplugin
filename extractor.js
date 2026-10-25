@@ -502,6 +502,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return "";
     }
 
+    function companyNameAfterRightsNotice(value) {
+      const match = String(value || "").match(
+        /\ball rights reserved\b\s*(?:(?:©\s*)?\d{2,4}(?:\s*[-–]\s*\d{2,4})?\s*)?(?:©\s*)?(.{2,80})$/i
+      );
+      const candidate = sanitizeCandidate(match?.[1] || "");
+      return candidate && hasCorpSuffix(candidate) ? candidate : "";
+    }
+
     // A site name that includes a legal suffix is often more complete than
     // the abbreviated Organization name in structured data.
     let metadataLegalName = "";
@@ -557,37 +565,51 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const footerEls = doc.querySelectorAll(
         'footer, #footer, .footer, .foot, .ft_data, [class*="footer"], [id*="footer"], address, .bottom, #bottom, .copyright, [class*="copyright"], [class*="copy-right"]'
       );
+      const footerLines = [];
       for (const f of footerEls) {
-        const lines = getElementText(f).split(/[\r\n]+/);
-        for (const line of lines) {
-          const l = clean(line);
-          if (!l || l.length < 2 || l.length > 120) continue;
+        footerLines.push(...getElementText(f).split(/[\r\n]+/));
+      }
 
-          // Pattern A: © / copyright line
-          const cpMatch = l.match(/(?:©|copyright|\(c\))\s*(?:\d{2,4}\s*[-–]?\s*\d{2,4}|\d{2,4})?\s*(.{2,80}?)(?:\s*[|·•\-–—.,]?\s*(?:all rights?|rights reserved|company reg|reg no)|$)/i);
-          if (cpMatch && cpMatch[1]) {
-            const cand = sanitizeCandidate(cpMatch[1]);
-            if (cand) {
-              if (hasCorpSuffix(cand)) {
-                legalName = cand;
-                break;
-              } else if (!brandName) {
-                brandName = cand;
-              }
-            }
-          }
+      // Prefer explicit copyright/legal lines over unrelated company names in
+      // footer widgets, such as featured projects or customers.
+      for (const line of footerLines) {
+        const l = clean(line);
+        if (!l || l.length < 2 || l.length > 120) continue;
 
-          // Pattern B: Line containing a corporate suffix and not an address/contact line
-          if (hasCorpSuffix(l) &&
-            !/(?:street|road|floor|suite|bldg|building|avenue|drive|lane|way|park\b|industrial estate|tel\b|phone\b|fax\b|email\b|@|사업자|대표자|-ro\b|-gu\b|-si\b)/i.test(l)) {
-            const cand = sanitizeCandidate(l);
-            if (cand && hasCorpSuffix(cand)) {
-              legalName = cand;
-              break;
-            }
+        const reverseCopyrightName = companyNameAfterRightsNotice(l);
+        if (reverseCopyrightName) {
+          legalName = reverseCopyrightName;
+          break;
+        }
+
+        const cpMatch = l.match(/(?:©|copyright|\(c\))\s*(?:\d{2,4}\s*[-–]?\s*\d{2,4}|\d{2,4})?\s*(.{2,80}?)(?:\s*[|·•\-–—.,]?\s*(?:all rights?|rights reserved|company reg|reg no)|$)/i);
+        if (cpMatch && cpMatch[1]) {
+          const candidate = sanitizeCandidate(cpMatch[1]);
+          if (candidate && hasCorpSuffix(candidate)) {
+            legalName = candidate;
+            break;
+          } else if (candidate && !brandName) {
+            brandName = candidate;
           }
         }
-        if (legalName) break;
+      }
+
+      if (!legalName) {
+        for (const line of footerLines) {
+          const l = clean(line);
+          if (!l || l.length < 2 || l.length > 120 || !hasCorpSuffix(l)) continue;
+
+          // Ignore address and contact lines that happen to contain a suffix.
+          if (/(?:street|road|floor|suite|bldg|building|avenue|drive|lane|way|park\b|industrial estate|tel\b|phone\b|fax\b|email\b|@|사업자|대표자|-ro\b|-gu\b|-si\b)/i.test(l)) {
+            continue;
+          }
+
+          const candidate = sanitizeCandidate(l);
+          if (candidate && hasCorpSuffix(candidate)) {
+            legalName = candidate;
+            break;
+          }
+        }
       }
     }
 
@@ -1989,7 +2011,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
 
     // City indicators in address
-    if (city === "N" && /(?:town|district|municipality|city|-si\b|-gu\b|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei)/i.test(addrLower)) {
+    if (city === "N" && /(?:town|district|municipality|city|-si\b|-gu\b|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|nof hagalil|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei)/i.test(addrLower)) {
       city = "Y";
     }
 

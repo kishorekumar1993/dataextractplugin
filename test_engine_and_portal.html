@@ -424,6 +424,43 @@
       { companyName: resCompleteCompanyName.companyName }
     );
 
+    const htmlReverseCopyright = `
+      <!DOCTYPE html>
+      <html>
+      <head><title>About Us - Ardan Transformers</title></head>
+      <body>
+        <footer class="main-footer">
+          <section>
+            <h2>Featured Projects</h2>
+            <p>Israeli Electrical Corporation</p>
+          </section>
+          <p>10 HaSadna st. Tziporit Industrial Zone, Nof Hagalil 178902 Israel</p>
+          <div class="copyright">© All rights reserved 2024 Ardan Trafo Ltd.</div>
+        </footer>
+      </body>
+      </html>
+    `;
+    const resReverseCopyright = Extractor.extractFromHtml(htmlReverseCopyright, "https://example.com/about-us/");
+    const resNofHagalil = Extractor.detectStateAndCity(
+      "10 Hasadna Street Tziporit Industrial Zone, Nof Hagalil"
+    );
+    renderTest("Test 5b: Reverse Copyright Name and Israeli City Detection",
+      resReverseCopyright.companyName === "Ardan Trafo Limited" &&
+      resReverseCopyright.companyAddress.includes("Nof Hagalil") &&
+      resReverseCopyright.countryName === "Israel" &&
+      resReverseCopyright.city === "Y" &&
+      resReverseCopyright.state === "N" &&
+      resNofHagalil.city === "Y" &&
+      resNofHagalil.state === "N",
+      {
+        companyName: resReverseCopyright.companyName,
+        companyAddress: resReverseCopyright.companyAddress,
+        countryName: resReverseCopyright.countryName,
+        city: resReverseCopyright.city,
+        state: resReverseCopyright.state
+      }
+    );
+
     // TEST 6: Section 5.3 International Legal Suffix Reference Expansion Test
     const suffixTestCases = [
       { raw: "Kolorbond Ltd.", expected: "Kolorbond Limited" },
