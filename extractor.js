@@ -956,7 +956,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .replace(/\u00a0/g, " ")
         .replace(/\s*(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "")
         .replace(/\s+(?:tel(?:ephone)?|phone|mobile|fax)\s*[:：]?\s*.*$/i, "")
-        .replace(/\(?\+\d{1,3}\)?(?:[\s().-]*\d){7,}.*$/i, "")
+        .replace(/\(?\+\d{1,3}\)?(?:[\s().-]*\d){7,}[\s\S]*$/i, "")
 
       const legalNotice = /©|\bcopyright\b|\ball rights reserved\b|\|\s*privacy(?:\s+policy)?\b|\bprivacy\s+policy\b|\|\s*terms(?:\s+of\s+use)?\b|\bterms\s+of\s+use\b/i.exec(address);
       if (legalNotice) address = address.slice(0, legalNotice.index);
@@ -980,10 +980,85 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       /@|https?:\/\/|www\.|all rights reserved/i.test(address) ||
       isContactOnly(address);
 
+    const hasPostalCode = (address, hasStreetMarker = false) => {
+      const numericPostalPattern = /(?:^|[,;\s])(\d{4,6}(?:-\d{4})?)(?=$|[,;\s])/g;
+      let match;
+      while ((match = numericPostalPattern.exec(address))) {
+        const code = match[1];
+        if (!/^(?:19|20)\d{2}$/.test(code) || hasStreetMarker) return true;
+      }
+      return /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(address);
+    };
+
+    const isAddressShaped = address => {
+      const countryMatch = COUNTRIES.some(country =>
+        [country.name, ...(country.aliases || [])]
+          .some(term => term && matchesCountryTerm(address, term))
+      );
+      const segments = address.split(",").map(segment => segment.trim()).filter(Boolean);
+      const isCountrySegment = segment =>
+        COUNTRIES.some(country =>
+          [country.name, ...(country.aliases || [])]
+            .some(term => term && matchesCountryTerm(segment, term))
+        );
+      const countrySegmentCount = segments.filter(isCountrySegment).length;
+      const nonCountryAddress = segments.filter(segment => !isCountrySegment(segment)).join(", ");
+      const regionMatch = POSTAL_REGION_NAMES_REGEX.test(nonCountryAddress);
+      const cityMatch = CITY_STATE_COUNTRY_MAP.some(mapping => mapping.regex.test(nonCountryAddress));
+      const detectedCountry = detectCountry(null, address, address, pageUrl, "");
+      const detectedLocation = detectStateAndCity(nonCountryAddress);
+      const streetNumberMatch =
+        /\b\d+[^\n]{0,25}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway|district|zone|block|sector|plot|suite|ste\.?|floor|fl\.?|unit|building|bldg\.?|tower|house)\b/i
+          .test(address);
+      const postalMatch = hasPostalCode(address, streetNumberMatch);
+
+      if (!streetNumberMatch) {
+        if (/\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\b/i.test(address)) return false;
+        if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2}\b/i.test(address)) return false;
+        if (/\b\d{1,2},?\s+(?:19|20)\d{2}\b/i.test(address)) return false;
+      }
+
+      if (!(countryMatch || postalMatch || regionMatch || cityMatch || streetNumberMatch ||
+          detectedCountry || detectedLocation.state !== "N" || detectedLocation.city !== "N")) {
+        return false;
+      }
+
+      if (/:\s+[A-Z]/.test(address) || /;/.test(address)) return false;
+
+      if (
+        countrySegmentCount >= 3 &&
+        !postalMatch &&
+        !regionMatch &&
+        !cityMatch &&
+        !streetNumberMatch &&
+        detectedLocation.state === "N" &&
+        detectedLocation.city === "N"
+      ) {
+        return false;
+      }
+
+      if (segments.some(segment => segment.split(/\s+/).filter(Boolean).length > 8)) {
+        return false;
+      }
+
+      const tokens = address.toLowerCase().split(/\s+/).filter(Boolean);
+      const proseHits = (address.toLowerCase().match(
+        /\b(?:for|with|using|the|that|which|this|is|are|can|will|from|into|it|its|their|our|your|we|you|they)\b/g
+      ) || []).length;
+      if (tokens.length && proseHits / tokens.length > 0.3) return false;
+
+      const locationSignal = countryMatch || postalMatch || regionMatch || cityMatch ||
+        Boolean(detectedCountry) ||
+        detectedLocation.state !== "N" ||
+        detectedLocation.city !== "N";
+      return locationSignal || streetNumberMatch;
+    };
+
     const addCandidate = (value, source, priority = 0) => {
       const address = normalizeAddress(value);
 
-      if (isNoise(address)) return;
+      if (isNoise(address) || !isAddressShaped(address)) return;
+      if (isContactPage && !/^(?:contact-detail-|footer-)/.test(source)) return;
 
       // Avoid duplicate candidates from nested address elements.
       const key = address.toLowerCase().replace(/[.,;]/g, "").trim();
@@ -1021,11 +1096,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         if (node.tagName === "FOOTER" || classAndId.includes("footer") || classAndId.includes("copyright")) {
           return false;
         }
-        if (node.tagName === "ADDRESS" || /contact|location|office|head.?quarter|address|branch/.test(classAndId)) {
+        if (
+          node.tagName === "ADDRESS" ||
+          node.matches?.('[itemprop="address"], [itemprop="streetAddress"], [itemtype*="PostalAddress"]') ||
+          /contact|location|office|head.?quarter|address|branch/.test(classAndId)
+        ) {
           hasContactDetailMarker = true;
         }
       }
-      return hasContactDetailMarker || (isContactPage && !isFooterElement(el));
+      return hasContactDetailMarker;
     };
 
     const isContactHeaderElement = el => {
@@ -1218,7 +1297,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       /^(?:our\s+)?(global\s+headquarters|headquarters|head\s+office|hq\s+address|hq|registered\s+office|corporate\s+office|company\s+address|office\s+address|factory\s+address|factory|works|plant|warehouse|branch\s+office|branch|regional\s+office|address|location)(?:\s*[:：-]\s*|\s*$)/i;
 
     const stopLinePattern =
-      /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b/i;
+      /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|contact|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b/i;
 
     const looksLikeAddressLine = line => {
       const s = String(line || "").trim();
@@ -1233,6 +1312,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     for (const section of sections) {
       const isFooter = isFooterElement(section);
       const isContactDetail = isContactDetailElement(section);
+      const isTrustedContactDetail = isContactDetail || (isContactPage && !isFooter);
       const isContactHeader = !isContactDetail && !isFooter && isContactHeaderElement(section);
       const contactHeaderSource = isContactPage ? "contact-detail-header" : "contact-header";
       const contactHeaderPriority = isContactPage ? 130 : 55;
@@ -1257,14 +1337,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         if (labelMatch) {
           const label = labelMatch[1].toLowerCase();
 
-          let priority = isContactDetail ? 145 : (isFooter ? 70 : (isContactHeader ? contactHeaderPriority : 30));
+          let priority = isTrustedContactDetail ? 145 : (isFooter ? 70 : (isContactHeader ? contactHeaderPriority : 30));
 
           if (/headquarters|head\s+office|\bhq\b/.test(label)) {
-            priority = isContactDetail ? 160 : (isFooter ? 80 : (isContactHeader ? contactHeaderPriority : 120));
+            priority = isTrustedContactDetail ? 160 : (isFooter ? 80 : (isContactHeader ? contactHeaderPriority : 120));
           } else if (
             /registered\s+office|company\s+address|corporate\s+office/.test(label)
           ) {
-            priority = isContactDetail ? 150 : (isFooter ? 75 : (isContactHeader ? contactHeaderPriority : 105));
+            priority = isTrustedContactDetail ? 150 : (isFooter ? 75 : (isContactHeader ? contactHeaderPriority : 105));
           } else if (/factory|works|plant|warehouse|branch|regional/.test(label)) {
             priority = isFooter ? 50 : 55;
           }
@@ -1297,7 +1377,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
           addCandidate(
             collected.join(", "),
-            isContactDetail ? "contact-detail-labelled" : (isFooter ? "footer-labelled" : (isContactHeader ? `${contactHeaderSource}-labelled` : "page-labelled")),
+            isTrustedContactDetail
+              ? "contact-detail-labelled"
+              : (isFooter ? "footer-labelled" : (isContactHeader ? `${contactHeaderSource}-labelled` : "page-labelled")),
             priority
           );
           continue;
@@ -1331,8 +1413,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         if (joined && joined.split(",").filter(Boolean).length >= 2) {
           addCandidate(
             joined,
-            isContactDetail ? "contact-detail-inline" : (isFooter ? "footer-inline" : (isContactHeader ? `${contactHeaderSource}-inline` : "page-inline")),
-            isContactDetail ? 140 : (isFooter ? 65 : (isContactHeader ? contactHeaderPriority : 25))
+            isTrustedContactDetail
+              ? "contact-detail-inline"
+              : (isFooter ? "footer-inline" : (isContactHeader ? `${contactHeaderSource}-inline` : "page-inline")),
+            isTrustedContactDetail ? 140 : (isFooter ? 65 : (isContactHeader ? contactHeaderPriority : 25))
           );
         }
       }
@@ -1378,19 +1462,43 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .filter(Boolean);
 
       let score = candidate.priority;
+      score += Math.min(segments.length, 5) * 8;
 
-      // Multiple meaningful address components.
-      if (segments.length >= 2) score += 8;
-      if (segments.length >= 3) score += 8;
-      if (segments.length >= 4) score += 4;
+      const countryMatch = COUNTRIES.some(country =>
+        [country.name, ...(country.aliases || [])]
+          .some(term => term && matchesCountryTerm(address, term))
+      );
+      const detectedCountry = detectCountry(null, address, address, pageUrl, "");
+      const streetNumberMatch =
+        /\b\d+[^\n]{0,25}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway)\b/i
+          .test(address);
+      const postalMatch = hasPostalCode(address, streetNumberMatch);
+      if (postalMatch) score += 15;
+      if (countryMatch || detectedCountry) score += 12;
+
+      if (/\b\d+[^\n]{0,25}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway)\b/i.test(address)) {
+        score += 10;
+      }
+
+      const tail = address.slice(-40);
+      if (postalMatch && hasPostalCode(tail, streetNumberMatch) ||
+          COUNTRIES.some(country =>
+            [country.name, ...(country.aliases || [])]
+              .some(term => term && matchesCountryTerm(tail, term))
+          ) || Boolean(detectCountry(null, tail, tail, "", ""))) {
+        score += 8;
+      }
 
       // Street/building/location indicators.
       if (/\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|industrial park|suite|building|district|province|lane|drive|way|court|place|crescent|terrace|circle|highway|unit|floor|block|plot|po box|p\.o\. box)\b/i.test(address)) {
         score += 10;
       }
 
-      // Numbers may indicate a street number or postal code.
-      if (/\d/.test(address)) score += 4;
+      const wordCount = address.split(/\s+/).filter(Boolean).length;
+      const hyphenCount = (address.match(/-/g) || []).length;
+      if (hyphenCount >= 3 && wordCount > 6) score -= 10;
+      if (segments.some(segment => segment.split(/\s+/).filter(Boolean).length > 6)) score -= 8;
+      if (address.includes(",") && /:\s/.test(address.slice(address.indexOf(",") + 1))) score -= 15;
 
       // Penalize contact details and generic page content.
       if (/\b(?:call us|contact us|opening hours|customer service|follow us)\b/i.test(address)) {
@@ -1407,16 +1515,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     scored.sort((a, b) => b.score - a.score);
 
     // Return the best usable candidate, not simply the longest string.
-    const best = scored.find(candidate => {
-      const parts = candidate.address
-        .split(/[,,;\n]+/)
-        .map(part => part.trim())
-        .filter(Boolean);
-
-      const hasStreetMarkers = /\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|business park)\b/i.test(candidate.address);
-
-      return (parts.length >= 2 || hasStreetMarkers) && candidate.address.length >= 15;
-    });
+    const best = scored.find(candidate =>
+      isAddressShaped(candidate.address) &&
+      candidate.address.length >= 15 &&
+      candidate.address.length <= 300
+    );
 
     const result = {
       address: best?.address || "",

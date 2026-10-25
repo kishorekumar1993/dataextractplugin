@@ -138,7 +138,7 @@ function waitForTabComplete(tabId, timeoutMs = 25000) {
   });
 }
 
-async function extractFetchedPage(tabId, pageUrl) {
+async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   let response;
@@ -161,7 +161,47 @@ async function extractFetchedPage(tabId, pageUrl) {
     },
     args: [html, response.url || pageUrl]
   });
-  return result || null;
+
+  if (result?.companyAddress || !renderIfAddressMissing) return result || null;
+
+  let renderedTab;
+  try {
+    renderedTab = await chrome.tabs.create({ url: response.url || pageUrl, active: false });
+    await waitForTabComplete(renderedTab.id, 15000);
+
+    const [{ result: extractorLoaded }] = await chrome.scripting.executeScript({
+      target: { tabId: renderedTab.id },
+      func: () => typeof window.Extractor !== "undefined"
+    });
+    if (!extractorLoaded) {
+      await chrome.scripting.executeScript({
+        target: { tabId: renderedTab.id },
+        files: ["extractor.js"]
+      });
+    }
+
+    const [{ result: renderedResult }] = await chrome.scripting.executeScript({
+      target: { tabId: renderedTab.id },
+      func: async (url) => {
+        const extract = () => Extractor.extractFromDocument(
+          document,
+          Extractor.getElementText(document.body),
+          url
+        );
+        let data = extract();
+        const deadline = Date.now() + 8000;
+        while (!data.companyAddress && Date.now() < deadline) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          data = extract();
+        }
+        return data;
+      },
+      args: [response.url || pageUrl]
+    });
+    return renderedResult || result || null;
+  } finally {
+    if (renderedTab?.id) await chrome.tabs.remove(renderedTab.id);
+  }
 }
 
 // Main crawl uses a background tab for the rendered homepage; subpages are fetched
@@ -202,10 +242,21 @@ async function crawlAndExtractDirect(targetUrl) {
     setStatus("Extracting company details from page...", "info");
     const [{ result: mainData }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: (pageUrl) => {
+      func: async (pageUrl) => {
         try {
           // Use live document — not a DOMParser copy — for best company name detection
-          return Extractor.extractFromDocument(document, Extractor.getElementText(document.body), pageUrl);
+          const extract = () => Extractor.extractFromDocument(
+            document,
+            Extractor.getElementText(document.body),
+            pageUrl
+          );
+          let data = extract();
+          const deadline = Date.now() + 8000;
+          while (!data.companyAddress && Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            data = extract();
+          }
+          return data;
         } catch (e) {
           return { error: String(e) };
         }
@@ -303,7 +354,9 @@ async function crawlAndExtractDirect(targetUrl) {
     for (const contactUrl of contactCandidates) {
       try {
         setStatus("Checking Contact page for official address...", "info");
-        const contactData = await extractFetchedPage(tab.id, contactUrl);
+        const isDiscoveredContactUrl = contactUrl === mainData.contactUrl ||
+          (mainData.contactUrls || []).includes(contactUrl);
+        const contactData = await extractFetchedPage(tab.id, contactUrl, isDiscoveredContactUrl);
 
         if (contactData && !contactData.error) {
           const hasContactDetailAddress = String(contactData.addressSource || "").startsWith("contact-detail-");

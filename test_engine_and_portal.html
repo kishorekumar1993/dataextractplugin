@@ -756,6 +756,12 @@
       }
     }
     const cosenAddressDoc = new DOMParser().parseFromString(`
+      <main>
+        <section class="product-promo">
+          Industry 4.0 Plug-And-Playable For Bandsaw Machinescpc Cloud Predictive Computing System For Bandsaw Monitoring,
+          AI Cutting: Autonomous Sensing, Computing And Calibrating
+        </section>
+      </main>
       <footer>
         <address>
           <h3>Our Address</h3>
@@ -785,6 +791,121 @@
     if (!passCosenAddress) {
       allAddressPassed = false;
       console.error(`Cosen address extraction failed: expected "${expectedCosenAddress}", got "${cosenAddress}" from ${cosenRawAddress.source}`);
+    }
+    const cosenServiceLocationDoc = new DOMParser().parseFromString(`
+      <html>
+        <head><title>Service Location</title></head>
+        <body>
+          <section class="service-location">
+            <p>Israel, Iran, Kuwait, Qatar, Saudi Arabia, Syria, Turkey, United Arab Emirates</p>
+          </section>
+          <section class="service-location">
+            <p>Argentina, Bolivia, Brazil, Chile, Canada, Columbia, Ecuador, Mexico, Peru, United States, Venezuela</p>
+          </section>
+          <footer>
+            <address>
+              <h3>Our Address</h3>
+              <span>No. 106-2, Ln. 175, Xinxi St., Zhubei City, Hsinchu County 302009, Taiwan</span>
+            </address>
+          </footer>
+        </body>
+      </html>`,
+      "text/html"
+    );
+    const cosenServiceLocationAddress = Extractor.extractFromDocument(
+      cosenServiceLocationDoc,
+      Extractor.getElementText(cosenServiceLocationDoc.body),
+      "https://www.cosen.com/en/page/service_location_bandsaw.html"
+    );
+    const passCosenServiceLocationAddress =
+      cosenServiceLocationAddress.companyAddress === expectedCosenAddress &&
+      cosenServiceLocationAddress.countryName === "Taiwan" &&
+      cosenServiceLocationAddress.addressSource === "footer-labelled";
+    addressResults["Cosen service-country list is not treated as a postal address"] = {
+      expectedAddress: expectedCosenAddress,
+      expectedCountry: "Taiwan",
+      actualAddress: cosenServiceLocationAddress.companyAddress,
+      actualCountry: cosenServiceLocationAddress.countryName,
+      actualSource: cosenServiceLocationAddress.addressSource,
+      passed: passCosenServiceLocationAddress
+    };
+    if (!passCosenServiceLocationAddress) {
+      allAddressPassed = false;
+      console.error(`Cosen service-country list was selected as an address: ${JSON.stringify(cosenServiceLocationAddress)}`);
+    }
+    const datedNewsAddressDoc = new DOMParser().parseFromString(`
+      <html>
+        <body>
+          <div id="footer">
+            <section id="text-4">
+              <h3>Address</h3>
+              <p>ADS Doors,<br>Ballinderry,<br>Four Mile House,<br>Co. Roscommon.</p>
+            </section>
+            <section id="text-5">
+              <h3>Contact</h3>
+              <p>Phone: +353 90 662 8000</p>
+            </section>
+            <section id="newsbox-3">
+              <h3>Latest Projects</h3>
+              <article>
+                <h2>Wisnowski Slider Fitted IN Roscommon</h2>
+                <p>June 25, 2024 - 11:52 Am</p>
+              </article>
+            </section>
+          </div>
+        </body>
+      </html>`,
+      "text/html"
+    );
+    const datedNewsRawAddress = Extractor.findRawAddress(
+      datedNewsAddressDoc,
+      Extractor.getElementText(datedNewsAddressDoc.body),
+      "https://www.rollerdoors.ie/",
+      true
+    );
+    const passDatedNewsAddress =
+      datedNewsRawAddress.address === "ADS Doors, Ballinderry, Four Mile House, Co. Roscommon." &&
+      datedNewsRawAddress.source === "footer-labelled";
+    addressResults["News title with date and timestamp is not an address"] = {
+      expected: { address: "ADS Doors, Ballinderry, Four Mile House, Co. Roscommon.", source: "footer-labelled" },
+      actual: datedNewsRawAddress,
+      passed: passDatedNewsAddress
+    };
+    if (!passDatedNewsAddress) {
+      allAddressPassed = false;
+      console.error(`Dated news title selected instead of the footer address: ${JSON.stringify(datedNewsRawAddress)}`);
+    }
+    const contactAddressDoc = new DOMParser().parseFromString(`
+      <html>
+        <head><title>Contact Us</title></head>
+        <body>
+          <main>
+            <section class="product-promo">
+              Industry 4.0 Plug-And-Playable For Bandsaw Machinescpc Cloud Predictive Computing System For Bandsaw Monitoring,
+              AI Cutting: Autonomous Sensing, Computing And Calibrating
+            </section>
+            <address>106-2, Xinxi Street, Zhubei City, Hsinchu County 302009, Taiwan</address>
+          </main>
+        </body>
+      </html>`,
+      "text/html"
+    );
+    const contactRawAddress = Extractor.findRawAddress(
+      contactAddressDoc,
+      contactAddressDoc.body.innerText,
+      "https://www.example.com/contact-us",
+      true
+    );
+    const passContactAddressSource = contactRawAddress.source.startsWith("contact-detail-") &&
+      contactRawAddress.address.includes("Hsinchu County");
+    addressResults["Contact page rejects prose and trusts contact-detail address"] = {
+      expectedSourcePrefix: "contact-detail-",
+      actual: contactRawAddress,
+      passed: passContactAddressSource
+    };
+    if (!passContactAddressSource) {
+      allAddressPassed = false;
+      console.error(`Contact page returned untrusted address candidate: ${JSON.stringify(contactRawAddress)}`);
     }
     renderTest("Test 7: Section 7 Address Normalization & Abbreviations Expansion (Rules 7.4 - 7.11)", allAddressPassed, addressResults);
 
@@ -1284,7 +1405,7 @@
       resGenericPageFallback.addressSource.startsWith("footer-");
 
     const copyrightContaminatedAddress =
-      "Newbury House, Ford Lane, Salford, © Forest Sofa 2026 | Privacy";
+      "Newbury House, Ford Lane, Salford, United Kingdom, © Forest Sofa 2026 | Privacy";
     const footerCopyrightHtml = `
       <!DOCTYPE html>
       <html>
