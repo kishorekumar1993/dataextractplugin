@@ -191,8 +191,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       { countries: ["argentina"], rules: [[/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad de Responsabilidad Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima"]] },
       { countries: ["brazil"], rules: [[/\bltda\.?(?=\s*[,;:]?$)/gi, "Sociedade Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedade Anônima"]] },
       { countries: ["spain"], rules: [[/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad de Responsabilidad Limitada"], [/\bs\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima"]] },
-      { countries: ["france"], rules: [[/\bs\.?a\.?s\.?u\.?(?=\s*[,;:]?$)/gi, "Société par actions simplifiée unipersonnelle"], [/\bs\.?a\.?s\.?(?=\s*[,;:]?$)/gi, "Société par actions simplifiée"], [/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Société à responsabilité limitée"], [/\bs\.?l\.?(?=\s*[,;:]?$)/gi, "Société à responsabilité limitée"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Société Anonyme"]] },
-      { countries: ["italy"], rules: [[/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Società a responsabilità limitata"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Società per Azioni"]] },
+      { countries: ["france"], rules: [[/\bs\.?a\.?s\.?u\.?(?=\s*[,;:]?$)/gi, "Société par actions simplifiée unipersonnelle"], [/\bs\.?a\.?s\.?(?=\s*[,;:]?$)/gi, "Société par actions simplifiée"], [/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Société à responsabilité limitée"], [/\bs\.?l\.?(?=\s*[,;:]?$)/gi, "Société à responsabilité limitée"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Société Anonyme"], [/\bs\.?n\.?c\.?(?=\s*[,;:]?$)/gi, "Société en nom collectif"]] },
+      { countries: ["italy"], rules: [[/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Società a responsabilità limitata"], [/\bs\.?n\.?c\.?(?=\s*[,;:]?$)/gi, "Società in nome collettivo"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Società per Azioni"]] },
       { countries: ["switzerland", "belgium", "luxembourg"], rules: [[/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Société Anonyme"]] },
       { countries: ["mexico"], rules: [[/\bs\.?a\.?p\.?i\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima Promotora de Inversión de Capital Variable"], [/\bs\.?\s+de\s+r\.?l\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad de Responsabilidad Limitada de Capital Variable"], [/\bs\.?a\.?b\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima Bursátil de Capital Variable"], [/\bs\.?a\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima de Capital Variable"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima"], [/\bs\.?c\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad Cooperativa Limitada"], [/\bs\.?c\.?(?=\s*[,;:]?$)/gi, "Sociedad Civil"]] },
       { countries: ["portugal"], rules: [[/\bs\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedade Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedade Anónima"]] },
@@ -208,9 +208,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const countryRules = countryExpansions.find(entry =>
       entry.countries.some(value => value.replace(/[^a-z]/g, "") === country)
     );
+    console.log("[LEGAL SUFFIX DEBUG]", {
+      input: name,
+      country: countryName,
+      beforeExpansion: s
+    });
     if (countryRules) {
       for (const [rx, rep] of countryRules.rules) {
-        const titleCasedRep = rep.replace(
+        const titleCasedRep = country === "italy" ? rep : rep.replace(
           /(^|[^\p{L}\p{N}])(\p{L})/gu,
           (_, separator, letter) => separator + letter.toUpperCase()
         );
@@ -260,7 +265,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       [/\bs\.?a\.?s\.?u\.?(?=[,.\s]|$)/gi, "Société par actions simplifiée unipersonnelle"],
       [/\be\.?u\.?r\.?l\.?(?=[,.\s]|$)/gi, "Entreprise unipersonnelle à responsabilité limitée"],
       [/\bs\.?a\.?s\.?(?=[,.\s]|$)/gi, "Société par actions simplifiée"],
-      [/\bs\.?n\.?c\.?(?=[,.\s]|$)/gi, "Société en nom collectif"],
       [/\bs\.?c\.?a\.?(?=[,.\s]|$)/gi, "Société en commandite par actions"],
       [/\bs\.?c\.?s\.?(?=[,.\s]|$)/gi, "Société en commandite simple"],
 
@@ -411,6 +415,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       s = s.replace(rx, titleCasedRep);
     }
 
+    console.log("[LEGAL SUFFIX RESULT]", s);
     return s;
   }
 
@@ -575,7 +580,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const finishName = value => formatName ? formatCompanyName(value, countryName) : value;
 
     // Comprehensive corporate suffix pattern (Section 5.3 International Legal Suffixes)
-    const corpSuffix = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|srl|spa|kft|zrt|nyrt|s\.r\.o\.|a\.s\.|d\.o\.o\.|pvt\.?\s*ltd\.?|private\s+limited|pte\.?\s*ltd\.?|pty\.?\s*ltd\.?|proprietary\s+limited|sdn\.?\s*bhd\.?|berhad|bhd\.?|tbk\.?|wll|pjsc|fze|fzco|fz-llc|l3c|p\.?c\.?|p\.?a\.?|l\.?l\.?l\.?p\.?|l\.?p\.?a\.?|bcorp|clg|ulc|dac|scio|bencom|lp|section\s*8\s+company|producer\s+company|nidhi\s+(?:limited|company)|s\.?e\.?n\.?c\.?|s\.?e\.?c\.?|incorporated\s+association|npc|wfoe|wofe|fie|g\.?k\.?|y\.?k\.?|p\.?t\.?|perum|persero|s\.?c\.?l\.?|s\.?c\.?|psc|prjsc|g\.?t\.?\s*ltd)\b/i;
+    const corpSuffix = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|s\.?r\.?l\.?|s\.?n\.?c\.?|spa|kft|zrt|nyrt|s\.r\.o\.|a\.s\.|d\.o\.o\.|pvt\.?\s*ltd\.?|private\s+limited|pte\.?\s*ltd\.?|pty\.?\s*ltd\.?|proprietary\s+limited|sdn\.?\s*bhd\.?|berhad|bhd\.?|tbk\.?|wll|pjsc|fze|fzco|fz-llc|l3c|p\.?c\.?|p\.?a\.?|l\.?l\.?l\.?p\.?|l\.?p\.?a\.?|bcorp|clg|ulc|dac|scio|bencom|lp|section\s*8\s+company|producer\s+company|nidhi\s+(?:limited|company)|s\.?e\.?n\.?c\.?|s\.?e\.?c\.?|incorporated\s+association|npc|wfoe|wofe|fie|g\.?k\.?|y\.?k\.?|p\.?t\.?|perum|persero|s\.?c\.?l\.?|s\.?c\.?|psc|prjsc|g\.?t\.?\s*ltd)\b/i;
 
     // Helper: checks if candidate string contains a real corporate suffix
     const hasCorpSuffix = str => {
@@ -844,7 +849,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (brandName && text) {
       const baseClean = brandName.replace(/\s+/g, "\\s+");
       const suffixSearchRegex = new RegExp(
-        `\\b(${baseClean}\\s+(?:co[.,\\s]*ltd\\.?|co[.,\\s]+limited|company\\s+limited|corporation|corp\\.?|incorporated|inc\\.?|limited|ltd\\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|srl|spa|kft|zrt|nyrt|s\\.r\\.o\\.|a\\.s\\.|d\\.o\\.o\\.|pvt\\.?\\s*ltd\\.?|private\\s+limited|pte\\.?\\s*ltd\\.?|pty\\.?\\s*ltd\\.?|proprietary\\s+limited|sdn\\.?\\s*bhd\\.?|berhad|bhd\\.?|tbk\\.?|wll|pjsc|fze|fzco|fz-llc))\\b`,
+        `\\b(${baseClean}\\s+(?:co[.,\\s]*ltd\\.?|co[.,\\s]+limited|company\\s+limited|corporation|corp\\.?|incorporated|inc\\.?|limited|ltd\\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|s\\.?r\\.?l\\.?|s\\.?n\\.?c\\.?|srl|spa|kft|zrt|nyrt|s\\.r\\.o\\.|a\\.s\\.|d\\.o\\.o\\.|pvt\\.?\\s*ltd\\.?|private\\s+limited|pte\\.?\\s*ltd\\.?|pty\\.?\\s*ltd\\.?|proprietary\\s+limited|sdn\\.?\\s*bhd\\.?|berhad|bhd\\.?|tbk\\.?|wll|pjsc|fze|fzco|fz-llc))\\b`,
         "i"
       );
       const match = text.match(suffixSearchRegex);

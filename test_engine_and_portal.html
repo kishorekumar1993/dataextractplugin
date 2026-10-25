@@ -525,6 +525,20 @@
         console.error(`Jurisdiction suffix test failed for "${tc.raw}" in ${tc.country}: expected "${tc.expected}", got "${actual}"`);
       }
     }
+    const italianSuffixCases = [
+      { raw: "COVEN EGIDIO S.r.l.", country: "Italy", expected: "COVEN EGIDIO Società a responsabilità limitata" },
+      { raw: "COVEN EGIDIO S.n.c.", country: "Italy", expected: "COVEN EGIDIO Società in nome collettivo" },
+      { raw: "COVEN EGIDIO S.n.c.", country: "France", expected: "COVEN EGIDIO Société En Nom Collectif" },
+      { raw: "COVEN EGIDIO S.n.c.", country: "", expected: "COVEN EGIDIO S.n.c." }
+    ];
+    for (const tc of italianSuffixCases) {
+      const actual = Extractor.expandLegalSuffixes(tc.raw, tc.country);
+      suffixResults[`${tc.raw} (${tc.country || "unknown"})`] = actual;
+      if (actual !== tc.expected) {
+        allSuffixPassed = false;
+        console.error(`Jurisdiction suffix test failed for "${tc.raw}" in ${tc.country || "unknown"}: expected "${tc.expected}", got "${actual}"`);
+      }
+    }
     renderTest("Test 6: Section 5.3 International Legal Suffix Expansion (Full Form)", allSuffixPassed, suffixResults);
 
     // TEST 7: Section 7 Address Abbreviations & Normalization (Sections 7.4 - 7.11)
