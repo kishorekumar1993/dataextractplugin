@@ -68,6 +68,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   const MALAYSIA_CITIES = [
     "kuala lumpur", "george town", "johor bahru", "ipoh", "shah alam", "petaling jaya", "subang jaya", "klang", "kuantan", "kota kinabalu", "kuching", "seremban", "malacca city", "melaka city", "alor setar", "miri", "sandakan", "tawau", "kota bharu", "kuala terengganu", "putrajaya", "cyberjaya", "kulim", "batu pahat", "kuala kedah", "sibu", "bintulu", "taiping", "teluk intan", "pasir gudang", "iskandar puteri", "bayan lepas", "butterworth", "langkawi", "port dickson", "temerloh", "kemaman", "labuan town", "ampang", "ayer keroh", "balik pulau", "bandar baru bangi", "bandar sunway", "bangsar", "batu gajah", "bukit mertajam", "gombak", "jitra", "kajang", "kampar", "kangar", "keningau", "kluang", "kuala kangsar", "kulai", "lahad datu", "muar", "nilai", "pekan", "seberang perai", "sungai petani", "simpang ampat", "tanah merah", "tampin", "bentong", "rawang", "sabak bernam", "beranang", "setapak", "cheras", "kepong", "sentul", "mont kiara", "damansara", "puchong", "seri kembangan", "shah alam", "kota damansara", "sri petaling"
   ];
+  const UAE_EMIRATES = ["Abu Dhabi", "Ajman", "Dubai", "Fujairah", "Ras Al Khaimah", "Sharjah", "Umm Al Quwain"];
+  const UAE_CITIES = ["Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Al Ain", "Ras Al Khaimah", "Fujairah", "Umm Al Quwain", "Khor Fakkan", "Kalba", "Dibba Al-Fujairah", "Jebel Ali"];
   const UK_COUNTIES = [
     "bedfordshire", "berkshire", "borders", "bristol", "buckinghamshire", "cambridgeshire", "cheshire", "cornwall", "cumbria", "derbyshire", "devon", "dorset", "durham", "east sussex", "essex", "gloucestershire", "hampshire", "herefordshire", "hertfordshire", "kent", "lancashire", "leicestershire", "lincolnshire", "merseyside", "norfolk", "northamptonshire", "northumberland", "nottinghamshire", "oxfordshire", "somerset", "south yorkshire", "staffordshire", "suffolk", "surrey", "tyne and wear", "warwickshire", "west midlands", "west sussex", "wiltshire", "worcs", "worcestershire", "north yorkshire", "west yorkshire", "isle of wight", "greater london"
   ];
@@ -183,7 +185,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { name: "Indonesia", iso: "ID", aliases: ["indonesia"], tlds: [".id", ".co.id"], dialCode: "62" },
     { name: "Philippines", iso: "PH", aliases: ["philippines"], tlds: [".ph", ".com.ph"], dialCode: "63" },
     { name: "Turkey", iso: "TR", aliases: ["turkey", "türkiye"], tlds: [".tr", ".com.tr"], dialCode: "90" },
-    { name: "United Arab Emirates", iso: "AE", aliases: ["united arab emirates", "uae", "dubai", "abu dhabi"], tlds: [".ae"], dialCode: "971" },
+    { name: "United Arab Emirates", iso: "AE", aliases: ["united arab emirates", "uae"], tlds: [".ae"], dialCode: "971" },
     { name: "Saudi Arabia", iso: "SA", aliases: ["saudi arabia"], tlds: [".sa"], dialCode: "966" },
     { name: "Brazil", iso: "BR", aliases: ["brazil", "brasil"], tlds: [".br", ".com.br"], dialCode: "55" },
     { name: "Mexico", iso: "MX", aliases: ["mexico", "méxico"], tlds: [".mx", ".com.mx"], dialCode: "52" },
@@ -212,6 +214,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   // Global City/State to Country Mapping
   const CITY_STATE_COUNTRY_MAP = [
+    { country: "United Arab Emirates", regex: /\b(?:abu dhabi|ajman|al ain|dubai|fujairah|jebel ali|kalba|khor fakkan|ras al khaimah|sharjah|umm al quwain|dibba al-fujairah)\b/i },
     { country: "South Korea", regex: /\b(seoul|incheon|busan|daegu|daejeon|gwangju|ulsan|suwon|changwon|seongnam|cheongju|anyang|bucheon|gyeonggi|gyeonggi-do|gangwon|chungcheong|jeolla|gyeongsang|jeju)\b/i },
     { country: "Japan", regex: /\b(tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|kawasaki|saitama|hiroshima|sendai|chiba|kanagawa|hokkaido)\b/i },
     { country: "China", regex: new RegExp(`\\b(?:${[...CHINA_PROVINCES_AND_REGIONS, ...CHINA_DIRECT_MUNICIPALITIES, ...CHINA_CITIES].map(escapeRegExp).sort((a, b) => b.length - a.length).join("|")})\\b`, "i") },
@@ -1648,7 +1651,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (!s || s.length < 12 || s.length > 220) return false;
       if (stopLinePattern.test(s) || /@|https?:\/\/|www\.|all rights reserved/i.test(s)) return false;
       const hasNumber = /\d/.test(s);
-      const hasStreetMarker = /\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|gu\b|si\b|do\b|ro\b|dong\b|gun\b|min\b|city\b|province\b|county\b)/i.test(s);
+      const hasStreetMarker = /\b(?:p\.?\s*o\.?\s*box|post\s+office\s+box|street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|gu\b|si\b|do\b|ro\b|dong\b|gun\b|min\b|city\b|province\b|county\b)/i.test(s);
       const commaSegments = s.split(",").map(p => p.trim()).filter(Boolean);
       return (hasNumber && (commaSegments.length >= 2 || hasStreetMarker)) ||
         (hasStreetMarker && commaSegments.length >= 2);
@@ -1787,6 +1790,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         if (!looksLikeAddressLine(lines[i])) continue;
 
         const collected = [lines[i]];
+        if (/\b(?:p\.?\s*o\.?\s*box|post\s+office\s+box)\b/i.test(lines[i])) {
+          const nearbyLines = lines.slice(Math.max(0, i - 6), i).reverse();
+          const branchCity = nearbyLines
+            .map(line => UAE_CITIES.find(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(line)))
+            .find(Boolean);
+          if (branchCity) collected.push(branchCity);
+        }
         for (
           let j = i + 1;
           j < Math.min(lines.length, i + 5);
@@ -2607,6 +2617,22 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       addr = expandAddressAbbreviations(addr, addressCountry);
     }
 
+    // A P.O. Box number is part of the mailing address, not a postal code.
+    // Temporarily protect it from the numeric postcode cleanup below.
+    const preservedPoBoxNumbers = new Map();
+    let poBoxTokenIndex = 0;
+    addr = addr.replace(/\b(?:p\.?\s*o\.?\s*box|post\s+office\s+box)\s*[:#]?\s*\d{1,6}\b/gi, match => {
+      let index = poBoxTokenIndex++;
+      let suffix = "";
+      do {
+        suffix = String.fromCharCode(65 + (index % 26)) + suffix;
+        index = Math.floor(index / 26) - 1;
+      } while (index >= 0);
+      const token = `ZZPOBOX${suffix}ZZ`;
+      preservedPoBoxNumbers.set(token, match);
+      return token;
+    });
+
     // 6. Remove postal codes only when they are standalone comma-separated
     // components. Keep street/building/house numbers.
     const postalCodePatterns = [
@@ -2652,8 +2678,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       /\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|parkway|pkwy\.?|highway|hwy\.?|terrace|ter\.?|way)\b/i.test(firstPart);
     const isLeadingHouseNumber = (match, offset) => hasLeadingStreetNumber &&
       offset === addr.search(new RegExp(`\\b${escapeRegExp(leadingHouseNumber[1])}\\b`));
+    const isPoBoxNumber = offset =>
+      /\b(?:p\.?\s*o\.?\s*box|post\s+office\s+box)\s*[:#]?\s*$/i.test(addr.slice(0, offset));
     addr = addr.replace(/\b(?:\d{5}(?:-\d{4})?|\d{6})\b(?!\s+(?:street|road|avenue|drive|lane|boulevard|highway)\b)/gi, (match, offset) =>
-      isLeadingHouseNumber(match, offset) ? match : " "
+      isLeadingHouseNumber(match, offset) || isPoBoxNumber(offset) ? match : " "
     );
     addr = addr.replace(/\b\d{4}\s?[A-Z]{2}\b/gi, " "); // Netherlands-style postcode
     if (/^(?:australia|new zealand|nz)$/.test(postalCountry)) {
@@ -2712,6 +2740,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // Strip 5-digit postal code directly following 2-letter state code (e.g. "FL 33405" -> "FL")
     addr = addr.replace(/(?<=\b[A-Z]{2}\s+)\d{5}(?:-\d{4})?(?=[,\s;:]|$)/g, "").trim();
+
+    for (const [token, poBox] of preservedPoBoxNumbers) {
+      addr = addr.replace(token, poBox);
+    }
 
     // 7. Normalize punctuation and spaces.
     addr = addr
@@ -2813,6 +2845,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const hasUkCountyOrNation = UK_COUNTIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
       /\b(?:england|scotland|wales|northern ireland)\b/i.test(addrLower);
     const hasUkCity = UK_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const hasUaeEmirate = UAE_EMIRATES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const hasUaeCity = UAE_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasSwedenCounty = SWEDEN_COUNTY_REGEX.test(address || "");
     const hasSwedenMunicipality = SWEDEN_MUNICIPALITY_REGEX.test(address || "");
     const hasNewZealandCity = NEW_ZEALAND_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
@@ -2828,7 +2862,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       : null;
 
     // State indicators in address
-    if (state === "N" && (hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasMalaysiaState || hasUkCountyOrNation || hasSwedenCounty || hasSwedenMunicipality || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
+    if (state === "N" && (hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasMalaysiaState || hasUkCountyOrNation || hasUaeEmirate || hasSwedenCounty || hasSwedenMunicipality || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
         POSTAL_REGION_US_CODES_REGEX.test(address || "") ||
         /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower))) {
       state = "Y";
@@ -2843,6 +2877,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       city = "Y";
     }
     if (hasNewZealandCity) city = "Y";
+    if (hasUaeCity) city = "Y";
 
     if (hasChinaMunicipality || hasChinaCity) city = "Y";
 
@@ -2891,7 +2926,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // Completeness validation (Rule 18): If address has fewer than 2 segments, State is likely invalid
     const parts = (address || "").split(",").map(p => p.trim()).filter(Boolean);
-    const hasExplicitStateEvidence = hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasSwedenCounty || hasSwedenMunicipality ||
+    const hasExplicitStateEvidence = hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasUaeEmirate || hasSwedenCounty || hasSwedenMunicipality ||
       hasIndianState || hasMalaysiaState || hasUkCountyOrNation || australianCityState || hasAustralianStateCode ||
       (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
       POSTAL_REGION_US_CODES_REGEX.test(address || "");
@@ -3061,6 +3096,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const genRegex = /(?:\+\d{1,3}[\s.-]*)?(?:\(?\d{2,4}\)?[\s.-]*)?\d{3,4}[\s.-]*\d{4}/g;
     const genMatches = (text || "").match(genRegex) || [];
     phoneCandidates.push(...genMatches);
+
+    // UAE landlines are often printed as +971-2-55044 43 or
+    // +971-4-33334 94 (five digits followed by two), which the generic
+    // international pattern splits incorrectly. Prefer these country-aware
+    // matches so page testimonials and dates do not win first.
+    if (country?.iso === "AE") {
+      const uaePhoneRegex = /(?:\+971|00971)[\s()./-]*(?:0[\s()./-]*)?[2-7][\s()./-]*\d{5}[\s.-]*\d{2}\b/g;
+      const uaePhones = (text || "").match(uaePhoneRegex) || [];
+      phoneCandidates.unshift(...uaePhones);
+    }
 
     for (const raw of phoneCandidates) {
       // Reject dummy / test placeholder numbers immediately before any stripping
