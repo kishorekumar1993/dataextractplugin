@@ -85,6 +85,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { name: "Switzerland", iso: "CH", aliases: ["switzerland", "schweiz", "suisse"], tlds: [".ch"], dialCode: "41" },
     { name: "Sweden", iso: "SE", aliases: ["sweden", "sverige"], tlds: [".se"], dialCode: "46" },
     { name: "Belgium", iso: "BE", aliases: ["belgium", "belgique"], tlds: [".be"], dialCode: "32" },
+    { name: "Bulgaria", iso: "BG", aliases: ["bulgaria", "българия"], tlds: [".bg"], dialCode: "359" },
+    { name: "Croatia", iso: "HR", aliases: ["croatia", "hrvatska"], tlds: [".hr"], dialCode: "385" },
+    { name: "Cyprus", iso: "CY", aliases: ["cyprus"], tlds: [".cy"], dialCode: "357" },
     { name: "Austria", iso: "AT", aliases: ["austria", "österreich"], tlds: [".at"], dialCode: "43" },
     { name: "Denmark", iso: "DK", aliases: ["denmark", "danmark"], tlds: [".dk"], dialCode: "45" },
     { name: "Norway", iso: "NO", aliases: ["norway", "norge"], tlds: [".no"], dialCode: "47" },
@@ -1279,9 +1282,158 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
 
   // Sections 7.4 - 7.11: Address Abbreviations & Normalization Rules
-  function expandAddressAbbreviations(address) {
+  const POSTAL_REGION_ABBREVIATIONS = {
+    "United States Of America": {
+      AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
+      CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia",
+      HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
+      KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
+      MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi",
+      MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire",
+      NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina",
+      ND: "North Dakota", OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania",
+      RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota", TN: "Tennessee",
+      TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia", WA: "Washington",
+      WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming", DC: "District Of Columbia"
+    },
+    Canada: {
+      AB: "Alberta", BC: "British Columbia", MB: "Manitoba", NB: "New Brunswick",
+      NL: "Newfoundland And Labrador", NS: "Nova Scotia", NT: "Northwest Territories",
+      NU: "Nunavut", ON: "Ontario", PE: "Prince Edward Island", QC: "Quebec",
+      SK: "Saskatchewan", YT: "Yukon"
+    },
+    Australia: {
+      NSW: "New South Wales", VIC: "Victoria", QLD: "Queensland",
+      WA: "Western Australia", SA: "South Australia", TAS: "Tasmania",
+      ACT: "Australian Capital Territory", NT: "Northern Territory"
+    },
+    Bangladesh: {
+      BAR: "Barishal (Barisal)", CTG: "Chattogram (Chittagong)", CHIT: "Chattogram (Chittagong)",
+      DHA: "Dhaka", KHU: "Khulna", MYM: "Mymensingh", RAJ: "Rajshahi",
+      RANG: "Rangpur", SYL: "Sylhet"
+    },
+    Belgium: {
+      VAN: "Antwerp (Antwerpen)", AN: "Antwerp (Antwerpen)",
+      BW: "Walloon Brabant (Brabant Wallon)", WBR: "Walloon Brabant (Brabant Wallon)",
+      HT: "Hainaut", WHT: "Hainaut", LG: "Liège", WLG: "Liège",
+      LI: "Limburg", VLI: "Limburg", LX: "Luxembourg", WLX: "Luxembourg",
+      NA: "Namur", WNA: "Namur", OV: "East Flanders (Oost-Vlaanderen)",
+      VOV: "East Flanders (Oost-Vlaanderen)", VB: "Flemish Brabant (Vlaams-Brabant)",
+      VBR: "Flemish Brabant (Vlaams-Brabant)", WV: "West Flanders (West-Vlaanderen)",
+      VWV: "West Flanders (West-Vlaanderen)"
+    },
+    Bulgaria: {
+      SOF: "Sofia City", SFO: "Sofia Province", VRC: "Vratsa", PDV: "Plovdiv",
+      PAZ: "Pazardzhik", VTR: "Veliko Tarnovo", GAB: "Gabrovo",
+      STZ: "Stara Zagora", PLE: "Pleven", RSE: "Ruse", BGS: "Burgas", VAR: "Varna"
+    },
+    China: {
+      AH: "Anhui", BJ: "Beijing", CQ: "Chongqing", FJ: "Fujian", GS: "Gansu",
+      GD: "Guangdong", GX: "Guangxi", GZ: "Guizhou", HN: "Hunan",
+      JS: "Jiangsu", JX: "Jiangxi", JL: "Jilin", LN: "Liaoning",
+      NM: "Inner Mongolia", NMG: "Inner Mongolia", NX: "Ningxia", QH: "Qinghai",
+      SC: "Sichuan", SD: "Shandong", SN: "Shaanxi", SX: "Shanxi",
+      SH: "Shanghai", HI: "Hainan", HIN: "Hainan", HB: "Hubei",
+      HE: "Hebei", HEB: "Hebei", HA: "Henan", HEN: "Henan",
+      HL: "Heilongjiang", XJ: "Xinjiang", XZ: "Tibet (Xizang)",
+      TJ: "Tianjin", YN: "Yunnan", ZJ: "Zhejiang"
+    },
+    Croatia: {
+      ZG: "Zagreb (City And County)", DU: "Dubrovnik-Neretva County",
+      ST: "Split-Dalmatia County", SI: "Šibenik-Knin County", ZD: "Zadar County",
+      OS: "Osijek-Baranja County", VK: "Vukovar-Srijem County",
+      PU: "Istria County (Istarska)", RI: "Primorje-Gorski Kotar County"
+    },
+    Cyprus: {
+      NIC: "Nicosia District (Lefkosia)", LIM: "Limassol District (Lemesos)",
+      FAM: "Famagusta District (Ammochostos)", LAR: "Larnaca District (Larnaka)",
+      PAPH: "Paphos District (Pafos)", KYR: "Kyrenia District (Keryneia)"
+    }
+  };
+  const POSTAL_REGION_NAMES_REGEX = new RegExp(
+    `(?:^|[^A-Za-z])(?:${[...new Set(Object.values(POSTAL_REGION_ABBREVIATIONS).flatMap(regions => Object.values(regions)))]
+      .sort((a, b) => b.length - a.length)
+      .map(escapeRegExp)
+      .join("|")})(?:$|[^A-Za-z])`,
+    "i"
+  );
+
+  function getAddressCountryContext(address, countryHint) {
+    const context = `${countryHint || ""} ${address || ""}`;
+    for (const countryName of Object.keys(POSTAL_REGION_ABBREVIATIONS)) {
+      const country = COUNTRIES.find(item => item.name === countryName);
+      const names = [countryName, ...(country?.aliases || [])];
+      if (names.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(context))) {
+        return countryName;
+      }
+    }
+    if (/\b(?:Canada|Canadian)\b/i.test(context) || /\b[A-Z]\d[A-Z]\s*\d[A-Z]\d\b/i.test(address || "")) {
+      return "Canada";
+    }
+    if (/\bAustralia(?:n)?\b/i.test(context) || /\b(?:NSW|VIC|QLD|TAS|ACT)\b/.test(address || "") ||
+        /\b(?:WA|SA|NT)\s+\d{4}\b/.test(address || "")) {
+      return "Australia";
+    }
+    if (/\b(?:United States|United States Of America|USA|U\.S\.A?\.?)\b/i.test(context) ||
+        /(?:^|[,;\s])\d{5}(?:-\d{4})?(?=$|[,;\s])/i.test(address || "")) {
+      return "United States Of America";
+    }
+    return "";
+  }
+
+  function expandPostalRegionPostcodes(address, country) {
+    if (country === "Bulgaria") {
+      const postcodeRegions = {
+        1: "Sofia City", 2: "Sofia Province", 3: "Vratsa", 4: "Plovdiv",
+        5: "Veliko Tarnovo", 6: "Stara Zagora", 7: "Ruse", 8: "Burgas", 9: "Varna"
+      };
+      return address
+        .replace(/(^|[,;]\s*)44\d{2}(?=\s*(?:[,;]|$))/g, "$1Pazardzhik")
+        .replace(/(^|[,;]\s*)53\d{2}(?=\s*(?:[,;]|$))/g, "$1Gabrovo")
+        .replace(/(^|[,;]\s*)58\d{2}(?=\s*(?:[,;]|$))/g, "$1Pleven")
+        .replace(/(^|[,;]\s*)([1-9])\d{3}(?=\s*(?:[,;]|$))/g, (match, prefix, firstDigit) =>
+          `${prefix}${postcodeRegions[firstDigit]}`
+        );
+    }
+    if (country === "Cyprus") {
+      return address.replace(/(^|[,;]\s*)([1-9])\d{3}(?=\s*(?:[,;]|$))/g, (match, prefix, firstDigit) => {
+        if (firstDigit === "1" || firstDigit === "2") return `${prefix}Nicosia District (Lefkosia)`;
+        if (firstDigit === "3" || firstDigit === "4") return `${prefix}Limassol District (Lemesos)`;
+        if (firstDigit === "5") return `${prefix}Famagusta District (Ammochostos)`;
+        if (firstDigit === "6" || firstDigit === "7") return `${prefix}Larnaca District (Larnaka)`;
+        if (firstDigit === "8") return `${prefix}Paphos District (Pafos)`;
+        return `${prefix}Kyrenia District (Keryneia)`;
+      });
+    }
+    if (country === "Croatia") {
+      const postcodeRegions = {
+        "10": "Zagreb (City And County)", "20": "Dubrovnik-Neretva County",
+        "21": "Split-Dalmatia County", "22": "Šibenik-Knin County",
+        "23": "Zadar County", "31": "Osijek-Baranja County",
+        "32": "Vukovar-Srijem County", "51": "Primorje-Gorski Kotar County",
+        "52": "Istria County (Istarska)"
+      };
+      return address.replace(/(^|[,;]\s*)(\d{2})\d{3}(?=\s*(?:[,;]|$))/g, (match, prefix, code) =>
+        postcodeRegions[code] ? `${prefix}${postcodeRegions[code]}` : match
+      );
+    }
+    return address;
+  }
+
+  function expandAddressAbbreviations(address, countryHint = "") {
     if (!address || typeof address !== "string") return "";
     let addr = address;
+    const addressCountry = getAddressCountryContext(address, countryHint);
+
+    // Expand standard postal region codes only when the address identifies the country.
+    const regionMap = POSTAL_REGION_ABBREVIATIONS[addressCountry];
+    if (regionMap) {
+      for (const [abbreviation, fullName] of Object.entries(regionMap)) {
+        const postalCode = "(?:\\d{5}(?:-\\d{4})?|[A-Z]\\d[A-Z]\\s*\\d[A-Z]\\d|\\d{4})";
+        const codePattern = new RegExp(`(^|[,;]\\s*)${abbreviation}(?=(?:\\s+${postalCode})?\\s*(?:[,;]|$))`, "g");
+        addr = addr.replace(codePattern, (match, prefix) => `${prefix}${fullName}`);
+      }
+    }
 
     // Negative lookbehind & protection for Saint names (Rule 7.4)
     // Common Saint names in cities, localities, and streets
@@ -1316,6 +1468,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/\bEcon\b\.?\s*(?:&|and)\s*Tech\b\.?\s*Dev\b\.?\s*Zone\b/gi, "Economic & Technical Development Zone");
     addr = addr.replace(/\bEcon\b\.?\s*Dev\b\.?\s*Zone\b/gi, "Economic Development Zone");
     addr = addr.replace(/\bTech\b\.?\s*Dev\b\.?\s*Zone\b/gi, "Technical Development Zone");
+    addr = addr.replace(/\bCo[\s-]*op\b\.?\s*Ind\b\.?\s*Est(?:ate\b|\.?)/gi, "Co-operative Industrial Estate");
+    addr = addr.replace(/\bCo[\s-]*op\b\.?\s*Soc(?:iety\b|\.?)/gi, "Co-operative Society");
 
     // Industrial / Tech / Business Parks and Areas
     addr = addr.replace(/\bIndl?\b\.?\s*Area\b/gi, "Industrial Area");
@@ -1330,6 +1484,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/\bTech\b\.?\s*Zone\b/gi, "Technology Zone");
     addr = addr.replace(/\bIndl?\b\.?\s*Zone\b/gi, "Industrial Zone");
     addr = addr.replace(/\bMfg\b\.?\s*Unit\b/gi, "Manufacturing Unit");
+    addr = addr.replace(/\bFTWZ\b/gi, "Free Trade Warehousing Zone");
+    addr = addr.replace(/\bSEZ\b/gi, "Special Economic Zone");
+    addr = addr.replace(/\bEPZ\b/gi, "Export Processing Zone");
+    addr = addr.replace(/\bGIDC\b/gi, "Gujarat Industrial Development Corporation");
+    addr = addr.replace(/\bMIDC\b/gi, "Maharashtra Industrial Development Corporation");
+    addr = addr.replace(/\bRIICO\b/gi, "Rajasthan State Industrial Development and Investment Corporation");
+    addr = addr.replace(/\bUPSIDC\b/gi, "Uttar Pradesh State Industrial Development Corporation");
 
     // 2. Common Indian & International Address Terms (Sections 7.8 & 7.9)
     // Post Office Box Number first before Post Office Box
@@ -1355,7 +1516,29 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/\bDept\b\.?/gi, "Department");
     addr = addr.replace(/\bVill\b\.?/gi, "Village");
     addr = addr.replace(/\b(?:Tal|Taluk|Tq)\b\.?(?=[\s,;]|$)/gi, "Taluka");
+    addr = addr.replace(/\bProv\b\.?/gi, "Province");
     addr = addr.replace(/\bDist\b\.?/gi, "District");
+    addr = addr.replace(/\b(?:Distt|Dt)\b\.?/gi, "District");
+    addr = addr.replace(/\bMunc\b\.?/gi, "Municipality");
+    addr = addr.replace(/\bMun\b\.?/gi, "Municipal");
+    addr = addr.replace(/\bCorpn\b\.?/gi, "Corporation");
+    addr = addr.replace(/\bCorp\b\.?/gi, "Corporation");
+    addr = addr.replace(/\bSite\s+No\b\.?/gi, "Site Number");
+    addr = addr.replace(/\bPlot\s+No\b\.?/gi, "Plot Number");
+    addr = addr.replace(/\bKhasra\s+No\b\.?/gi, "Khasra Number");
+    addr = addr.replace(/\bGat\s+No\b\.?/gi, "Gat Number");
+
+    // Structural terms. Expand abbreviations only; preserve official full names.
+    addr = addr.replace(/\bSub[\s-]+Unit\b/gi, "Sub-Unit");
+    addr = addr.replace(/\bBsmt\b\.?/gi, "Basement");
+    addr = addr.replace(/\bMezz\b\.?/gi, "Mezzanine");
+    addr = addr.replace(/\bLvl\b\.?/gi, "Level");
+    addr = addr.replace(/\b(?:Lbr|Lby)\b\.?/gi, "Lobby");
+    addr = addr.replace(/\bPlz\b\.?/gi, "Plaza");
+    addr = addr.replace(/\bTwrs\b\.?/gi, "Towers");
+    addr = addr.replace(/\bTwr\b\.?/gi, "Tower");
+    addr = addr.replace(/\bCplx\b\.?/gi, "Complex");
+    addr = addr.replace(/\b(?:Ctr|Cntr)\b\.?/gi, "Center");
 
     // Number / #
     // "No. 1098" -> "Number 1098", "No. 5" -> "Number 5", "No 12" -> "Number 12"
@@ -1424,6 +1607,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/\b2(?:nd)?\s+Phase\b/gi, "Second Phase");
     addr = addr.replace(/\b3(?:rd)?\s+Phase\b/gi, "Third Phase");
     addr = addr.replace(/\b4(?:th)?\s+Phase\b/gi, "Fourth Phase");
+    addr = addr.replace(/\bPhase\s*-\s*(\d+)\b/gi, "Phase $1");
     addr = addr.replace(/\bPh\b\.?\s*(?=[0-9IVXLCDM]+|[A-Za-z]\b)/gi, "Phase ");
     addr = addr.replace(/\bPh\b\.?(?=[,;\s]|$)/gi, "Phase");
 
@@ -1433,6 +1617,18 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/\bExtn\b\.?/gi, "Extension");
     addr = addr.replace(/\bOld\s+Rd\b\.?/gi, "Old Road");
     addr = addr.replace(/\bNew\s+Rd\b\.?/gi, "New Road");
+    addr = addr.replace(/\bStn\b\.?\s*Rd\b\.?/gi, "Station Road");
+    addr = addr.replace(/\bStn\b\.?/gi, "Station");
+    addr = addr.replace(/\bExpy\b\.?/gi, "Expressway");
+    addr = addr.replace(/\bFwy\b\.?/gi, "Freeway");
+    addr = addr.replace(/\b(?:Tpke|Tpk)\b\.?/gi, "Turnpike");
+    addr = addr.replace(/\bByp\b\.?/gi, "Bypass");
+    addr = addr.replace(/\bPath\b\.?/gi, "Pathway");
+    addr = addr.replace(/\bAlley\b/gi, "Alleyway");
+    addr = addr.replace(/\bAly\b\.?/gi, "Alleyway");
+    addr = addr.replace(/\bWy\b\.?/gi, "Way");
+    addr = addr.replace(/\bWalk\b\.?/gi, "Walkway");
+    addr = addr.replace(/\bOpp\b\.?/gi, "Opposite");
 
     // Road: Rd. or Rd (after name or number)
     addr = addr.replace(/(?<=[A-Za-z0-9])\s+Rd\b\.?(?=[,\s;:\/]|$)(?!\s+(?:Extn|Extension)\b)/gi, " Road");
@@ -1465,12 +1661,24 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 6. Direction and Location Abbreviations (Section 7.7)
     // Standalone directional prefixes before street names
-    addr = addr.replace(/\bN\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "North ");
-    addr = addr.replace(/\bS\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "South ");
-    addr = addr.replace(/\bE\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "East ");
-    addr = addr.replace(/\bW\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "West ");
+    addr = addr.replace(/(?<![A-Za-z.])\bN\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "North ");
+    addr = addr.replace(/(?<![A-Za-z.])\bS\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "South ");
+    addr = addr.replace(/(?<![A-Za-z.])\bE\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "East ");
+    addr = addr.replace(/(?<![A-Za-z.])\bW\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "West ");
 
     // Directional suffixes
+    addr = addr.replace(/\bN\.E\.(?=\s|,|;|$)/gi, "Northeast");
+    addr = addr.replace(/\bN\.W\.(?=\s|,|;|$)/gi, "Northwest");
+    addr = addr.replace(/\bS\.E\.(?=\s|,|;|$)/gi, "Southeast");
+    addr = addr.replace(/\bS\.W\.(?=\s|,|;|$)/gi, "Southwest");
+    addr = addr.replace(/\bN\.?E\.?\s+(?=[A-Z0-9][A-Z0-9'-]*(?:\s+[A-Z0-9][A-Z0-9'-]*){0,3}\s+(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace|Expressway|Freeway|Turnpike)\b)/gi, "Northeast ");
+    addr = addr.replace(/\bN\.?W\.?\s+(?=[A-Z0-9][A-Z0-9'-]*(?:\s+[A-Z0-9][A-Z0-9'-]*){0,3}\s+(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace|Expressway|Freeway|Turnpike)\b)/gi, "Northwest ");
+    addr = addr.replace(/\bS\.?E\.?\s+(?=[A-Z0-9][A-Z0-9'-]*(?:\s+[A-Z0-9][A-Z0-9'-]*){0,3}\s+(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace|Expressway|Freeway|Turnpike)\b)/gi, "Southeast ");
+    addr = addr.replace(/\bS\.?W\.?\s+(?=[A-Z0-9][A-Z0-9'-]*(?:\s+[A-Z0-9][A-Z0-9'-]*){0,3}\s+(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace|Expressway|Freeway|Turnpike)\b)/gi, "Southwest ");
+    addr = addr.replace(/(\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s*,\s*)N\.?E\.?\b\.?(?=\s*(?:,|;|$))/gi, "$1Northeast");
+    addr = addr.replace(/(\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s*,\s*)N\.?W\.?\b\.?(?=\s*(?:,|;|$))/gi, "$1Northwest");
+    addr = addr.replace(/(\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s*,\s*)S\.?E\.?\b\.?(?=\s*(?:,|;|$))/gi, "$1Southeast");
+    addr = addr.replace(/(\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s*,\s*)S\.?W\.?\b\.?(?=\s*(?:,|;|$))/gi, "$1Southwest");
     addr = addr.replace(/(?<=\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s+)(?:N\.?E\.?|NE)\b/gi, "Northeast");
     addr = addr.replace(/(?<=\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s+)(?:N\.?W\.?|NW)\b/gi, "Northwest");
     addr = addr.replace(/(?<=\b(?:Street|Road|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way)\s+)(?:S\.?E\.?|SE)\b/gi, "Southeast");
@@ -1500,6 +1708,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (!rawAddr) return "";
 
     let addr = clean(String(rawAddr));
+    const addressCountry = getAddressCountryContext(rawAddr, countryName);
 
     // 1. Remove brackets and normalize whitespace.
     addr = removeBrackets(addr);
@@ -1572,7 +1781,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const firstPart = addr.split(",")[0].trim();
       const rest = addr.slice(addr.indexOf(",") + 1).trim();
       const streetLike = /\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|business park|unit|suite|floor|building|block|phase|park)\b|(?<![A-Za-z])\d+\s+[A-Za-z]/i;
-      const companyLikeSuffix = /\b(?:limited|ltd|inc|incorporated|corporation|corp|company|co|llc|plc|llp|pvt|pty|gmbh|bv|sa|sarl|group|holdings|industries|technology|technologies|services|solutions)\b/i;
+      const companyLikeSuffix = /\b(?:limited|ltd|inc|incorporated|corporation|corp|company|co(?!-)|llc|plc|llp|pvt|pty|gmbh|bv|sa|sarl|group|holdings|industries|technology|technologies|services|solutions)\b/i;
       const firstWords = firstPart.split(/\s+/).filter(Boolean);
       const seemsCompanyPrefix = firstPart &&
         firstWords.length > 1 &&
@@ -1628,11 +1837,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       addr = addr.replace(countryAtEnd, "").trim();
     }
 
+    addr = expandPostalRegionPostcodes(addr, addressCountry);
+
     // 6. Remove postal codes only when they are standalone comma-separated
     // components. Keep street/building/house numbers.
     const postalCodePatterns = [
       /^\d{5}(?:-\d{4})?$/,                       // US ZIP / ZIP+4
       /^\d{6}$/,                                  // Six-digit postal code
+      /^[A-Z]\d[A-Z]\s*\d[A-Z]\d$/i,            // Canadian postal code
       /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i,    // UK postcode
       /^(?:D|F|I|E|NL|B|CH|AT|PL)-\d{4,5}$/i     // Selected international formats
     ];
@@ -1644,13 +1856,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .join(", ");
 
     addr = addr.replace(/,\s*,\s*/g, ",, ");
-    addr = addr.replace(/(?:\s+|,\s*)(?:[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}|\d{5}(?:-\d{4})?|\d{6})\s*$/i, "").trim();
+    addr = addr.replace(/(?:\s+|,\s*)(?:[A-Z]\d[A-Z]\s*\d[A-Z]\d|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}|\d{5}(?:-\d{4})?|\d{6})\s*$/i, "").trim();
+    if (addressCountry === "Australia") {
+      addr = addr.replace(/(?:\s+|,\s*)\d{4}\s*$/, "").trim();
+    }
     // Strip 5-digit postal code directly following 2-letter state code (e.g. "FL 33405" -> "FL")
     addr = addr.replace(/(?<=\b[A-Z]{2}\s+)\d{5}(?:-\d{4})?(?=[,\s;:]|$)/g, "").trim();
 
     // 7. Expand abbreviations using your existing helper.
     if (typeof expandAddressAbbreviations === "function") {
-      addr = expandAddressAbbreviations(addr);
+      addr = expandAddressAbbreviations(addr, addressCountry);
     }
 
     // 8. Normalize punctuation and spaces.
@@ -1676,21 +1891,23 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (/^[A-Za-z]-\d+/.test(core)) return core.toUpperCase() + trailing;
 
       if (core.includes("-")) {
-        return core.split("-").map(part => {
-          const cleanPart = part.replace(/^[.,;:!?]+|[.,;:!?]+$/g, "");
-          if (/^(?:si|gu|do|ro|dong|gun|eup|myeon|ri)$/i.test(cleanPart)) {
-            return cleanPart.toLowerCase();
+        return core.split("-").map((part, index, parts) => {
+          if (/^(?:si|gu|do|ro|dong|gun|eup|myeon|ri)$/i.test(part)) {
+            return part.toLowerCase();
           }
-
-          if (/^[A-Za-z]\.?$/.test(cleanPart)) return cleanPart.toUpperCase();
-
-          return cleanPart.charAt(0).toUpperCase() +
-            cleanPart.slice(1).toLowerCase();
+          if (index > 0 && /^co$/i.test(parts[index - 1]) && /^operative$/i.test(part)) {
+            return "operative";
+          }
+          if (/^[A-Za-z]\.?$/.test(part)) return part.toUpperCase();
+          return part.replace(/\p{L}+/gu, word =>
+            word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+          );
         }).join("-") + trailing;
       }
 
-      return core.charAt(0).toUpperCase() +
-        core.slice(1).toLowerCase() + trailing;
+      return core.replace(/\p{L}+/gu, part =>
+        part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+      ) + trailing;
     }).join(" ");
 
     return addr;
@@ -1715,7 +1932,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
 
     // State indicators in address
-    if (state === "N" && /(?:county|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland)/i.test(addrLower)) {
+    if (state === "N" && (POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
+        /(?:county|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland)/i.test(addrLower))) {
       state = "Y";
     }
 

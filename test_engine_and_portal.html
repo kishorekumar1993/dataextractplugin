@@ -417,6 +417,10 @@
       { raw: "BHP Group Pty Ltd", expected: "BHP Group Proprietary Limited" },
       { raw: "Siemens AG", expected: "Siemens Aktiengesellschaft" },
       { raw: "BMW GmbH & Co. KG", expected: "BMW Gesellschaft mit beschränkter Haftung & Co. Kommanditgesellschaft" },
+      { raw: "Acme S.A.", expected: "Acme Société anonyme" },
+      { raw: "Acme S.R.L.", expected: "Acme Società a responsabilità limitata" },
+      { raw: "Acme BV", expected: "Acme Besloten Vennootschap" },
+      { raw: "Acme NV", expected: "Acme Naamloze Vennootschap" },
       { raw: "Grupo Bimbo S.A. de C.V.", expected: "Grupo Bimbo Sociedad Anónima de Capital Variable" },
       { raw: "Kolorbond (UK) Ltd.", expected: "Kolorbond UK Limited" },
       { raw: "(주) 레존텍", expected: "Jusik Hoesa 레존텍" }
@@ -490,6 +494,37 @@
         raw: "Pol. Ind. Can Roca, Z.I. Nord, C/O Global Corp",
         expected: "Polígono Industrial Can Roca, Zone Industrielle Nord, Care Of Global Corp"
       },
+      // New street names, opposite marker, and all four diagonal directions.
+      {
+        raw: "Opp. Stn. Rd., 100 N.E. Main St., 200 Oak Road N.W., 300 Pine Avenue S.E., 400 Elm Street S.W.",
+        expected: "Opposite Station Road, 100 Northeast Main Street, 200 Oak Road Northwest, 300 Pine Avenue Southeast, 400 Elm Street Southwest"
+      },
+      {
+        raw: "100 sW Main St., 200 Main St. NW, 300 Main Street, SE",
+        expected: "100 Southwest Main Street, 200 Main Street Northwest, 300 Main Street, Southeast"
+      },
+      {
+        raw: "Airport Expy., State Fwy., County Tpke., South Tpk., River Byp., Forest Path., Oak Aly., Alley, Old Wy., River Walk",
+        expected: "Airport Expressway, State Freeway, County Turnpike, South Turnpike, River Bypass, Forest Pathway, Oak Alleyway, Alleyway, Old Way, River Walkway"
+      },
+      // Building and sub-unit structures plus plot/site/land-record numbers.
+      {
+        raw: "Sub Unit 4, Bsmt., Mezz., Lvl. 2, Lbr., Lby., Plz., Twr., Twrs., Cplx., Ctr., Cntr., Site No. 8, Plot No. 12, Khasra No. 34, Gat No. 5",
+        expected: "Sub-Unit 4, Basement, Mezzanine, Level 2, Lobby, Lobby, Plaza, Tower, Towers, Complex, Center, Center, Site Number 8, Plot Number 12, Khasra Number 34, Gat Number 5"
+      },
+      // Expand state-agency acronyms and industrial zone terms to their full names.
+      {
+        raw: "Co-op. Ind. Est., Co-op. Soc., FTWZ, SEZ, EPZ, Logistics Park, GIDC, MIDC, RIICO, UPSIDC",
+        expected: "Co-operative Industrial Estate, Co-operative Society, Free Trade Warehousing Zone, Special Economic Zone, Export Processing Zone, Logistics Park, Gujarat Industrial Development Corporation, Maharashtra Industrial Development Corporation, Rajasthan State Industrial Development And Investment Corporation, Uttar Pradesh State Industrial Development Corporation"
+      },
+      {
+        raw: "Prov. Gujarat, Distt. Palghar, Dt. 4, Munc. Town, Mun. Area, Corpn. Office, Corp. Road",
+        expected: "Province Gujarat, District Palghar, District 4, Municipality Town, Municipal Area, Corporation Office, Corporation Road"
+      },
+      {
+        raw: "Ind. Area Phase-1",
+        expected: "Industrial Area Phase 1"
+      },
       // User Provided Test Case 1 (Hayward Industrial Park, Vigo Pl -> Vigo Place, UK Postcode WS9 8UG removed, United Kingdom removed)
       {
         raw: "Hayward Industrial Park, Vigo Pl, Walsall WS9 8UG, United Kingdom",
@@ -510,12 +545,149 @@
         raw: "500 S Australian Ave, West Palm Beach, FL 33405, USA",
         expected: "500 S Australian Avenue, West Palm Beach, FL"
       },
+      {
+        raw: "Toronto, ON M5V 3L9, Canada",
+        expected: "Toronto, Ontario"
+      },
+      {
+        raw: "Melbourne, VIC 3000, Australia",
+        expected: "Melbourne, Victoria"
+      },
+      {
+        raw: "Perth, WA 6000, Australia",
+        expected: "Perth, Western Australia"
+      },
       // User Provided Test Case 5 (Floor condition: "2f" -> "Second Floor", 2nd floor expanded properly)
       {
         raw: "Building 4, 2f, Industrial Area, West Palm Beach, FL 33405",
         expected: "Building 4, Second Floor, Industrial Area, West Palm Beach, FL"
       }
     ];
+
+    const postalRegionMappings = [
+      {
+        country: "USA",
+        regions: {
+          AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
+          CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia",
+          HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
+          KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
+          MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi",
+          MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire",
+          NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina",
+          ND: "North Dakota", OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania",
+          RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota", TN: "Tennessee",
+          TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia", WA: "Washington",
+          WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming", DC: "District Of Columbia"
+        }
+      },
+      {
+        country: "Canada",
+        regions: {
+          AB: "Alberta", BC: "British Columbia", MB: "Manitoba", NB: "New Brunswick",
+          NL: "Newfoundland And Labrador", NS: "Nova Scotia", NT: "Northwest Territories",
+          NU: "Nunavut", ON: "Ontario", PE: "Prince Edward Island", QC: "Quebec",
+          SK: "Saskatchewan", YT: "Yukon"
+        }
+      },
+      {
+        country: "Australia",
+        regions: {
+          NSW: "New South Wales", VIC: "Victoria", QLD: "Queensland",
+          WA: "Western Australia", SA: "South Australia", TAS: "Tasmania",
+          ACT: "Australian Capital Territory", NT: "Northern Territory"
+        }
+      },
+      {
+        country: "Bangladesh",
+        regions: {
+          BAR: "Barishal (Barisal)", CTG: "Chattogram (Chittagong)", CHIT: "Chattogram (Chittagong)",
+          DHA: "Dhaka", KHU: "Khulna", MYM: "Mymensingh", RAJ: "Rajshahi",
+          RANG: "Rangpur", SYL: "Sylhet"
+        }
+      },
+      {
+        country: "Belgium",
+        regions: {
+          VAN: "Antwerp (Antwerpen)", AN: "Antwerp (Antwerpen)",
+          BW: "Walloon Brabant (Brabant Wallon)", WBR: "Walloon Brabant (Brabant Wallon)",
+          HT: "Hainaut", WHT: "Hainaut", LG: "Liège", WLG: "Liège",
+          LI: "Limburg", VLI: "Limburg", LX: "Luxembourg", WLX: "Luxembourg",
+          NA: "Namur", WNA: "Namur", OV: "East Flanders (Oost-Vlaanderen)",
+          VOV: "East Flanders (Oost-Vlaanderen)", VB: "Flemish Brabant (Vlaams-Brabant)",
+          VBR: "Flemish Brabant (Vlaams-Brabant)", WV: "West Flanders (West-Vlaanderen)",
+          VWV: "West Flanders (West-Vlaanderen)"
+        }
+      },
+      {
+        country: "Bulgaria",
+        regions: {
+          SOF: "Sofia City", SFO: "Sofia Province", VRC: "Vratsa", PDV: "Plovdiv",
+          PAZ: "Pazardzhik", VTR: "Veliko Tarnovo", GAB: "Gabrovo",
+          STZ: "Stara Zagora", PLE: "Pleven", RSE: "Ruse", BGS: "Burgas", VAR: "Varna"
+        }
+      },
+      {
+        country: "China",
+        regions: {
+          AH: "Anhui", BJ: "Beijing", CQ: "Chongqing", FJ: "Fujian", GS: "Gansu",
+          GD: "Guangdong", GX: "Guangxi", GZ: "Guizhou", HN: "Hunan",
+          JS: "Jiangsu", JX: "Jiangxi", JL: "Jilin", LN: "Liaoning",
+          NM: "Inner Mongolia", NMG: "Inner Mongolia", NX: "Ningxia", QH: "Qinghai",
+          SC: "Sichuan", SD: "Shandong", SN: "Shaanxi", SX: "Shanxi",
+          SH: "Shanghai", HI: "Hainan", HIN: "Hainan", HB: "Hubei",
+          HE: "Hebei", HEB: "Hebei", HA: "Henan", HEN: "Henan",
+          HL: "Heilongjiang", XJ: "Xinjiang", XZ: "Tibet (Xizang)",
+          TJ: "Tianjin", YN: "Yunnan", ZJ: "Zhejiang"
+        }
+      },
+      {
+        country: "Croatia",
+        regions: {
+          ZG: "Zagreb (City And County)", DU: "Dubrovnik-Neretva County",
+          ST: "Split-Dalmatia County", SI: "Šibenik-Knin County", ZD: "Zadar County",
+          OS: "Osijek-Baranja County", VK: "Vukovar-Srijem County",
+          PU: "Istria County (Istarska)", RI: "Primorje-Gorski Kotar County"
+        }
+      },
+      {
+        country: "Cyprus",
+        regions: {
+          NIC: "Nicosia District (Lefkosia)", LIM: "Limassol District (Lemesos)",
+          FAM: "Famagusta District (Ammochostos)", LAR: "Larnaca District (Larnaka)",
+          PAPH: "Paphos District (Pafos)", KYR: "Kyrenia District (Keryneia)"
+        }
+      }
+    ];
+    for (const mapping of postalRegionMappings) {
+      addressTestCases.push({
+        raw: `${Object.keys(mapping.regions).join(", ")}, ${mapping.country}`,
+        expected: Object.values(mapping.regions).join(", ")
+      });
+    }
+    const postcodeRegionCases = [
+      { raw: "Sofia, 1000, Bulgaria", expected: "Sofia, Sofia City" },
+      { raw: "Sofia Province, 2000, Bulgaria", expected: "Sofia Province, Sofia Province" },
+      { raw: "Vratsa, 3000, Bulgaria", expected: "Vratsa, Vratsa" },
+      { raw: "Plovdiv, 4000, Bulgaria", expected: "Plovdiv, Plovdiv" },
+      { raw: "Plovdiv, 4400, Bulgaria", expected: "Plovdiv, Pazardzhik" },
+      { raw: "Gabrovo, 5300, Bulgaria", expected: "Gabrovo, Gabrovo" },
+      { raw: "Pleven, 5800, Bulgaria", expected: "Pleven, Pleven" },
+      { raw: "Veliko Tarnovo, 5000, Bulgaria", expected: "Veliko Tarnovo, Veliko Tarnovo" },
+      { raw: "Stara Zagora, 6000, Bulgaria", expected: "Stara Zagora, Stara Zagora" },
+      { raw: "Ruse, 7000, Bulgaria", expected: "Ruse, Ruse" },
+      { raw: "Burgas, 8000, Bulgaria", expected: "Burgas, Burgas" },
+      { raw: "Varna, 9000, Bulgaria", expected: "Varna, Varna" },
+      { raw: "Nicosia, 1000, Cyprus", expected: "Nicosia, Nicosia District (Lefkosia)" },
+      { raw: "Limassol, 3000, Cyprus", expected: "Limassol, Limassol District (Lemesos)" },
+      { raw: "Famagusta, 5000, Cyprus", expected: "Famagusta, Famagusta District (Ammochostos)" },
+      { raw: "Larnaca, 6000, Cyprus", expected: "Larnaca, Larnaca District (Larnaka)" },
+      { raw: "Paphos, 8000, Cyprus", expected: "Paphos, Paphos District (Pafos)" },
+      { raw: "Kyrenia, 9000, Cyprus", expected: "Kyrenia, Kyrenia District (Keryneia)" },
+      { raw: "Zagreb, 10000, Croatia", expected: "Zagreb, Zagreb (City And County)" },
+      { raw: "Split, 21000, Croatia", expected: "Split, Split-Dalmatia County" }
+    ];
+    addressTestCases.push(...postcodeRegionCases);
 
     let allAddressPassed = true;
     const addressResults = {};
