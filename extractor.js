@@ -965,7 +965,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (legalNotice) address = address.slice(0, legalNotice.index);
 
       // Clean leading address labels like "Address:", "Location:", "HQ:", "Headquarters:"
-      address = address.replace(/^[\s•\-\*#|>📍🏢🏠🏬📌]*(?:our\s+)?(?:global\s+headquarters|headquarters|head\s+office|registered\s+office|corporate\s+office|corporate\s+headquarters|corporate\s+address|company\s+address|office\s+address|office\s+location|postal\s+address|physical\s+address|mailing\s+address|street\s+address|business\s+address|main\s+office|office|address|location|hq|주소|본사|사업장\s*주소|회사위치|소재지|所在地|住所|本社|営業所|地址|公司地址|总部地址|联系地址|adresse|standort|firmensitz|dirección|sede|indirizzo|siège)\s*(?:[:：\-–—]|[\r\n,]+|\s*$)\s*/i, "");
+      address = address.replace(/^[\s•\-\*#|>📍🏢🏠🏬📌]*(?:our\s+)?(?:global\s+headquarters|headquarters|head\s+office|registered\s+office|corporate\s+office|corporate\s+headquarters|corporate\s+address|company\s+address|office\s+address|office\s+location|postal\s+address|physical\s+address|mailing\s+address|street\s+address|business\s+address|main\s+office|office|address|location|hq|주소|본사|사업장\s*주소|회사위치|소재지|所在地|住所|本社|営業所|地址|公司地址|总部地址|联系地址|adresse|standort|firmensitz|dirección|sede|indirizzo|siège)\s*(?:[:：\-–—]|[\r\n,]+)\s*/i, "");
 
       // Replace semicolons with commas to prevent premature rejection
       address = address.replace(/;/g, ", ");
@@ -1362,7 +1362,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|contact|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b/i;
 
     const looksLikeAddressLine = line => {
-      const s = String(line || "").trim();
+      let s = String(line || "").trim();
+      s = s.replace(/\s*(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "").trim();
+      s = s.replace(/\s+(?:tel(?:ephone)?|phone|mobile|fax)\s*[:：]?\s*.*$/i, "").trim();
       if (!s || s.length < 12 || s.length > 220) return false;
       if (stopLinePattern.test(s) || /@|https?:\/\/|www\.|all rights reserved/i.test(s)) return false;
       const hasNumber = /\d/.test(s);
@@ -1390,7 +1392,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       const lines = String(text || "")
         .split(/[\r\n]+/)
-        .map(normalizeAddress)
+        .map(l => l.trim())
         .filter(Boolean);
 
       for (let i = 0; i < lines.length; i++) {
@@ -1488,7 +1490,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (candidates.length === 0 && fullText) {
       const ftLines = String(fullText || "")
         .split(/[\r\n]+/)
-        .map(normalizeAddress)
+        .map(l => l.trim())
         .filter(Boolean);
 
       for (let i = 0; i < ftLines.length; i++) {
@@ -2649,11 +2651,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let companyAddress = cleanAddressString(rawAddress, countryName, companyName);
     if (!companyAddress || companyAddress.split(",").length < 2) {
       // Dynamic fallback: Retry with dedicated contact elements first
-      const contactEls = doc?.querySelectorAll?.("address, [itemprop='address'], .contact-address, .company-address, .office-address, .contact-info, .contact-details, [class*='contact'], [id*='contact'], [class*='location'], [class*='address']");
+      const contactEls = doc?.querySelectorAll?.("address, [itemprop='address'], .contact-address, .company-address, .office-address, .contact-info, .contact-details, [class*='contact'], [id*='contact'], [class*='location'], [class*='address'], footer p, #footer p, .footer p");
       if (contactEls && contactEls.length) {
         for (const contactEl of contactEls) {
           const fallbackAddress = findRawAddress(contactEl, getElementText(contactEl), url, true);
-          const contactRaw = fallbackAddress.address || (contactEl.tagName === "ADDRESS" ? getElementText(contactEl) : "");
+          const contactRaw = fallbackAddress.address || (contactEl.matches?.("address, footer p, #footer p, .footer p") ? getElementText(contactEl) : "");
           if (contactRaw) {
             const recovered = cleanAddressString(contactRaw, countryName, companyName);
             if (recovered && recovered.length >= 10 && (!companyAddress || recovered.split(",").length > companyAddress.split(",").length)) {
