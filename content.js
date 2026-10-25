@@ -172,7 +172,8 @@
         "y": ["y", "available", "yes", "true", "1"],
         "available": ["y", "available", "yes", "true", "1"],
         "n": ["n", "notavailable", "no", "false", "0"],
-        "notavailable": ["n", "notavailable", "no", "false", "0"],
+        "notavailable": ["n", "notavailable", "unavailable", "no", "false", "0"],
+        "unavailable": ["n", "notavailable", "unavailable", "no", "false", "0"],
         "wworking": ["wworking", "working"],
         "working": ["wworking", "working"],
         "distributer": ["distributer", "distributor"],
@@ -180,7 +181,22 @@
         "industrialservices": ["industrialservices", "serviceprovider", "service"]
       };
       const validVariants = synMap[targetNorm] || [targetNorm];
-      let matchedOption = [...el.options].find(o => validVariants.includes(norm(o.value)) || validVariants.includes(norm(o.textContent)));
+      const options = [...el.options];
+      let matchedOption = options.find(o => validVariants.includes(norm(o.value)) || validVariants.includes(norm(o.textContent)));
+
+      // Portal forms vary between Y/N, Available/Not Available, and longer
+      // labels such as "Not Available (N)". Match those meanings explicitly.
+      if (!matchedOption && ["y", "available", "n", "notavailable", "unavailable"].includes(targetNorm)) {
+        const wantsAvailable = ["y", "available"].includes(targetNorm);
+        matchedOption = options.find(option => {
+          const value = norm(option.value);
+          const label = norm(option.textContent);
+          const candidates = [value, label];
+          return candidates.some(candidate => wantsAvailable
+            ? /^(?:available|yes|true|y|1)/.test(candidate)
+            : /^(?:notavailable|unavailable|no|false|n|0|na)/.test(candidate));
+        });
+      }
 
       if (!matchedOption) {
         return false;

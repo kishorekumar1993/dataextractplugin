@@ -313,6 +313,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       // --- A. United States and United Kingdom (acronyms) ---
       [/\bp\.?l\.?l\.?c\.?(?=[,.\s]|$)/gi, "Professional Limited Liability Company"],
+      // Treat "Co., LLC" as one compound suffix so "Co." is not left
+      // abbreviated beside an expanded limited-liability form.
+      [/\bco\.?\s*,?\s*l\.?l\.?c\.?(?=[,.\s]|$)/gi, "Company, Limited Liability Company"],
       [/\bl\.?l\.?c\.?(?=\s*[,;:]?$)/gi, "Limited Liability Company"],
       [/\bl\.?l\.?p\.?(?=[,.\s]|$)/gi, "Limited Liability Partnership"],
       [/\bp\.?l\.?c\.?(?=[,.\s]|$)/gi, "Public Limited Company"],
@@ -477,10 +480,18 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return addressLead;
   }
 
+  // Footer and title strings often append the web agency after the legal name.
+  // Remove the attribution while retaining the company name and its suffix.
+  function stripWebsiteAttribution(value) {
+    return clean(value || "")
+      .replace(/\s*(?:[|·•–—-]\s*)?(?:(?:web\s+)?design(?:ed)?\s+by|site\s+by|website\s+by|powered\s+by)\s+.+$/i, "")
+      .trim();
+  }
+
   // Format Company Name according to Rule 4 & Section 5.3 (Expand legal suffixes)
   function formatCompanyName(raw, countryName = "") {
     if (!raw) return "";
-    let name = clean(raw);
+    let name = stripWebsiteAttribution(raw);
 
     // 0. Strip trailing "Trading As", "d/b/a", "doing business as"
     name = name.replace(/\s+(?:trading\s+as|d\/b\/a|doing\s+business\s+as)\s+.*$/i, "");
@@ -651,7 +662,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // Helper to validate and clean a company name candidate
     function sanitizeCandidate(str) {
       if (!str) return "";
-      let s = clean(str)
+      let s = stripWebsiteAttribution(str)
         .replace(/^(?:copyright|©|\(c\))\s*(?:[0-9]{4})?\s*/gi, "")
         .replace(/(?:all rights?|rights reserved|company reg|reg no).*$/gi, "")
         .replace(
@@ -2409,6 +2420,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       ""
     );
 
+    // Strip a leading company name with a dotted compound legal suffix, such
+    // as "BRECOflex Co., L.L.C.," before the street address.
+    addr = addr.replace(
+      /^[\p{L}\p{N}&'’.()\- ]{2,80}?\s+(?:Co\.?\s*,?\s*)?(?:L\.?\s*L\.?\s*C\.?|L\.?\s*L\.?\s*P\.?|P\.?\s*L\.?\s*L\.?\s*C\.?|Inc\.?|Incorporated|Ltd\.?|Limited|Corp\.?|Corporation|GmbH|S\.?R\.?L\.?|S\.?A\.?)\s*[,;:|–—-]\s*/iu,
+      ""
+    );
+
     // Strip leading corporate name ending in Co., Ltd. or similar before street marker
     addr = addr.replace(/^[A-Za-z0-9&'.\s-]{2,60}\s+(?:Co\.,\s*Ltd\.?|Co\.,Ltd\.?|Pvt\.\s*Ltd\.?|Pty\.\s*Ltd\.?)\s*[,;:|]?\s*(?=\d|[A-Za-z0-9]+\s+(?:Road|Street|Avenue|Boulevard|Lane|Drive|Soi|Highway|Rd|St|Ave|Blvd|Ln|Dr)\b)/i, "");
     addr = addr.replace(/^(?:Ltd|Co(?!-)|Inc|LLC|Pvt Ltd|Pty Ltd)\b\.?\s*[,;:|]?\s*/i, "");
@@ -2542,6 +2560,36 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .replace(/(?:^|[\s,–—-])\d{5}(?=$|[\s,–—-])/g, " ")
         .replace(/\s*[–—]\s*/g, ", ");
     }
+    if (addressCountry === "United States Of America") {
+      const usStateNames = Object.values(POSTAL_REGION_ABBREVIATIONS["United States Of America"]);
+      const statePattern = new RegExp(`\\b(?:${usStateNames.map(escapeRegExp).sort((a, b) => b.length - a.length).join("|")})\\b`, "i");
+      const segments = addr.split(",").map(part => part.trim());
+      const stateIndex = segments.findIndex(part => statePattern.test(part));
+      if (stateIndex > 0) {
+        const cityIndex = stateIndex - 1;
+        const citySegment = segments[cityIndex];
+        const distanceAtMostOne = (left, right) => {
+          if (Math.abs(left.length - right.length) > 1) return false;
+          let i = 0, j = 0, edits = 0;
+          while (i < left.length && j < right.length) {
+            if (left[i] === right[j]) { i++; j++; continue; }
+            if (++edits > 1) return false;
+            if (left.length > right.length) i++;
+            else if (right.length > left.length) j++;
+            else { i++; j++; }
+          }
+          return edits + (i < left.length || j < right.length ? 1 : 0) <= 1;
+        };
+        if (/^[\p{L}'’-]+$/u.test(citySegment)) {
+          const correction = US_CITIES.find(city =>
+            !city.includes(" ") && distanceAtMostOne(citySegment.toLowerCase(), city)
+          );
+          if (correction) segments[cityIndex] = correction;
+        }
+      }
+      addr = segments.join(", ");
+    }
+
     // Strip 5-digit postal code directly following 2-letter state code (e.g. "FL 33405" -> "FL")
     addr = addr.replace(/(?<=\b[A-Z]{2}\s+)\d{5}(?:-\d{4})?(?=[,\s;:]|$)/g, "").trim();
 
@@ -2677,9 +2725,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       city = "Y";
     }
 
+    const usStateTermsForCity = Object.values(POSTAL_REGION_ABBREVIATIONS["United States Of America"]);
+    const cityEvidenceAddress = addrLower.replace(
+      new RegExp(`\\b(?:${usStateTermsForCity.map(escapeRegExp).sort((a, b) => b.length - a.length).join("|")})\\b`, "gi"),
+      " "
+    );
+
     // City indicators in address
     if (city === "N" && (/(?:town|district|municipality|city|-si\b|-gu\b|troy|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|nof hagalil|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei|ballinderry|four mile house)/i.test(addrLower) ||
-        CITY_STATE_COUNTRY_MAP.some(m => m.regex.test(addrLower)))) {
+        CITY_STATE_COUNTRY_MAP.some(m => m.regex.test(cityEvidenceAddress)))) {
       city = "Y";
     }
 

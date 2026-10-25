@@ -159,7 +159,7 @@ async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs = 25000) {
 
 async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
+  const timer = setTimeout(() => controller.abort(), 6000);
   let response;
   let html = "";
 
@@ -202,11 +202,11 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
   let renderedTab;
   try {
     renderedTab = await chrome.tabs.create({ url: response?.url || pageUrl, active: false });
-    await waitForTabComplete(renderedTab.id, 15000);
+    await waitForTabComplete(renderedTab.id, 10000);
     renderedTab = await recoverFromBrowserError(
       renderedTab.id,
       response?.url || pageUrl,
-      15000
+      10000
     );
 
     const [{ result: extractorLoaded }] = await chrome.scripting.executeScript({
@@ -229,7 +229,7 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
           window.location.href || url
         );
         let data = extract();
-        const deadline = Date.now() + 8000;
+        const deadline = Date.now() + 2500;
         while (!data.companyAddress && Date.now() < deadline) {
           await new Promise(resolve => setTimeout(resolve, 300));
           data = extract();
@@ -266,11 +266,11 @@ async function crawlAndExtractDirect(targetUrl) {
     // Step 1: Create background tab and navigate to URL
     tab = await chrome.tabs.create({ url: normUrl, active: false });
     setStatus("Waiting for page to load...", "info");
-    await waitForTabComplete(tab.id, 30000);
-    tab = await recoverFromBrowserError(tab.id, normUrl, 30000);
+    await waitForTabComplete(tab.id, 15000);
+    tab = await recoverFromBrowserError(tab.id, normUrl, 15000);
 
     // Extra wait for JS-rendered SPAs (React/Vue/Angular)
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 400));
 
     // Step 2: Inject extractor.js if not already present
     const [{ result: alreadyLoaded }] = await chrome.scripting.executeScript({
@@ -299,7 +299,7 @@ async function crawlAndExtractDirect(targetUrl) {
             window.location.href || pageUrl
           );
           let data = extract();
-          const deadline = Date.now() + 8000;
+          const deadline = Date.now() + 3000;
           while (!data.companyAddress && Date.now() < deadline) {
             await new Promise(resolve => setTimeout(resolve, 300));
             data = extract();
@@ -320,14 +320,11 @@ async function crawlAndExtractDirect(targetUrl) {
     let enCandidates = [];
     try {
       const u = new URL(tab.url || normUrl);
-      const hostCandidates = [
-        mainData.enUrl,
-        `${u.origin}/en`,
-        `${u.origin}/en/`,
-        `${u.origin}/english`,
-        `${u.origin}/eng`,
-        `${u.origin}/global-en`
-      ];
+      const needsEnglishFallback = !mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName) ||
+        !mainData.companyAddress || !/[a-zA-Z]{5,}/.test(mainData.companyAddress);
+      const hostCandidates = needsEnglishFallback
+        ? [mainData.enUrl || `${u.origin}/en`]
+        : [];
       enCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(candidate => candidate !== normUrl && candidate !== tab.url);
     } catch {}
 
@@ -394,7 +391,7 @@ async function crawlAndExtractDirect(targetUrl) {
           u.hostname.replace(/^www\./i, "").toLowerCase();
         const samePath = candidateUrl.pathname.replace(/\/+$/, "") === u.pathname.replace(/\/+$/, "");
         return !(sameHost && samePath && candidateUrl.search === u.search);
-      });
+      }).slice(0, 2);
     } catch {}
 
     let footerAddressTakenFromContactPage = false;
