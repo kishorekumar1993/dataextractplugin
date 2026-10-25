@@ -194,6 +194,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { name: "Switzerland", iso: "CH", aliases: ["switzerland", "schweiz", "suisse"], tlds: [".ch"], dialCode: "41" },
     { name: "Sweden", iso: "SE", aliases: ["sweden", "sverige"], tlds: [".se"], dialCode: "46" },
     { name: "Belgium", iso: "BE", aliases: ["belgium", "belgique"], tlds: [".be"], dialCode: "32" },
+    { name: "Malta", iso: "MT", aliases: ["malta"], tlds: [".mt"], dialCode: "356" },
     { name: "Bulgaria", iso: "BG", aliases: ["bulgaria", "българия"], tlds: [".bg"], dialCode: "359" },
     { name: "Croatia", iso: "HR", aliases: ["croatia", "hrvatska"], tlds: [".hr"], dialCode: "385" },
     { name: "Cyprus", iso: "CY", aliases: ["cyprus"], tlds: [".cy"], dialCode: "357" },
@@ -1337,7 +1338,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (colonHeaderCount >= 3) return false;
 
       // Postal address fragments are short; long comma-delimited clauses are prose.
-      if (segments.some(segment => segment.split(/\s+/).filter(Boolean).length > 8)) {
+      const hasLongAddressSegment = countryMatch && postalMatch && segments.every(segment =>
+        segment.split(/\s+/).filter(Boolean).length <= 12
+      ) && /\b(?:industrial estate|industrial park|business park|factory|building|suite|unit)\b/i.test(cleaned);
+      if (segments.some(segment => segment.split(/\s+/).filter(Boolean).length > 8) && !hasLongAddressSegment) {
         return false;
       }
 
@@ -1665,29 +1669,33 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         continue;
       }
 
+      let foundOfficeAddress = false;
       let ancestor = marker.parentElement;
       for (let depth = 0; ancestor && ancestor !== doc.body && depth < 5; depth++, ancestor = ancestor.parentElement) {
         const officeText = getElementText(ancestor);
         if (officeText.length > 650) break;
-        if (
-          !/\b(?:head office|headquarters|registered office|corporate office)\b/i.test(officeText) ||
-          !/\baddress\b/i.test(officeText)
-        ) {
-          continue;
-        }
+        if (!/\b(?:head office|headquarters|registered office|corporate office)\b/i.test(officeText)) continue;
 
         const officeLines = officeText.split(/[\r\n]+/).map(line => line.trim()).filter(Boolean);
         const addressIndex = officeLines.findIndex(line =>
           /^(?:our\s+)?address\s*[:：-]?\s*$/i.test(line)
         );
-        if (addressIndex < 0) continue;
+        const officeHeadingIndex = officeLines.findIndex(line =>
+          /\b(?:head office|headquarters|registered office|corporate office)\b/i.test(line)
+        );
+        const addressLineIndex = officeLines.findIndex((line, index) =>
+          index > officeHeadingIndex && looksLikeAddressLine(line)
+        );
+        const addressStartIndex = addressIndex >= 0 ? addressIndex + 1 : addressLineIndex;
+        if (addressStartIndex < 0) continue;
 
         const addressParts = [];
-        for (let i = addressIndex + 1; i < officeLines.length && i < addressIndex + 7; i++) {
+        for (let i = addressStartIndex; i < officeLines.length && i < addressStartIndex + 7; i++) {
           const line = officeLines[i];
-          if (labelPattern.test(line) || stopLinePattern.test(line) || /@|https?:\/\/|www\./i.test(line)) {
+          if ((i > addressStartIndex && labelPattern.test(line)) || stopLinePattern.test(line) || /@|https?:\/\/|www\./i.test(line)) {
             break;
           }
+          if (i > addressStartIndex && line.length > 150) break;
           addressParts.push(line);
         }
 
@@ -1696,12 +1704,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           addCandidate(
             officeAddress,
             isContactPage ? "contact-detail-labelled" : (isFooterElement(ancestor) ? "footer-labelled" : "page-labelled"),
-            250
+            300
           );
+          foundOfficeAddress = true;
           break;
         }
       }
-      break;
+      if (foundOfficeAddress) break;
     }
 
     for (const section of sections) {
@@ -2352,7 +2361,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // Standalone directional prefixes before street names
     addr = addr.replace(/(?<![A-Za-z.])\bN\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "North ");
     addr = addr.replace(/(?<![A-Za-z.])\bS\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "South ");
-    addr = addr.replace(/(?<![A-Za-z.])\bE\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "East ");
+    addr = addr.replace(/(?<![A-Za-z.])\bE\.\s+(?=(?:\d+(?:st|nd|rd|th)?|[A-Z][a-z0-9]+)\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)\b)/gi, "East ");
     addr = addr.replace(/(?<![A-Za-z.])\bW\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "West ");
 
     // Directional suffixes
@@ -2662,6 +2671,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (countryInfo?.iso === "SE" || /^(?:sweden|sverige|se)$/.test(postalCountry)) {
       addr = addr.replace(/\bSE\s*[-–—]?\s*\d{3}\s*\d{2}\b/gi, " ");
     }
+    if (countryInfo?.iso === "MT") {
+      // Maltese postcodes use three locality letters plus four digits (e.g. ZTN 3000).
+      addr = addr.replace(/\b[A-Z]{3}\s*\d{4}\b/gi, " ");
+    }
     if (countryInfo?.iso === "TW" || /\btaiwan\s*,?\s*(?:r\s*\.?\s*o\s*\.?\s*c\.?|republic\s+of\s+china)\b/i.test(addr)) {
       // Taiwan addresses often append an old three-digit ZIP to the city
       // ("Taichung City 420") and use "Taiwan R.O.C." as the country suffix.
@@ -2835,7 +2848,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)
     );
     const hasChinaContext = hasChinaProvince || hasChinaMunicipality || hasChinaCity;
-    const hasStateLevelMunicipality = [...TAIWAN_SPECIAL_MUNICIPALITIES, ...METROPOLITAN_CITY_REGIONS].some(name =>
+    const hasStateLevelMunicipality = METROPOLITAN_CITY_REGIONS.some(name =>
       new RegExp(`\\b${escapeRegExp(name)}(?:\\s+(?:city|special\\s+municipality|municipality))?\\b`, "i").test(addrLower)
     );
     const hasGenericStateLevel = /\b(?:region|governorate|oblast|department|territory|administrative\s+area)\b/i.test(addrLower);
@@ -2913,10 +2926,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       city = "Y";
     }
 
-    // Taiwan has a different hierarchy: special municipalities are state-level,
-    // counties mark State, and other named cities/districts mark City only.
+    // Taiwan has a different hierarchy: counties mark State; municipalities,
+    // cities, and districts mark City only.
     if (hasTaiwanContext) {
-      state = hasTaiwanCounty || hasTaiwanSpecialMunicipality ? "Y" : "N";
+      // Special municipalities are city-level entries for the extension's
+      // State/City availability fields; only a county makes State available.
+      state = hasTaiwanCounty ? "Y" : "N";
       city = hasTaiwanSpecialMunicipality || hasTaiwanCityOrDistrict || hasWorldCapital ? "Y" : "N";
     }
     if (hasChinaContext) {
