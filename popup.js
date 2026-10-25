@@ -60,6 +60,34 @@ function contactAddressSourcePriority(source) {
   return 0;
 }
 
+function mergeFrameExtractionResults(results) {
+  const records = (results || []).map(item => item?.result).filter(data => data && !data.error);
+  if (!records.length) return null;
+  const completeness = data => ["companyName", "companyAddress", "countryName", "emailId", "phoneNumber"]
+    .reduce((score, key) => score + (data[key] ? 1 : 0), 0);
+  records.sort((a, b) => completeness(b) - completeness(a));
+  const merged = { ...records[0] };
+  for (const data of records.slice(1)) {
+    for (const key of ["companyName", "countryName", "emailId", "secondaryEmailId", "phoneNumber", "enUrl", "contactUrl"]) {
+      if (!merged[key] && data[key]) merged[key] = data[key];
+    }
+    if (data.companyAddress) {
+      const currentPriority = contactAddressSourcePriority(merged.addressSource);
+      const incomingPriority = contactAddressSourcePriority(data.addressSource);
+      if (!merged.companyAddress || incomingPriority > currentPriority ||
+          (incomingPriority === currentPriority && data.companyAddress.split(",").length > merged.companyAddress.split(",").length)) {
+        merged.companyAddress = data.companyAddress;
+        merged.addressSource = data.addressSource;
+        if (data.countryName) merged.countryName = data.countryName;
+      }
+    }
+    if (["Available", "Y"].includes(data.state)) merged.state = "Available";
+    if (["Available", "Y"].includes(data.city)) merged.city = "Available";
+    merged.contactUrls = [...new Set([...(merged.contactUrls || []), ...(data.contactUrls || [])])];
+  }
+  return merged;
+}
+
 // Get active tab in current window
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -280,7 +308,7 @@ async function crawlAndExtractDirect(targetUrl) {
 
     if (!alreadyLoaded) {
       await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
+        target: { tabId: tab.id, allFrames: true },
         files: ["extractor.js"]
       });
     }
@@ -288,10 +316,14 @@ async function crawlAndExtractDirect(targetUrl) {
     // Step 3: Run extraction INSIDE the live tab with full DOM access
     // This gives us properly rendered HTML, all dynamic elements, and correct document.title
     setStatus("Extracting company details from page...", "info");
-    const [{ result: mainData }] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+    const frameResults = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
       func: async (pageUrl) => {
         try {
+          const baseHost = new URL(pageUrl).hostname.replace(/^www\./i, "").toLowerCase();
+          const frameHost = window.location.hostname.replace(/^www\./i, "").toLowerCase();
+          if (baseHost && frameHost && baseHost !== frameHost &&
+              !baseHost.endsWith(`.${frameHost}`) && !frameHost.endsWith(`.${baseHost}`)) return null;
           // Use live document — not a DOMParser copy — for best company name detection
           const extract = () => Extractor.extractFromDocument(
             document,
@@ -311,6 +343,7 @@ async function crawlAndExtractDirect(targetUrl) {
       },
       args: [tab.url || normUrl]  // use final redirected URL from tab
     });
+    const mainData = mergeFrameExtractionResults(frameResults);
 
     if (!mainData || mainData.error) {
       throw new Error(mainData?.error || "Could not extract details from page.");

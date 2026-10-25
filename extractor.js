@@ -46,7 +46,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   const TAIWAN_SPECIAL_MUNICIPALITIES = ["taipei", "new taipei", "taoyuan", "taichung", "tainan", "kaohsiung"];
   const TAIWAN_COUNTIES = ["changhua", "hsinchu", "miaoli", "nantou", "yunlin", "chiayi", "pingtung", "yilan", "hualien", "taitung", "penghu", "kinmen", "lienchiang"];
-  const METROPOLITAN_CITY_REGIONS = ["seoul", "busan", "daegu", "incheon", "gwangju", "daejeon", "ulsan", "sejong", "beijing", "shanghai", "tianjin", "chongqing"];
+  const TAIWAN_CITIES_AND_DISTRICTS = ["keelung", "hsinchu", "chiayi", "fengyuan", "xitun", "beitun", "nantun", "dali", "wuri", "taiping", "zhubei", "toufen", "yuanlin", "douliu", "magong", "banqiao", "zhonghe", "xinzhuang", "tucheng", "luzhou", "sanchong", "yonghe", "xindian", "danshui", "tamsui"];
+  const METROPOLITAN_CITY_REGIONS = ["seoul", "busan", "daegu", "incheon", "gwangju", "daejeon", "ulsan", "sejong", "beijing", "shanghai", "tianjin", "chongqing", "tokyo", "bangkok", "berlin", "hamburg", "bremen", "singapore", "moscow", "brasilia"];
   const ITALIAN_CITIES = [
     "pavia", "modena", "parma", "reggio emilia", "brescia", "bergamo", "como", "varese", "piacenza", "cremona", "mantua", "verona", "venice", "padua", "treviso", "vicenza", "bologna", "florence", "pisa", "siena", "naples", "turin", "milan", "rome", "genoa", "catania", "palermo", "bari"
   ];
@@ -489,9 +490,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Footer and title strings often append the web agency after the legal name.
   // Remove the attribution while retaining the company name and its suffix.
   function stripWebsiteAttribution(value) {
-    return clean(value || "")
-      .replace(/\s*(?:[|·•–—-]\s*)?(?:(?:web\s+)?design(?:ed)?\s+by|site\s+by|website\s+by|powered\s+by)\s+.+$/i, "")
+    let name = clean(value || "")
+      .replace(/\s*(?:[|·•–—-]\s*)?(?:web\s+site\s+designed\s+and\s+hosted\s+by|designed\s+and\s+hosted\s+by|(?:web\s+)?design(?:ed)?\s+by|site\s+by|website\s+by|hosted\s+by|powered\s+by)\s+.+$/i, "")
       .trim();
+    const trailingRightsNotice = /(?:©|\(c\)|copyright)\s*(?:19|20)\d{2}\b/i.exec(name);
+    if (trailingRightsNotice?.index > 0) {
+      name = name.slice(0, trailingRightsNotice.index).replace(/[\s.,;:|]+$/g, "").trim();
+    }
+    return name;
   }
 
   // Format Company Name according to Rule 4 & Section 5.3 (Expand legal suffixes)
@@ -2530,6 +2536,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       country.iso.toLowerCase() === postalCountry ||
       country.aliases.some(alias => alias.toLowerCase() === postalCountry)
     );
+    if (countryInfo?.iso === "TW") {
+      // Taiwan addresses often append an old three-digit ZIP to the city
+      // ("Taichung City 420") and use "Taiwan R.O.C." as the country suffix.
+      addr = addr
+        .replace(/\b(city|district|dist\.?|county)\s+\d{3}\b/gi, "$1")
+        .replace(/,\s*\d{3}(?=\s*(?:,|$))/g, "")
+        .replace(/(?:,\s*|\s+)taiwan\s*r\s*\.?\s*o\s*\.?\s*c\s*\.?\s*[.,;]*$/i, "");
+    }
     // Standard numeric postal codes are usually five or six digits. Remove
     // these wherever they occur, not only when they happen to be a final token.
     const firstPart = addr.split(",", 1)[0];
@@ -2661,18 +2675,24 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let state = "N";
     let city = "N";
 
-    // If country's capital is mentioned in address, BOTH State and City are Available (Y)
-    for (const cap of WORLD_CAPITALS) {
-      if (addrLower.includes(cap)) {
-        state = "Y";
-        city = "Y";
-        break;
-      }
-    }
+    // A capital name proves a city, but does not by itself prove the state.
+    // State is marked separately only for known city-state / administrative capitals.
+    const hasWorldCapital = WORLD_CAPITALS.some(name =>
+      new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(address || "")
+    );
+    if (hasWorldCapital) city = "Y";
 
     const hasTaiwanCounty = TAIWAN_COUNTIES.some(name =>
       new RegExp(`\\b${escapeRegExp(name)}\\s+(?:county|縣|县)`, "i").test(address || "")
     );
+    const hasTaiwanSpecialMunicipality = TAIWAN_SPECIAL_MUNICIPALITIES.some(name =>
+      new RegExp(`\\b${escapeRegExp(name)}(?:\\s+(?:city|special\\s+municipality|municipality))?\\b`, "i").test(addrLower)
+    );
+    const hasTaiwanCityOrDistrict = TAIWAN_CITIES_AND_DISTRICTS.some(name =>
+      new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)
+    ) || /\b[\p{L}][\p{L}'’-]*(?:\s+[\p{L}][\p{L}'’-]*){0,2}\s+(?:dist\.?|district|township|city)\b/iu.test(address || "");
+    const hasTaiwanContext = matchesCountryTerm(address || "", "Taiwan") || hasTaiwanCounty ||
+      hasTaiwanSpecialMunicipality || hasTaiwanCityOrDistrict;
     const hasStateLevelMunicipality = [...TAIWAN_SPECIAL_MUNICIPALITIES, ...METROPOLITAN_CITY_REGIONS].some(name =>
       new RegExp(`\\b${escapeRegExp(name)}(?:\\s+(?:city|special\\s+municipality|municipality))?\\b`, "i").test(addrLower)
     );
@@ -2681,8 +2701,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const hasMalaysiaState = MALAYSIA_STATES_AND_TERRITORIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasMalaysiaCity = MALAYSIA_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasUkCountyOrNation = UK_COUNTIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
-      /\b(?:england|scotland|wales|northern ireland)\b/i.test(addrLower) ||
-      UK_LOCALITIES.some(locality => locality.regex.test(addrLower));
+      /\b(?:england|scotland|wales|northern ireland)\b/i.test(addrLower);
     const hasNewZealandCity = NEW_ZEALAND_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const australianCityState = AUSTRALIAN_CITY_STATES.find(entry =>
       entry.cities.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower))
@@ -2696,7 +2715,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       : null;
 
     // State indicators in address
-    if (state === "N" && (hasTaiwanCounty || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasMalaysiaState || hasMalaysiaCity || hasUkCountyOrNation || hasNewZealandCity || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
+    if (state === "N" && (hasTaiwanCounty || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasMalaysiaState || hasUkCountyOrNation || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
         POSTAL_REGION_US_CODES_REGEX.test(address || "") ||
         /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower))) {
       state = "Y";
@@ -2710,10 +2729,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       state = "Y";
       city = "Y";
     }
-    if (hasNewZealandCity) {
-      state = "Y";
-      city = "Y";
-    }
+    if (hasNewZealandCity) city = "Y";
 
     if (city === "N" && (hasMalaysiaCity || NEW_ZEALAND_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
         INDIAN_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
@@ -2745,9 +2761,20 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       city = "Y";
     }
 
+    // Taiwan has a different hierarchy: special municipalities are state-level,
+    // counties mark State, and other named cities/districts mark City only.
+    if (hasTaiwanContext) {
+      state = hasTaiwanCounty || hasTaiwanSpecialMunicipality ? "Y" : "N";
+      city = hasTaiwanSpecialMunicipality || hasTaiwanCityOrDistrict || hasWorldCapital ? "Y" : "N";
+    }
+
     // Completeness validation (Rule 18): If address has fewer than 2 segments, State is likely invalid
     const parts = (address || "").split(",").map(p => p.trim()).filter(Boolean);
-    if (parts.length < 2 && state === "Y" && !hasMalaysiaState && !hasMalaysiaCity) {
+    const hasExplicitStateEvidence = hasTaiwanCounty || hasStateLevelMunicipality || hasGenericStateLevel ||
+      hasIndianState || hasMalaysiaState || hasUkCountyOrNation || australianCityState || hasAustralianStateCode ||
+      (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
+      POSTAL_REGION_US_CODES_REGEX.test(address || "");
+    if (parts.length < 2 && state === "Y" && !hasExplicitStateEvidence) {
       state = "N";
     }
 

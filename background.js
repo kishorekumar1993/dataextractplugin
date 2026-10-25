@@ -30,6 +30,34 @@ function contactAddressSourcePriority(source) {
   return 0;
 }
 
+function mergeFrameExtractionResults(results) {
+  const records = (results || []).map(item => item?.result).filter(data => data && !data.error);
+  if (!records.length) return null;
+  const completeness = data => ["companyName", "companyAddress", "countryName", "emailId", "phoneNumber"]
+    .reduce((score, key) => score + (data[key] ? 1 : 0), 0);
+  records.sort((a, b) => completeness(b) - completeness(a));
+  const merged = { ...records[0] };
+  for (const data of records.slice(1)) {
+    for (const key of ["companyName", "countryName", "emailId", "secondaryEmailId", "phoneNumber", "enUrl", "contactUrl"]) {
+      if (!merged[key] && data[key]) merged[key] = data[key];
+    }
+    if (data.companyAddress) {
+      const currentPriority = contactAddressSourcePriority(merged.addressSource);
+      const incomingPriority = contactAddressSourcePriority(data.addressSource);
+      if (!merged.companyAddress || incomingPriority > currentPriority ||
+          (incomingPriority === currentPriority && data.companyAddress.split(",").length > merged.companyAddress.split(",").length)) {
+        merged.companyAddress = data.companyAddress;
+        merged.addressSource = data.addressSource;
+        if (data.countryName) merged.countryName = data.countryName;
+      }
+    }
+    if (["Available", "Y"].includes(data.state)) merged.state = "Available";
+    if (["Available", "Y"].includes(data.city)) merged.city = "Available";
+    merged.contactUrls = [...new Set([...(merged.contactUrls || []), ...(data.contactUrls || [])])];
+  }
+  return merged;
+}
+
 function waitForTabComplete(tabId, timeoutMs) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -196,30 +224,42 @@ async function crawlInTab(targetUrl, timeoutMs = 15000) {
 
     if (!alreadyLoaded) {
       await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
+        target: { tabId: tab.id, allFrames: true },
         files: ["extractor.js"]
       });
     }
 
     // 4. Run extraction inside tab context
-    const [{ result: mainData }] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+    const frameResults = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
       func: async (pageUrl) => {
-        const extract = () => Extractor.extractFromDocument(
-          document,
-          document.body?.innerText || Extractor.getElementText(document.body),
-          window.location.href || pageUrl
-        );
-        let data = extract();
-        const deadline = Date.now() + 3000;
-        while (!data.companyAddress && Date.now() < deadline) {
-          await new Promise(resolve => setTimeout(resolve, 300));
-          data = extract();
+        try {
+          const baseHost = new URL(pageUrl).hostname.replace(/^www\./i, "").toLowerCase();
+          const frameHost = window.location.hostname.replace(/^www\./i, "").toLowerCase();
+          if (baseHost && frameHost && baseHost !== frameHost &&
+              !baseHost.endsWith(`.${frameHost}`) && !frameHost.endsWith(`.${baseHost}`)) return null;
+        } catch {}
+        try {
+          if (typeof Extractor === "undefined") return null;
+          const extract = () => Extractor.extractFromDocument(
+            document,
+            document.body?.innerText || Extractor.getElementText(document.body),
+            window.location.href || pageUrl
+          );
+          let data = extract();
+          const deadline = Date.now() + 3000;
+          while (!data.companyAddress && Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            data = extract();
+          }
+          return data;
+        } catch {
+          return null;
         }
-        return data;
       },
       args: [normUrl]
     });
+    const mainData = mergeFrameExtractionResults(frameResults);
 
     if (!mainData) {
       throw new Error("Could not extract details from rendered page.");
