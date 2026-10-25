@@ -2675,6 +2675,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       // Maltese postcodes use three locality letters plus four digits (e.g. ZTN 3000).
       addr = addr.replace(/\b[A-Z]{3}\s*\d{4}\b/gi, " ");
     }
+    if (countryInfo?.iso === "US") {
+      // Some sources omit the space between the state abbreviation and ZIP,
+      // e.g. "New York, NY10018". Keep the state and remove only the ZIP.
+      const usStateCodes = Object.keys(POSTAL_REGION_ABBREVIATIONS["United States Of America"]);
+      const stateZipPattern = new RegExp(`\\b(${usStateCodes.join("|")})\\s*\\d{5}(?:-\\d{4})?\\b`, "gi");
+      addr = addr.replace(stateZipPattern, "$1");
+    }
     if (countryInfo?.iso === "TW" || /\btaiwan\s*,?\s*(?:r\s*\.?\s*o\s*\.?\s*c\.?|republic\s+of\s+china)\b/i.test(addr)) {
       // Taiwan addresses often append an old three-digit ZIP to the city
       // ("Taichung City 420") and use "Taiwan R.O.C." as the country suffix.
