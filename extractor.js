@@ -956,6 +956,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .replace(/\u00a0/g, " ")
         .replace(/\s*(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "")
         .replace(/\s+(?:tel(?:ephone)?|phone|mobile|fax)\s*[:：]?\s*.*$/i, "")
+        .replace(/\(?\+\d{1,3}\)?(?:[\s().-]*\d){7,}.*$/i, "")
 
       const legalNotice = /©|\bcopyright\b|\ball rights reserved\b|\|\s*privacy(?:\s+policy)?\b|\bprivacy\s+policy\b|\|\s*terms(?:\s+of\s+use)?\b|\bterms\s+of\s+use\b/i.exec(address);
       if (legalNotice) address = address.slice(0, legalNotice.index);
@@ -1214,7 +1215,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const sections = doc.querySelectorAll(sectionQuery);
 
     const labelPattern =
-      /^(global\s+headquarters|headquarters|head\s+office|hq\s+address|hq|registered\s+office|corporate\s+office|company\s+address|office\s+address|factory\s+address|factory|works|plant|warehouse|branch\s+office|branch|regional\s+office|address|location)\s*[:：-]\s*/i;
+      /^(?:our\s+)?(global\s+headquarters|headquarters|head\s+office|hq\s+address|hq|registered\s+office|corporate\s+office|company\s+address|office\s+address|factory\s+address|factory|works|plant|warehouse|branch\s+office|branch|regional\s+office|address|location)(?:\s*[:：-]\s*|\s*$)/i;
 
     const stopLinePattern =
       /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b/i;
@@ -1501,6 +1502,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .join("|")})(?:$|[^A-Za-z])`,
     "i"
   );
+  const POSTAL_REGION_US_CODES_REGEX = new RegExp(
+    `(?:^|[^A-Za-z])(?:${Object.keys(POSTAL_REGION_ABBREVIATIONS["United States Of America"]).join("|")})(?:$|[^A-Za-z])`
+  );
 
   function getAddressCountryContext(address, countryHint) {
     const context = `${countryHint || ""} ${address || ""}`;
@@ -1574,7 +1578,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (regionMap) {
       for (const [abbreviation, fullName] of Object.entries(regionMap)) {
         const postalCode = "(?:\\d{5}(?:-\\d{4})?|[A-Z]\\d[A-Z]\\s*\\d[A-Z]\\d|\\d{4})";
-        const codePattern = new RegExp(`(^|[,;]\\s*)${abbreviation}(?=(?:\\s+${postalCode})?\\s*(?:[,;]|$))`, "g");
+        const postalCodeSuffix = addressCountry === "United States Of America"
+          ? ""
+          : `(?:\\s+${postalCode})?`;
+        const codePattern = new RegExp(
+          `(^|[,;]\\s*)${abbreviation}(?=${postalCodeSuffix}\\s*(?:[,;]|$))`,
+          "g"
+        );
         addr = addr.replace(codePattern, (match, prefix) => `${prefix}${fullName}`);
       }
     }
@@ -1666,7 +1676,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/\bMunc\b\.?/gi, "Municipality");
     addr = addr.replace(/\bMun\b\.?/gi, "Municipal");
     addr = addr.replace(/\bCorpn\b\.?/gi, "Corporation");
-    addr = addr.replace(/\bCorp\b\.?/gi, "Corporation");
+    addr = addr.replace(/\bCorp\b\.?(?=\s+\S)/gi, "Corporation");
     addr = addr.replace(/\bSite\s+No\b\.?/gi, "Site Number");
     addr = addr.replace(/\bPlot\s+No\b\.?/gi, "Plot Number");
     addr = addr.replace(/\bKhasra\s+No\b\.?/gi, "Khasra Number");
@@ -1792,7 +1802,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/(?<=[A-Za-z0-9])\s+St\b\.?(?=[,\s;:\/]|$)/gi, " Street");
 
     // Lane, Court, Highway, Parkway, Square, Place, Crescent, Terrace, Circle, Trail
-    addr = addr.replace(/(?<=[A-Za-z0-9])\s+Ln\b\.?(?=[,\s;:\/]|$)/gi, " Lane");
+    addr = addr.replace(/\bLn\b\.?/gi, "Lane");
     addr = addr.replace(/(?<=[A-Za-z0-9])\s+Ct\b\.?(?=[,\s;:\/]|$)/gi, " Court");
     addr = addr.replace(/\bHwy\b\.?/gi, "Highway");
     addr = addr.replace(/\bPkwy\b\.?/gi, "Parkway");
@@ -1868,7 +1878,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 2. Remove leading address labels.
     const leadingLabel =
-      /^(?:(?:office|corporate|registered|factory|head|postal|physical|mailing|our|company)\s+)?(?:address|location|headquarters|hq|add|addr|works|plant|site|visit\s+us|find\s+us|contact\s+(?:info|details)?|주소|본사|地址|所在地)\s*[:.\-–—]\s*/i;
+      /^(?:(?:office|corporate|registered|factory|head|postal|physical|mailing|our|company)\s+)?(?:address|location|headquarters|hq|add|addr|works|plant|site|visit\s+us|find\s+us|contact\s+(?:info|details)?|주소|본사|地址|所在地)\s*[:,.\-–—]\s*/i;
 
     const officeLabel =
       /^(?:head\s+office|registered\s+office|corporate\s+office|factory\s+address|works|location)\s*[:.\-–—]\s*/i;
@@ -1987,6 +1997,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
 
     addr = expandPostalRegionPostcodes(addr, addressCountry);
+    if (typeof expandAddressAbbreviations === "function") {
+      addr = expandAddressAbbreviations(addr, addressCountry);
+    }
 
     // 6. Remove postal codes only when they are standalone comma-separated
     // components. Keep street/building/house numbers.
@@ -2012,12 +2025,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // Strip 5-digit postal code directly following 2-letter state code (e.g. "FL 33405" -> "FL")
     addr = addr.replace(/(?<=\b[A-Z]{2}\s+)\d{5}(?:-\d{4})?(?=[,\s;:]|$)/g, "").trim();
 
-    // 7. Expand abbreviations using your existing helper.
-    if (typeof expandAddressAbbreviations === "function") {
-      addr = expandAddressAbbreviations(addr, addressCountry);
-    }
-
-    // 8. Normalize punctuation and spaces.
+    // 7. Normalize punctuation and spaces.
     addr = addr
       .replace(/\s+/g, " ")
       .replace(/^[,;:|.\-\s]+|[,;:|.\-\s]+$/g, "")
@@ -2029,7 +2037,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const core = word.replace(/[.,;:!?]+$/g, "");
 
       if (!core) return word;
-      if (/^[A-Z]{2,6}[,;:]?$/.test(core)) return core + trailing;
+      if (/^[A-Z]{2,3}[,;:]?$/.test(core)) return core + trailing;
       if (/^(?:FL|AL|AK|AZ|AR|CA|CO|CT|DE|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)$/i.test(core)) {
         return core.toUpperCase() + trailing;
       }
@@ -2082,12 +2090,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // State indicators in address
     if (state === "N" && (POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
+        POSTAL_REGION_US_CODES_REGEX.test(address || "") ||
         /(?:county|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland)/i.test(addrLower))) {
       state = "Y";
     }
 
     // City indicators in address
-    if (city === "N" && /(?:town|district|municipality|city|-si\b|-gu\b|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|nof hagalil|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei)/i.test(addrLower)) {
+    if (city === "N" && /(?:town|district|municipality|city|-si\b|-gu\b|troy|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|nof hagalil|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei)/i.test(addrLower)) {
       city = "Y";
     }
 

@@ -755,6 +755,37 @@
         console.error(`Address test failed for "${tc.raw}":\n  expected: "${tc.expected}"\n  actual:   "${actual}"`);
       }
     }
+    const cosenAddressDoc = new DOMParser().parseFromString(`
+      <footer>
+        <address>
+          <h3>Our Address</h3>
+          <span>No. 106-2, Ln. 175, Xinxi St., Zhubei City, Hsinchu County 302009, Taiwan</span>
+          <span>(+886) 3-551-9700</span>
+          <span>(+886) 3-551-9705</span>
+          <span>service@cosen.com.tw</span>
+        </address>
+      </footer>`,
+      "text/html"
+    );
+    const cosenRawAddress = Extractor.findRawAddress(
+      cosenAddressDoc,
+      cosenAddressDoc.body.innerText,
+      "https://www.cosen.com/en/index.html",
+      true
+    );
+    const cosenAddress = Extractor.cleanAddressString(cosenRawAddress.address, "Taiwan");
+    const expectedCosenAddress = "Number 106-2, Lane 175, Xinxi Street, Zhubei City, Hsinchu County";
+    const passCosenAddress = cosenRawAddress.source === "footer-labelled" && cosenAddress === expectedCosenAddress;
+    addressResults["Cosen footer address excludes postal code and contact details"] = {
+      source: cosenRawAddress.source,
+      expected: expectedCosenAddress,
+      actual: cosenAddress,
+      passed: passCosenAddress
+    };
+    if (!passCosenAddress) {
+      allAddressPassed = false;
+      console.error(`Cosen address extraction failed: expected "${expectedCosenAddress}", got "${cosenAddress}" from ${cosenRawAddress.source}`);
+    }
     renderTest("Test 7: Section 7 Address Normalization & Abbreviations Expansion (Rules 7.4 - 7.11)", allAddressPassed, addressResults);
 
     // TEST 7: Portal Form Auto-Fill Test with EXACT FIELD DISCRIMINATION
