@@ -72,7 +72,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { name: "Singapore", iso: "SG", aliases: ["singapore"], tlds: [".sg", ".com.sg"], dialCode: "65" },
     { name: "Malaysia", iso: "MY", aliases: ["malaysia"], tlds: [".my", ".com.my"], dialCode: "60" },
     { name: "Vietnam", iso: "VN", aliases: ["vietnam", "việt nam"], tlds: [".vn", ".com.vn"], dialCode: "84" },
-    { name: "Thailand", iso: "TH", aliases: ["thailand"], tlds: [".th", ".co.th"], dialCode: "66" },
+    { name: "Thailand", iso: "TH", aliases: ["thailand", "ประเทศไทย", "ไทย", "siam"], tlds: [".th", ".co.th"], dialCode: "66" },
     { name: "Indonesia", iso: "ID", aliases: ["indonesia"], tlds: [".id", ".co.id"], dialCode: "62" },
     { name: "Philippines", iso: "PH", aliases: ["philippines"], tlds: [".ph", ".com.ph"], dialCode: "63" },
     { name: "Turkey", iso: "TR", aliases: ["turkey", "türkiye"], tlds: [".tr", ".com.tr"], dialCode: "90" },
@@ -116,7 +116,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { country: "Canada", regex: /\b(toronto|montreal|vancouver|calgary|edmonton|ottawa|winnipeg|quebec city|hamilton|kitchener|london ontario|victoria|halifax|ontario|quebec|british columbia|alberta|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland)\b/i },
     { country: "Australia", regex: /\b(sydney|melbourne|brisbane|perth|adelaide|gold coast|canberra|newcastle nsw|wollongong|hobart|geelong|townsville|cairns|darwin|new south wales|nsw|victoria vic|queensland qld|western australia wa|south australia sa|tasmania tas)\b/i },
     { country: "Taiwan", regex: /\b(taipei|new taipei|taichung|kaohsiung|taoyuan|tainan|hsinchu)\b/i },
-    { country: "Thailand", regex: /\b(bangkok|chiang\s*mai|chiang rai|hang dong|phuket|pattaya|khon kaen|nakhon ratchasima|nonthaburi|pathum thani|chonburi|samut prakan)\b/i },
+    { country: "Thailand", regex: /\b(bangkok|chiang\s*mai|chiang rai|hang dong|phuket|pattaya|khon kaen|nakhon ratchasima|nonthaburi|pathum thani|chonburi|samut prakan|pravet|pravej|onnut|banglamoong|bang lamung|rayong|ayutthaya|songkhla|hat yai|krabi|surat thani|udon thani|ubon ratchathani|nakhon si thammarat)\b/i },
     { country: "Ireland", regex: /\b(dublin|cork|galway|limerick|waterford|drogheda|dundalk|swords|bray|navan|kilkenny|ennis|carlow|tralee|newbridge|portlaoise|balbriggan|naas|athlone|mullingar|celbridge|wexford|letterkenny|sligo|malahide|greystones|clonmel|roscommon|ballinderry|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois)\b/i }
   ];
 
@@ -2283,7 +2283,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // State indicators in address
     if (state === "N" && (POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
         POSTAL_REGION_US_CODES_REGEX.test(address || "") ||
-        /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin)/i.test(addrLower))) {
+        /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower))) {
       state = "Y";
     }
 
@@ -2593,8 +2593,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const base = new URL(baseUrl);
       const baseHostNorm = base.hostname.replace(/^www\./i, "").toLowerCase();
 
-      const contactHrefRegex = /(?:contact|contact-us|contact_us|contactus|contacts|location|locations|reach-us|reach_us|find-us|about\/contact|about-us\/contact|오시는길|고객센터|연락처|회사위치|お問い合わせ|アクセス|联系我们|kontakt|contacto|contatti)/i;
-      const contactTextRegex = /\b(contact|contact us|get in touch|location|locations|reach us|find us|our office|our offices|headquarters|where to find us|office location|오시는길|고객센터|연락처|회사위치|お問い合わせ|お問合せ|アクセス|联系我们|聯繫我們|kontakt|contacto|contáctenos|contatti)\b/i;
+      const contactHrefRegex = /(?:contact|contact-us|contact_us|contactus|contacts|location|locations|our-location|our-locations|reach-us|reach_us|find-us|visit-us|get-in-touch|getintouch|enquiry|enquiries|inquiry|inquiries|send-enquiry|request-information|support|customer-service|customer-support|help|sales\/contact|contact-sales|company\/contact|corporate\/contact|our-company\/contact|company-profile\/contact|about\/contact|about-us\/contact|aboutus\/contact|who-we-are\/contact|오시는길|고객센터|연락처|회사위치|お問い合わせ|アクセス|联系我们|kontakt|contacto|contatti)/i;
+      const contactTextRegex = /\b(contact|contact us|get in touch|location|locations|our location|our locations|reach us|find us|visit us|our office|our offices|headquarters|where to find us|office location|enquiry|enquiries|inquiry|inquiries|support|customer service|customer support|help|contact sales|sales contact|오시는길|고객센터|연락처|회사위치|お問い合わせ|お問合せ|アクセス|联系我们|聯繫我們|kontakt|contacto|contáctenos|contatti)\b/i;
 
       for (const a of doc.querySelectorAll("a[href]")) {
         const href = (a.getAttribute("href") || "").trim();

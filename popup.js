@@ -328,27 +328,116 @@ async function crawlAndExtractDirect(targetUrl) {
     let contactCandidates = [];
     try {
       const u = new URL(tab.url || normUrl);
+      const contactPaths = [
+        // Standard variations
+        "/contact/",
+        "/contact",
+        "/contact-us/",
+        "/contact-us",
+        "/contactus/",
+        "/contactus",
+        "/contact_us",
+        "/contact_us.html",
+        "/contact-us.html",
+        "/contact.html",
+        "/contact-us.php",
+        "/contactus.php",
+        "/contact.php",
+        "/contactus.html",
+        "/contact-us.aspx",
+        "/contact.aspx",
+
+        // Query parameters and CMS routes (essential for dynamic sites like kanok.com)
+        "/?p=contact",
+        "/?page=contact",
+        "/?view=contact",
+        "/index.php?p=contact",
+        "/index.php?page=contact",
+        "/?page_id=contact",
+        "/?p=contact-us",
+        "/?page=contact-us",
+        "/?view=contact-us",
+        "/?route=contact",
+        "/index.php?page=contact-us",
+        "/index.php?route=information/contact",
+        "/index.php/contact",
+        "/index.php/contact-us",
+
+        // Company and corporate
+        "/company/contact",
+        "/company/contact-us",
+        "/corporate/contact",
+        "/corporate/contact-us",
+        "/our-company/contact",
+        "/company-profile/contact",
+        "/about/contact",
+        "/about/contact-us",
+        "/aboutus/contact",
+        "/aboutus/contact-us",
+        "/about-us/contact",
+        "/about-us/contact-us",
+        "/who-we-are/contact",
+
+        // Customer support
+        "/support",
+        "/support/",
+        "/support/contact",
+        "/support/contact-us",
+        "/customer-service",
+        "/customer-support",
+        "/help/contact",
+        "/help/contact-us",
+        "/service/contact",
+
+        // Location and enquiry pages
+        "/location",
+        "/locations",
+        "/our-location",
+        "/our-locations",
+        "/find-us",
+        "/visit-us",
+        "/reach-us",
+        "/get-in-touch",
+        "/getintouch",
+        "/enquiry",
+        "/enquiries",
+        "/inquiry",
+        "/inquiries",
+        "/send-enquiry",
+        "/request-information",
+        "/sales/contact",
+        "/contact-sales",
+
+        // CMS and common page routes
+        "/pages/contact",
+        "/pages/contact-us",
+        "/pages/contact-us/",
+
+        // Regional and language routes
+        "/en/contact",
+        "/en/contact-us",
+        "/en-us/contact",
+        "/en-us/contact-us",
+        "/en-gb/contact",
+        "/en-gb/contact-us",
+        "/uk/contact",
+        "/us/contact",
+        "/in/contact",
+        "/au/contact",
+        "/de/contact",
+        "/fr/contact",
+        "/es/contact"
+      ];
       const hostCandidates = [
         ...(mainData.contactUrls || []),
         mainData.contactUrl,
-        `${u.origin}/contact-us`,
-        `${u.origin}/contact`,
-        `${u.origin}/contactus`,
-        `${u.origin}/contact-us.html`,
-        `${u.origin}/contact.html`,
-        `${u.origin}/contact.php`,
-        `${u.origin}/?p=contact`,
-        `${u.origin}/?page=contact`,
-        `${u.origin}/?view=contact`,
-        `${u.origin}/index.php?p=contact`,
-        `${u.origin}/index.php?page=contact`,
-        `${u.origin}/location`,
-        `${u.origin}/locations`,
-        `${u.origin}/reach-us`,
-        `${u.origin}/about/contact`,
-        `${u.origin}/about-us/contact`,
-        `${u.origin}/en/contact`,
-        `${u.origin}/en/contact-us`
+        ...contactPaths.map(path => {
+          try {
+            return new URL(path, u.origin).href;
+          } catch {
+            return null;
+          }
+        })
       ];
       contactCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(c => c !== normUrl && c !== tab.url);
     } catch {}
@@ -431,6 +520,9 @@ async function crawlAndExtractDirect(targetUrl) {
           if (contactData.phoneNumber && !mainData.phoneNumber) mainData.phoneNumber = contactData.phoneNumber;
 
           // A contact-detail address must not be replaced by a later page's footer.
+          if (bestContactAddressPriority >= 150 && mainData.countryName && mainData.emailId && mainData.phoneNumber) {
+            break;
+          }
         }
       } catch (e) {
         console.log("Contact page check note:", e);
