@@ -66,6 +66,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   const UK_COUNTIES = [
     "bedfordshire", "berkshire", "borders", "bristol", "buckinghamshire", "cambridgeshire", "cheshire", "cornwall", "cumbria", "derbyshire", "devon", "dorset", "durham", "east sussex", "essex", "gloucestershire", "hampshire", "herefordshire", "hertfordshire", "kent", "lancashire", "leicestershire", "lincolnshire", "merseyside", "norfolk", "northamptonshire", "northumberland", "nottinghamshire", "oxfordshire", "somerset", "south yorkshire", "staffordshire", "suffolk", "surrey", "tyne and wear", "warwickshire", "west midlands", "west sussex", "wiltshire", "worcs", "worcestershire", "north yorkshire", "west yorkshire", "isle of wight", "greater london"
   ];
+  const UK_CITIES = [
+    "london", "birmingham", "manchester", "liverpool", "leeds", "sheffield", "bristol", "nottingham", "leicester", "coventry", "wolverhampton", "stoke-on-trent", "derby", "southampton", "portsmouth", "oxford", "cambridge", "york", "bath", "newcastle", "brighton", "plymouth", "exeter", "norwich", "milton keynes", "reading", "luton", "blackpool", "middlesbrough", "sunderland", "wakefield", "worcester", "chester", "canterbury", "aldridge", "walsall", "sutton coldfield", "bloxwich", "brownhills", "lichfield", "tamworth", "west bromwich", "dudley", "edinburgh", "glasgow", "aberdeen", "dundee", "cardiff", "swansea", "newport", "belfast", "derry"
+  ];
   const US_CITIES = [
     "new york", "los angeles", "chicago", "houston", "phoenix", "philadelphia", "san antonio", "san diego", "dallas", "san jose", "austin", "jacksonville", "fort worth", "columbus", "charlotte", "indianapolis", "san francisco", "seattle", "denver", "boston", "nashville", "detroit", "las vegas", "portland", "memphis", "baltimore", "milwaukee", "albuquerque", "tucson", "sacramento", "atlanta", "miami", "tampa", "orlando", "raleigh", "omaha", "oakland", "minneapolis", "tulsa", "cleveland", "pittsburgh", "cincinnati", "st louis", "newark", "jersey city", "springfield", "louisville", "richmond", "boise", "honolulu", "anchorage", "des moines", "madison", "boulder", "troy"
   ];
@@ -2536,13 +2539,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       country.iso.toLowerCase() === postalCountry ||
       country.aliases.some(alias => alias.toLowerCase() === postalCountry)
     );
-    if (countryInfo?.iso === "TW") {
+    if (countryInfo?.iso === "TW" || /\btaiwan\s*,?\s*(?:r\s*\.?\s*o\s*\.?\s*c\.?|republic\s+of\s+china)\b/i.test(addr)) {
       // Taiwan addresses often append an old three-digit ZIP to the city
       // ("Taichung City 420") and use "Taiwan R.O.C." as the country suffix.
       addr = addr
         .replace(/\b(city|district|dist\.?|county)\s+\d{3}\b/gi, "$1")
         .replace(/,\s*\d{3}(?=\s*(?:,|$))/g, "")
-        .replace(/(?:,\s*|\s+)taiwan\s*r\s*\.?\s*o\s*\.?\s*c\s*\.?\s*[.,;]*$/i, "");
+        .replace(/(?:,\s*|\s+)(?:taiwan\s*,?\s*(?:r\s*\.?\s*o\s*\.?\s*c\s*\.?|republic\s+of\s+china)|r\s*\.?\s*o\s*\.?\s*c\s*\.?)\s*[.,;]*$/i, "");
     }
     // Standard numeric postal codes are usually five or six digits. Remove
     // these wherever they occur, not only when they happen to be a final token.
@@ -2702,6 +2705,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const hasMalaysiaCity = MALAYSIA_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasUkCountyOrNation = UK_COUNTIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
       /\b(?:england|scotland|wales|northern ireland)\b/i.test(addrLower);
+    const hasUkCity = UK_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasNewZealandCity = NEW_ZEALAND_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const australianCityState = AUSTRALIAN_CITY_STATES.find(entry =>
       entry.cities.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower))
@@ -2735,7 +2739,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         INDIAN_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
         US_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
         ITALIAN_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
-        UK_LOCALITIES.some(locality => locality.regex.test(addrLower)))) {
+        hasUkCity)) {
       city = "Y";
     }
 
@@ -3219,7 +3223,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     companyName = formatCompanyName(companyNameRaw, countryName);
 
     // 7. Extract State & City (Rule 7 & 8) — check ONLY verified cleaned address (fallback to raw)
-    const { state, city } = detectStateAndCity(companyAddress || rawAddress);
+    let { state, city } = detectStateAndCity(companyAddress || rawAddress);
+    if (companyAddress && /^(?:england|scotland|wales|northern ireland)$/i.test(countryName)) {
+      state = "Y";
+    }
 
     // 7. Business Type (Rule 2)
     const businessType = detectBusinessType(text);
