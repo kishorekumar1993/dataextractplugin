@@ -113,7 +113,7 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
   }
 
   // Force a rendered tab fallback if ANY critical field is missing OR if fetch failed
-  if ((result?.companyAddress && result?.countryName && result?.emailId && result?.state !== "N") || !renderIfAddressMissing) {
+  if ((result?.companyAddress && result?.countryName && result?.emailId && !["N", "Not Available"].includes(result?.state)) || !renderIfAddressMissing) {
     return result;
   }
 
@@ -356,8 +356,8 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
 
             // Re-validate state & city from updated contact page address
             const { state, city } = Extractor.detectStateAndCity(contactData.companyAddress);
-            if (["Y", "Available"].includes(state)) mainData.state = state;
-            if (["Y", "Available"].includes(city)) mainData.city = city;
+            if (["Y", "Available"].includes(state)) mainData.state = "Available";
+            if (["Y", "Available"].includes(city)) mainData.city = "Available";
 
             // Authoritative address country from contact page
             if (contactData.countryName) {
@@ -402,8 +402,8 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
               if (m.regex.test(mainData.companyAddress)) {
                 mainData.countryName = m.country;
                 const { state, city } = Extractor.detectStateAndCity(mainData.companyAddress);
-                if (["Y", "Available"].includes(state)) mainData.state = state;
-                if (["Y", "Available"].includes(city)) mainData.city = city;
+                if (["Y", "Available"].includes(state)) mainData.state = "Available";
+                if (["Y", "Available"].includes(city)) mainData.city = "Available";
                 break;
               }
             }
