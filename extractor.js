@@ -948,11 +948,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const seen = new Set();
     let pagePath = pageUrl;
     try {
-      pagePath = new URL(pageUrl).pathname;
+      const parsedUrl = new URL(pageUrl);
+      pagePath = (parsedUrl.pathname || "") + (parsedUrl.search || "");
     } catch { }
     const isContactPage = (pagePath && /(?:contact|location|locations|reach-us|reach_us|get-in-touch|about\/contact|about-us\/contact|about-us|aboutus|find-us|our-offices|corporate-office|headquarters|branches|kontakt|contacto|contatti|오시는길|고객센터|연락처|회사위치|お問い合わせ|アクセス|联系我们)/i.test(pagePath)) ||
       (doc?.title && /\b(?:contact|location|locations|reach us|find us|our office|our offices|headquarters|about us)\b/i.test(doc.title)) ||
-      Boolean(doc?.querySelector?.("h1, h2, h3")?.innerText && /\b(?:contact us|contact|our locations|office locations|get in touch|reach us)\b/i.test(doc.querySelector("h1, h2, h3").innerText));
+      Array.from(doc?.querySelectorAll?.("h1, h2, h3, h4, h5, th") || []).some(el => /\b(?:contact us|contact|our locations|office locations|get in touch|reach us|head office|headquarters)\b/i.test(el.textContent || el.innerText || ""));
 
     const normalizeAddress = value => {
       let address = String(value || "")
@@ -1353,13 +1354,22 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 3. Look for labelled addresses in contact/footer sections.
     let sectionQuery = "header, #header, .header, .site-header, .top-bar, footer, #footer, .footer, footer section, #footer section, .footer section, footer .widget, #footer .widget, .footer .widget, footer [class*='widget'], #footer [class*='widget'], .footer-widget, .contact-info, .contact-details, #contact, #contact-us, .contact-us, [class*='contact']";
     if (isContactPage) {
-      sectionQuery += ", main, #main, .main, article, #content, .content, .container, section, .office, .locations, [class*='location'], [class*='branch'], [id*='location']";
+      sectionQuery += ", main, #main, .main, article, #content, .content, .container, section, .office, .locations, [class*='location'], [class*='branch'], [id*='location'], div.row, div[class*='col-'], div[class*='col_'], div[class*='box'], div[class*='card'], div[class*='panel'], div[class*='block'], div[class*='office']";
     }
     sectionQuery += ", table, tbody, tr, td, dl, dt, dd";
-    const sections = doc.querySelectorAll(sectionQuery);
+    const sections = Array.from(doc.querySelectorAll(sectionQuery));
+
+    // Also include direct parents of any heading matching labelPattern (e.g. HEAD OFFICE)
+    doc.querySelectorAll("h1, h2, h3, h4, h5, h6, strong, b, dt, legend, th").forEach(h => {
+      if (labelPattern.test(h.textContent || "")) {
+        if (h.parentElement && !sections.includes(h.parentElement)) {
+          sections.push(h.parentElement);
+        }
+      }
+    });
 
     const stopLinePattern =
-      /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|contact|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b/i;
+      /^(?:tel(?:ephone)?|phone|mobile|cell|fax|email|e-mail|contact|call|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b|^(?:t|p|m|f|e)\s*[:：.\-–—]/i;
 
     const looksLikeAddressLine = line => {
       let s = String(line || "").trim();
@@ -2096,6 +2106,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         for (const variant of variants) {
           const companyRegex = new RegExp(
             "^\\s*" + escapeRegex(variant) +
+            "(?:\\s+(?:Co\\.,?\\s*Ltd\\.?|Pvt\\.,?\\s*Ltd\\.?|Pty\\.,?\\s*Ltd\\.?|Co\\.?|Ltd\\.?|Inc\\.?|LLC|Corp\\.?|Corporation|Limited|GmbH|B\\.V\\.|S\\.A\\.|S\\.R\\.L\\.))?" +
             "\\s*[,;:|\\-]?\\s*",
             "i"
           );
@@ -2108,9 +2119,18 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
+    // Strip leading corporate name ending in Co., Ltd. or similar before street marker
+    addr = addr.replace(/^[A-Za-z0-9&'.\s-]{2,60}\s+(?:Co\.,\s*Ltd\.?|Co\.,Ltd\.?|Pvt\.\s*Ltd\.?|Pty\.\s*Ltd\.?)\s*[,;:|]?\s*(?=\d|[A-Za-z0-9]+\s+(?:Road|Street|Avenue|Boulevard|Lane|Drive|Soi|Highway|Rd|St|Ave|Blvd|Ln|Dr)\b)/i, "");
+    addr = addr.replace(/^(?:Ltd|Co(?!-)|Inc|LLC|Pvt Ltd|Pty Ltd)\b\.?\s*[,;:|]?\s*/i, "");
+
     if (addr.includes(",")) {
-      const firstPart = addr.split(",")[0].trim();
-      const rest = addr.slice(addr.indexOf(",") + 1).trim();
+      let firstPart = addr.split(",")[0].trim();
+      let rest = addr.slice(addr.indexOf(",") + 1).trim();
+      // If firstPart ends in "Co." and rest starts with "Ltd.", combine them so company name isn't split
+      if (/\bCo\b\.?$/i.test(firstPart) && /^\s*Ltd\b\.?/i.test(rest)) {
+        firstPart = `${firstPart}, ${rest.split(",")[0].trim()}`;
+        rest = rest.slice(rest.indexOf(",") + 1).trim();
+      }
       const streetLike = /\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|business park|unit|suite|floor|building|block|phase|park)\b|(?<![A-Za-z])\d+\s+[A-Za-z]/i;
       const companyLikeSuffix = /\b(?:limited|ltd|inc|incorporated|corporation|corp|company|co(?!-)|llc|plc|llp|pvt|pty|gmbh|bv|sa|sarl|group|holdings|industries|technology|technologies|services|solutions)\b/i;
       const firstWords = firstPart.split(/\s+/).filter(Boolean);
@@ -2285,7 +2305,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Rule 9 & 10: Email ID & Secondary Email ID
   function extractEmails(doc, text, siteHostname) {
     const emails = new Set();
-    const emailRegex = /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)+/g;
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,24}/g;
 
     const decodeEmailText = value => {
       let decoded = String(value || "")
@@ -2401,11 +2421,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   }
 
   function isValidEmail(e) {
-    if (!e || e.length > 80) return false;
-    if (/\.(png|jpg|jpeg|gif|webp|svg|css|js)$/i.test(e)) return false;
+    if (!e || typeof e !== "string" || e.length > 80) return false;
+    if (/[/\\]/.test(e)) return false;
+    if (/\.(png|jpg|jpeg|gif|webp|svg|css|js|woff2?|ttf|eot|ico|map|min)$/i.test(e)) return false;
+    if (/(?:jsdelivr|cdnjs|unpkg|googleapis|gstatic|w3\.org|schema\.org|sentry|recaptcha|wordpress|wp-content|github|polyfill|node_modules|bootstrap|jquery)/i.test(e)) return false;
     if (/example\.com|domain\.com|yourdomain|email@/i.test(e)) return false;
     if (/^(noreply|no-reply|careers|jobs|hr|webmaster|postmaster|abuse|spam|privacy|legal)@/i.test(e)) return false;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+    return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,24}$/.test(e);
   }
 
   function mergeContactEmails(primaryEmail, secondaryEmail, contactEmail, contactSecondaryEmail) {
@@ -2431,7 +2453,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   function extractPhoneNumber(text, country) {
     // 1. Scan phone lines
     const phoneCandidates = [];
-    const phoneRegex = /(?:Tel|Phone|Telephone|T\.)\s*[:.-]?\s*([+]?[0-9\s()./-]{7,25})/gi;
+    const phoneRegex = /(?:Tel|Telephone|Phone|Mob(?:ile)?|Cell|Fax|T|P|M|F)\.?\s*[:：.-]?\s*([+]?[0-9\s()./-]{7,25})/gi;
     let m;
     while ((m = phoneRegex.exec(text)) !== null) {
       const raw = m[1].split(/[\/~,\n]/)[0].trim();
@@ -2596,10 +2618,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
             continue;
           }
 
+          const fullTarget = (resObj.pathname || "") + (resObj.search || "");
           let score = 0;
-          if (contactHrefRegex.test(resObj.pathname)) score += 50;
+          if (contactHrefRegex.test(fullTarget)) score += 50;
           if (contactTextRegex.test(text)) score += 40;
-          if (/\b(?:contact-us|contactus|contact)\b/i.test(resObj.pathname)) score += 30;
+          if (/\b(?:contact-us|contactus|contact)\b/i.test(fullTarget)) score += 30;
           if (text === "contact us" || text === "contact") score += 30;
 
           if (score > 0 && !seen.has(resolved)) {
@@ -2746,6 +2769,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     detectCompanyProfile,
     detectCountry,
     extractEmails,
+    isValidEmail,
     mergeContactEmails,
     extractPhoneNumber,
     findRawAddress,

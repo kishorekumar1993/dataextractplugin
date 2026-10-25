@@ -1540,8 +1540,95 @@
     const resPlot = Extractor.extractFromHtml(plotHtml, "https://www.cybertech.example/about-us");
     const passPlot = resPlot.companyAddress.includes("Plot No. 45") || resPlot.companyAddress.includes("Sector 18");
 
-    const passTest12 = passTable && passDl && passEmoji && passSemicolon && passContactNoClass && passPlot;
-    renderTest("Test 12: Comprehensive Address Possibilities (Tables, DL, Emojis, Semicolons, Contact Containers)", passTest12, {
+    // 7. Kanok Furniture & Decoration (HEAD OFFICE vs FACTORY, query param URL ?p=contact, bootstrap CDN rejection, Thai phone)
+    const kanokHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>KANOK FURNITURE & DECORATION - SINCE 1971</title>
+          <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css">
+          <script src="//cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"><\/script>
+        </head>
+        <body>
+          <header>
+            <div class="logo">KANOK FURNITURE & DECORATION</div>
+            <nav><a href="?p=contact">CONTACT</a></nav>
+          </header>
+          <main class="container">
+            <div class="row">
+              <div class="col-md-6 head-office">
+                <h3>HEAD OFFICE</h3>
+                <p>Kanok Furniture & Decoration Co., Ltd.<br>
+                4 Soi Onnut 46, Onnut Rd., Nongbon,<br>
+                Pravet, Bangkok 10250 THAILAND<br>
+                T: 66(0) 2321 0702, 66(0) 2721 5997<br>
+                F: 66(0) 2321 4493<br>
+                E-mail : info@kanok.com</p>
+              </div>
+              <div class="col-md-6 factory">
+                <h3>FACTORY</h3>
+                <p>Kanok Furniture & Decoration Co., Ltd. (Kao Mai Keaw Branch)<br>
+                43/33 Kao mai keaw , Banglamoong<br>
+                Chonburi 20150 THAILAND<br>
+                T: 66(0) 3830 9250<br>
+                F: 66(0) 3830 9252</p>
+              </div>
+            </div>
+          </main>
+        </body>
+      </html>
+    `;
+    const resKanok = Extractor.extractFromHtml(kanokHtml, "http://www.kanok.com/?p=contact");
+    const passKanokAddress = resKanok.companyAddress.includes("4 Soi Onnut 46") &&
+      resKanok.companyAddress.includes("Onnut Road") &&
+      resKanok.companyAddress.includes("Bangkok") &&
+      !resKanok.companyAddress.includes("Chonburi");
+    const passKanokCountry = resKanok.countryName === "Thailand";
+    const passKanokStateCity = resKanok.state === "Y" && resKanok.city === "Y";
+    const passKanokEmail = resKanok.emailId === "info@kanok.com";
+    const passKanokPhone = resKanok.phoneNumber === "23210702";
+    const passCdnRejected = !Extractor.isValidEmail("//cdn.jsdelivr.net/npm/bootstrap@4.6.0") &&
+      resKanok.emailId !== "//cdn.jsdelivr.net/npm/bootstrap@4.6.0";
+    const passKanokSubpageDiscovery = Extractor.findContactSubpages(
+      new DOMParser().parseFromString(kanokHtml, "text/html"),
+      "http://www.kanok.com/"
+    ).some(url => url.includes("?p=contact"));
+    const passKanok = passKanokAddress && passKanokCountry && passKanokStateCity && passKanokEmail && passKanokPhone && passCdnRejected && passKanokSubpageDiscovery;
+
+    // 8. Rollerdoors Ireland (ADS Doors, Ballinderry, Four Mile House, Co. Roscommon, Ireland)
+    const rollerdoorsHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head><title>Roller Doors Ireland</title></head>
+        <body>
+          <div id="footer">
+            <div class="col1">
+              <h3>Certification</h3>
+              <p>FAAC Approved Installer - <a href="http://dhfonline.co.uk">dhfonline.co.uk</a> - <a href="http://garagedoorsystems.co.uk">garagedoorsystems.co.uk</a> Approved Installer - Fort Security Doors Approved Installer</p>
+            </div>
+            <div class="col2">
+              <h3>Address</h3>
+              <p>ADS Doors, Ballinderry, Four Mile House, Co. Roscommon.</p>
+            </div>
+            <div class="col3">
+              <h3>Contact</h3>
+              <p>Tel: 087 2744555 | Email: info@rollerdoors.ie</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+    const resRollerdoors = Extractor.extractFromHtml(rollerdoorsHtml, "http://www.rollerdoors.ie/");
+    const passRollerdoorsAddress = resRollerdoors.companyAddress.includes("Ballinderry") &&
+      resRollerdoors.companyAddress.includes("Four Mile House") &&
+      resRollerdoors.companyAddress.includes("Roscommon") &&
+      !resRollerdoors.companyAddress.includes("Certification") &&
+      !resRollerdoors.companyAddress.includes("dhfonline");
+    const passRollerdoorsCountry = resRollerdoors.countryName === "Ireland";
+    const passRollerdoors = passRollerdoorsAddress && passRollerdoorsCountry;
+
+    const passTest12 = passTable && passDl && passEmoji && passSemicolon && passContactNoClass && passPlot && passKanok && passRollerdoors;
+    renderTest("Test 12: Comprehensive Address Possibilities (Tables, DL, Emojis, Semicolons, Contact Containers, Kanok & Rollerdoors)", passTest12, {
       tableExtraction: resTable.companyAddress,
       tablePass: passTable,
       definitionListExtraction: resDl.companyAddress,
@@ -1554,7 +1641,15 @@
       contactNoClassSource: resContactNoClass.addressSource,
       contactNoClassPass: passContactNoClass,
       plotExtraction: resPlot.companyAddress,
-      plotPass: passPlot
+      plotPass: passPlot,
+      kanokAddress: resKanok.companyAddress,
+      kanokCountry: resKanok.countryName,
+      kanokEmail: resKanok.emailId,
+      kanokPhone: resKanok.phoneNumber,
+      kanokPass: passKanok,
+      rollerdoorsAddress: resRollerdoors.companyAddress,
+      rollerdoorsCountry: resRollerdoors.countryName,
+      rollerdoorsPass: passRollerdoors
     });
 
     window.__TEST_RESULTS__ = {
