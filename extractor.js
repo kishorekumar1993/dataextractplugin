@@ -182,10 +182,41 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   }
 
   // 5.3 International Legal Suffix Reference
-  // Suffixes must be expanded from short form to full form.
-  function expandLegalSuffixes(name) {
+  // Resolve jurisdiction-sensitive abbreviations only when country context is available.
+  function expandLegalSuffixes(name, countryName = "") {
     if (!name) return "";
     let s = name;
+    const country = String(countryName || "").toLowerCase().replace(/[^a-z]/g, "");
+    const countryExpansions = [
+      { countries: ["argentina"], rules: [[/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad de Responsabilidad Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima"]] },
+      { countries: ["brazil"], rules: [[/\bltda\.?(?=\s*[,;:]?$)/gi, "Sociedade Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedade Anônima"]] },
+      { countries: ["spain"], rules: [[/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad de Responsabilidad Limitada"], [/\bs\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima"]] },
+      { countries: ["france"], rules: [[/\bs\.?a\.?s\.?u\.?(?=\s*[,;:]?$)/gi, "Société par actions simplifiée unipersonnelle"], [/\bs\.?a\.?s\.?(?=\s*[,;:]?$)/gi, "Société par actions simplifiée"], [/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Société à responsabilité limitée"], [/\bs\.?l\.?(?=\s*[,;:]?$)/gi, "Société à responsabilité limitée"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Société Anonyme"]] },
+      { countries: ["italy"], rules: [[/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Società a responsabilità limitata"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Società per Azioni"]] },
+      { countries: ["switzerland", "belgium", "luxembourg"], rules: [[/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Société Anonyme"]] },
+      { countries: ["mexico"], rules: [[/\bs\.?a\.?p\.?i\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima Promotora de Inversión de Capital Variable"], [/\bs\.?\s+de\s+r\.?l\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad de Responsabilidad Limitada de Capital Variable"], [/\bs\.?a\.?b\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima Bursátil de Capital Variable"], [/\bs\.?a\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima de Capital Variable"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima"], [/\bs\.?c\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad Cooperativa Limitada"], [/\bs\.?c\.?(?=\s*[,;:]?$)/gi, "Sociedad Civil"]] },
+      { countries: ["portugal"], rules: [[/\bs\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedade Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedade Anónima"]] },
+      { countries: ["czechia", "czechrepublic"], rules: [[/\ba\.?s\.?(?=\s*[,;:]?$)/gi, "Akciová společnost"]] },
+      { countries: ["turkey", "trkiye"], rules: [[/\b(?:limited\s+şirketi|ltd\.?\s*şti\.?)\b(?=\s*[,;:]?$)/gi, "Limited Şirketi"], [/\b(?:anonim\s+şirketi|a\.?[şs]\.?)\b(?=\s*[,;:]?$)/gi, "Anonim Şirket"]] },
+      { countries: ["unitedstates", "unitedstatesofamerica", "usa"], rules: [[/\bl\.?p\.?(?=\s*[,;:]?$)/gi, "Limited Partnership"], [/\bp\.?a\.?(?=\s*[,;:]?$)/gi, "Professional Association"], [/\bp\.?c\.?(?=\s*[,;:]?$)/gi, "Professional Corporation"]] },
+      { countries: ["unitedkingdom", "ireland"], rules: [[/\bl\.?p\.?(?=\s*[,;:]?$)/gi, "Limited Partnership"], [/\buc\b(?=\s*[,;:]?$)/gi, "Unlimited Company"], [/\b(?:ulc|unlimited\s+company)\b(?=\s*[,;:]?$)/gi, "Unlimited Company"]] },
+      { countries: ["canada"], rules: [[/\b(?:ulc|unlimited\s+liability\s+company)\b(?=\s*[,;:]?$)/gi, "Unlimited Liability Company"]] },
+      { countries: ["indonesia"], rules: [[/(?:^|\b)p\.?t\.?\s+(?=[A-Za-z0-9])/gi, "Perseroan Terbatas "], [/\b(?:perseroan\s+terbatas|p\.?t\.?)\b(?=[,.\s]|$)/gi, "Perseroan Terbatas"]] },
+      { countries: ["denmark"], rules: [[/\ba\/s\b(?=[,.\s]|$)/gi, "Aktieselskab"]] },
+      { countries: ["sweden"], rules: [[/\ba\.?b\.?(?=[,.\s]|$)/gi, "Aktiebolag"]] }
+    ];
+    const countryRules = countryExpansions.find(entry =>
+      entry.countries.some(value => value.replace(/[^a-z]/g, "") === country)
+    );
+    if (countryRules) {
+      for (const [rx, rep] of countryRules.rules) {
+        const titleCasedRep = rep.replace(
+          /(^|[^\p{L}\p{N}])(\p{L})/gu,
+          (_, separator, letter) => separator + letter.toUpperCase()
+        );
+        s = s.replace(rx, titleCasedRep);
+      }
+    }
 
     const EXPANSIONS = [
       // --- D. Germany, Austria, and Switzerland (compounds first) ---
@@ -197,9 +228,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       [/\bug\s*(?:\(?\s*haftungsbeschr[äa]nkt\s*\)?)/gi, "Unternehmergesellschaft (haftungsbeschränkt)"],
 
       // --- L. Latin America (compounds first) ---
-      [/\bs\.?a\.?p\.?i\.?\s+de\s+c\.?v\.?(?=[,.\s]|$)/gi, "Sociedad Anónima Promotora de Inversión de Capital Variable"],
-      [/\bs\.?\s+de\s+r\.?l\.?\s+de\s+c\.?v\.?(?=[,.\s]|$)/gi, "Sociedad de Responsabilidad Limitada de Capital Variable"],
-      [/\bs\.?a\.?(?:b\.?)?\s+de\s+c\.?v\.?(?=[,.\s]|$)/gi, "Sociedad Anónima de Capital Variable"],
       [/\bc[íi]a\.?\s*ltda\.?(?=[,.\s]|$)/gi, "Compañía Limitada"],
       [/\be\.?i\.?r\.?l\.?(?=[,.\s]|$)/gi, "Empresa Individual de Responsabilidad Limitada"],
 
@@ -230,17 +258,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       // --- E. France and French-Speaking Jurisdictions ---
       [/\bab\s*\(?publ\)?(?=[,.\s]|$)/gi, "Aktiebolag (publ)"],
       [/\bs\.?a\.?s\.?u\.?(?=[,.\s]|$)/gi, "Société par actions simplifiée unipersonnelle"],
-      [/\bs[aà]\.?r\.?l\.?(?=[,.\s]|$)/gi, "Société à responsabilité limitée"],
       [/\be\.?u\.?r\.?l\.?(?=[,.\s]|$)/gi, "Entreprise unipersonnelle à responsabilité limitée"],
       [/\bs\.?a\.?s\.?(?=[,.\s]|$)/gi, "Société par actions simplifiée"],
-      [/\bs\.?r\.?l\.?(?=[,.\s]|$)/gi, "Società a responsabilità limitata"],
       [/\bs\.?n\.?c\.?(?=[,.\s]|$)/gi, "Société en nom collectif"],
       [/\bs\.?c\.?a\.?(?=[,.\s]|$)/gi, "Société en commandite par actions"],
       [/\bs\.?c\.?s\.?(?=[,.\s]|$)/gi, "Société en commandite simple"],
 
       // --- A. United States and United Kingdom (acronyms) ---
       [/\bp\.?l\.?l\.?c\.?(?=[,.\s]|$)/gi, "Professional Limited Liability Company"],
-      [/\bl\.?l\.?c\.?(?=[,.\s]|$)/gi, "Limited Liability Company"],
+      [/\bl\.?l\.?c\.?(?=\s*[,;:]?$)/gi, "Limited Liability Company"],
       [/\bl\.?l\.?p\.?(?=[,.\s]|$)/gi, "Limited Liability Partnership"],
       [/\bp\.?l\.?c\.?(?=[,.\s]|$)/gi, "Public Limited Company"],
       [/\bcic\b/gi, "Community Interest Company"],
@@ -252,7 +278,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       // --- G. Central & Eastern Europe, F. Nordics ---
       [/\bs\.?r\.?o\.?(?=[,.\s]|$)/gi, "Společnost s ručením omezeným"],
-      [/\ba\.?s\.?(?=\s*$|[,.])/gi, "Akciová společnost"],
       [/\bd\.?o\.?o\.?(?=[,.\s]|$)/gi, "Društvo s ograničenom odgovornošću"],
       [/\bd\.?d\.?(?=\s*$|[,.])/gi, "Dioničko društvo"],
       [/\bkft\.?(?=[,.\s]|$)/gi, "Korlátolt felelősségű társaság"],
@@ -271,14 +296,76 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       [/\boy\b(?=\s*$|[,.])/gi, "Osakeyhtiö"],
       [/\basa\b(?=\s*$|[,.])/gi, "Allmennaksjeselskap"],
       [/\baps\b(?=\s*$|[,.])/gi, "Anpartsselskab"],
-      [/\ba\/s\b/gi, "Aktieselskab"],
 
       // --- G. Spain / Italy / Portugal ---
-      [/\bs\.?p\.?a\.?(?=[,.\s]|$)/gi, "Società per Azioni"],
-      [/\bs\.?l\.?(?=\s*$|[,.])/gi, "Sociedad Limitada"],
-      [/\bs\.?a\.?(?=\s*$|[,.])/gi, "Société anonyme"],
       [/\blda\.?(?=[,.\s]|$)/gi, "Limitada"],
       [/\bltda\.?(?=[,.\s]|$)/gi, "Limitada"],
+
+    // --- United States: additional entity types ---
+    [/\b(?:l3c|low[\s-]+profit\s+l\.?l\.?c\.?)\b/gi, "Low-Profit Limited Liability Company"],
+    [/\bprofessional\s+corporation\b(?=[,.\s]|$)/gi, "Professional Corporation"],
+    [/\bprofessional\s+association\b(?=[,.\s]|$)/gi, "Professional Association"],
+    [/\b(?:limited\s+liability\s+limited\s+partnership|l\.?l\.?l\.?p\.?)\b(?=[,.\s]|$)/gi, "Limited Liability Limited Partnership"],
+    [/\b(?:limited\s+partnership\s+association|l\.?p\.?a\.?)\b(?=[,.\s]|$)/gi, "Limited Partnership Association"],
+    [/\b(?:benefit\s+corporation|bcorp)\b(?=[,.\s]|$)/gi, "Benefit Corporation"],
+
+    // --- United Kingdom and Ireland ---
+    [/\b(?:clg|company\s+limited\s+by\s+guarantee)\b(?=[,.\s]|$)/gi, "Company Limited by Guarantee"],
+    [/\b(?:dac|designated\s+activity\s+company)\b(?=[,.\s]|$)/gi, "Designated Activity Company"],
+    [/\b(?:scio)\b(?=[,.\s]|$)/gi, "Scottish Charitable Incorporated Organisation"],
+    [/\b(?:community\s+benefit\s+society|bencom)\b(?=[,.\s]|$)/gi, "Community Benefit Society"],
+
+    // --- India ---
+    [/\b(?:section\s*8\s+company)\b/gi, "Section 8 Company"],
+    [/\b(?:producer\s+company)\b/gi, "Producer Company"],
+    [/\b(?:nidhi\s+limited|nidhi\s+company)\b/gi, "Nidhi Company"],
+
+    // --- Canada ---
+    [/\b(?:ltee|ltée)\b(?=[,.\s]|$)/gi, "Limitée"],
+    [/\b(?:s\.?e\.?n\.?c\.?)\b(?=[,.\s]|$)/gi, "Société en nom collectif"],
+    [/\b(?:s\.?e\.?c\.?)\b(?=[,.\s]|$)/gi, "Société en commandite"],
+
+    // --- Australia and New Zealand ---
+    [/\b(?:incorporated\s+association)\b/gi, "Incorporated Association"],
+
+    // --- South Africa ---
+    [/\b(?:pty\.?\s*\(\s*ltd\.?\s*\)|proprietary\s*\(\s*limited\s*\))\b/gi, "Proprietary Limited"],
+    [/\bnon[\s-]*profit\s+company\b(?=[,.\s]|$)/gi, "Non-Profit Company"],
+
+    // --- Switzerland ---
+    [/\b(?:sagl|sàrl)\b(?=[,.\s]|$)/gi, "Société à responsabilité limitée"],
+
+    // --- France ---
+    [/\b(?:sci)\b(?=[,.\s]|$)/gi, "Société civile immobilière"],
+
+    // --- China and Hong Kong ---
+    [/\b(?:foreign[\s-]+invested\s+enterprise|fie)\b(?=[,.\s]|$)/gi, "Foreign-Invested Enterprise"],
+    [/\b(?:hk\s+limited|hong\s+kong\s+limited)\b(?=[,.\s]|$)/gi, "Hong Kong Limited Company"],
+
+    // --- Japan ---
+
+    // --- Indonesia ---
+    [/\bperseroan\s+terbatas\b(?=[,.\s]|$)/gi, "Perseroan Terbatas"],
+    [/\b(?:perum)\b(?=[,.\s]|$)/gi, "Perusahaan Umum"],
+    [/\b(?:persero)\b(?=[,.\s]|$)/gi, "Perusahaan Perseroan"],
+
+    // --- Philippines ---
+
+    // --- Turkey ---
+
+    // --- Brazil ---
+
+    // --- Argentina ---
+
+    // --- Mexico ---
+
+    // --- Saudi Arabia and Gulf ---
+    [/\b(?:psc|public\s+shareholding\s+company)\b(?=[,.\s]|$)/gi, "Public Shareholding Company"],
+    [/\b(?:prjsc|private\s+joint\s+stock\s+company)\b(?=[,.\s]|$)/gi, "Private Joint Stock Company"],
+
+    // --- Africa ---
+    [/\b(?:g\.?t\.?\s*ltd\.?)\b(?=[,.\s]|$)/gi, "Guarantee Trust Limited"],
+
 
       // --- D. Germany / Austria / Switzerland single words ---
       [/\bgmbh\b/gi, "Gesellschaft mit beschränkter Haftung"],
@@ -300,35 +387,35 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       // --- I. Southeast Asia, J. Australia / Africa ---
       [/\bbhd\.?(?=[,.\s]|$)/gi, "Berhad"],
-      [/(?:^|\b)p\.?t\.?\s+(?=[A-Za-z0-9])/gi, "Perseroan Terbatas "],
-      [/\bpt\b(?=\s*$|[,.])/gi, "Perseroan Terbatas"],
       [/\btbk\.?(?=[,.\s]|$)/gi, "Terbuka"],
       [/\bcv\b(?=\s*$|[,.])/gi, "Commanditaire Vennootschap"],
       [/\bopc\b(?=\s*$|[,.])/gi, "One Person Company"],
       [/\bnpc\b(?=\s*$|[,.])/gi, "Non-Profit Company"],
       [/\bcc\b(?=\s*$|[,.])/gi, "Close Corporation"],
       [/\bksc\b(?=\s*$|[,.])/gi, "Kuwait Shareholding Company"],
-      [/\bl\.?p\.?(?=\s*$|[,.])/gi, "Limited Partnership"],
       [/\bab\b(?=\s*$|[,.])/gi, "Aktiebolag"],
 
       // --- A. United States and United Kingdom (single words) ---
       [/\binc\.?(?=[,.\s]|$)/gi, "Incorporated"],
       [/\bcorp\.?(?=[,.\s]|$)/gi, "Corporation"],
       [/\bltd\.?(?=[,.\s]|$)/gi, "Limited"],
-      [/\bpvt\.?(?=[,.\s]|$)/gi, "Private"],
       [/\bco\.?(?=\s+(?:limited|ltd|incorporated|corporation)\b)/gi, "Company"],
       [/\bco\.?(?=[,]?\s*$)/gi, "Company"]
     ];
 
     for (const [rx, rep] of EXPANSIONS) {
-      s = s.replace(rx, rep);
+      const titleCasedRep = rep.replace(
+        /(^|[^\p{L}\p{N}])(\p{L})/gu,
+        (_, separator, letter) => separator + letter.toUpperCase()
+      );
+      s = s.replace(rx, titleCasedRep);
     }
 
     return s;
   }
 
   // Format Company Name according to Rule 4 & Section 5.3 (Expand legal suffixes)
-  function formatCompanyName(raw) {
+  function formatCompanyName(raw, countryName = "") {
     if (!raw) return "";
     let name = clean(raw);
 
@@ -368,7 +455,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     name = name.replace(SMALL_WORDS, m => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase());
 
     // 7. Section 5.3: Expand all international legal suffixes to full form
-    name = expandLegalSuffixes(name);
+    name = expandLegalSuffixes(name, countryName);
 
     // 8. Clean duplicate punctuation, extra spaces, trailing/leading commas or dots
     name = clean(name.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, ""));
@@ -482,12 +569,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   }
 
   // Rule 4: Company Name — Full Form Extraction with Extended Content & Suffix Analysis
-  function extractCompanyName(doc, text, url) {
+  function extractCompanyName(doc, text, url, formatName = true, countryName = "") {
     let legalName = "";
     let brandName = "";
+    const finishName = value => formatName ? formatCompanyName(value, countryName) : value;
 
     // Comprehensive corporate suffix pattern (Section 5.3 International Legal Suffixes)
-    const corpSuffix = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|srl|spa|kft|zrt|nyrt|s\.r\.o\.|a\.s\.|d\.o\.o\.|pvt\.?\s*ltd\.?|private\s+limited|pte\.?\s*ltd\.?|pty\.?\s*ltd\.?|proprietary\s+limited|sdn\.?\s*bhd\.?|berhad|bhd\.?|tbk\.?|wll|pjsc|fze|fzco|fz-llc)\b/i;
+    const corpSuffix = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|srl|spa|kft|zrt|nyrt|s\.r\.o\.|a\.s\.|d\.o\.o\.|pvt\.?\s*ltd\.?|private\s+limited|pte\.?\s*ltd\.?|pty\.?\s*ltd\.?|proprietary\s+limited|sdn\.?\s*bhd\.?|berhad|bhd\.?|tbk\.?|wll|pjsc|fze|fzco|fz-llc|l3c|p\.?c\.?|p\.?a\.?|l\.?l\.?l\.?p\.?|l\.?p\.?a\.?|bcorp|clg|ulc|dac|scio|bencom|lp|section\s*8\s+company|producer\s+company|nidhi\s+(?:limited|company)|s\.?e\.?n\.?c\.?|s\.?e\.?c\.?|incorporated\s+association|npc|wfoe|wofe|fie|g\.?k\.?|y\.?k\.?|p\.?t\.?|perum|persero|s\.?c\.?l\.?|s\.?c\.?|psc|prjsc|g\.?t\.?\s*ltd)\b/i;
 
     // Helper: checks if candidate string contains a real corporate suffix
     const hasCorpSuffix = str => {
@@ -503,8 +591,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       let s = clean(str)
         .replace(/^(?:copyright|©|\(c\))\s*(?:[0-9]{4})?\s*/gi, "")
         .replace(/(?:all rights?|rights reserved|company reg|reg no).*$/gi, "")
-        .replace(/\s*[|·•\-–—.,]\s*$/g, "")
-        .replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, "")
+        .replace(
+          formatName ? /\s*[|·•\-–—.,]\s*$/g : /\s*[|·•\-–—,]\s*$/g,
+          ""
+        )
+        .replace(
+          formatName ? /^[,;:\-.\s]+|[,;:\-.\s]+$/g : /^[,;:\-\s]+|[,;:\-\s]+$/g,
+          ""
+        )
         .trim();
       if (s.length >= 2 && s.length <= 80 && !/^(?:all|rights|reserved|inc|ltd|co|llc|\d+)$/i.test(s)) {
         return s;
@@ -677,7 +771,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // If a full legal name with suffix was found in Phase 1, use it!
     if (legalName) {
-      return formatCompanyName(legalName);
+      return finishName(legalName);
     }
 
     // --- PHASE 2: EXTRACT BRAND NAME CANDIDATE ---
@@ -755,7 +849,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       );
       const match = text.match(suffixSearchRegex);
       if (match && match[1]) {
-        return formatCompanyName(match[1]);
+        return finishName(match[1]);
       }
     }
 
@@ -768,14 +862,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         if (l.length >= brandName.length && l.length <= brandName.length + 30) {
           if (l.toLowerCase().startsWith(brandName.toLowerCase()) && hasCorpSuffix(l)) {
             const cand = sanitizeCandidate(l);
-            if (cand) return formatCompanyName(cand);
+            if (cand) return finishName(cand);
           }
         }
       }
     }
 
     if (brandName) {
-      return formatCompanyName(brandName);
+      return finishName(brandName);
     }
 
     // --- PHASE 4: ABSOLUTE LAST RESORT — DOMAIN FALLBACK ---
@@ -787,7 +881,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         const host = new URL(rawHref).hostname.replace(/^www\./, "");
         const domainPart = host.split(".")[0];
         if (domainPart && domainPart.length >= 2) {
-          return formatCompanyName(domainPart);
+          return finishName(domainPart);
         }
       }
     } catch { }
@@ -2761,12 +2855,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const rawAddress = addressResult.address;
     let addressSource = addressResult.source;
 
-    // 4. Extract Company Name (Rule 4) — pass url for domain-based fallback
-    const companyName = extractCompanyName(doc, text, url);
-
-    // 5. Extract Country (Rule 5 - dynamic, never hardcoded!)
+    // 4. Extract Country before formatting the legal suffix.
     // Pass raw text as phoneRaw so dial codes (+82, +49 etc.) in "Tel: +82-..." can identify country
     let countryName = detectCountry(doc, rawAddress, text, url, text);
+    const companyNameRaw = extractCompanyName(doc, text, url, false);
+    let companyName = formatCompanyName(companyNameRaw, countryName);
     const addressRegionCountry = inferCountryFromAddressRegion(rawAddress);
     let countryObj = COUNTRIES.find(c => c.name.toLowerCase() === countryName.toLowerCase());
 
@@ -2825,6 +2918,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         companyAddress = cleanAddressString(companyAddress || rawAddress, countryName, companyName);
       }
     }
+    companyName = formatCompanyName(companyNameRaw, countryName);
 
     // 7. Extract State & City (Rule 7 & 8) — check ONLY verified cleaned address (fallback to raw)
     const { state, city } = detectStateAndCity(companyAddress || rawAddress);
@@ -2882,6 +2976,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       businessType,
       companyProfile,
       companyName,
+      companyNameRaw,
       companyAddress,
       addressSource,
       countryName,

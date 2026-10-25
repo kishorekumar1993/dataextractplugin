@@ -341,6 +341,7 @@ async function crawlAndExtractDirect(targetUrl) {
           if (enData.companyName && /[a-zA-Z]{3,}/.test(enData.companyName) &&
               (!mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName))) {
             mainData.companyName = enData.companyName;
+            mainData.companyNameRaw = enData.companyNameRaw || enData.companyName;
           }
           // Prefer Latin address from English subpage
           if (enData.companyAddress && /[a-zA-Z]{5,}/.test(enData.companyAddress) &&

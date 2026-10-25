@@ -249,6 +249,7 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
           if (enData.companyName && /[a-zA-Z]{3,}/.test(enData.companyName) &&
               (!mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName))) {
             mainData.companyName = enData.companyName;
+            mainData.companyNameRaw = enData.companyNameRaw || enData.companyName;
           }
           // If English address has Latin letters, prefer it
           if (enData.companyAddress && /[a-zA-Z]{5,}/.test(enData.companyAddress) &&

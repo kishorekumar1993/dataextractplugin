@@ -472,23 +472,57 @@
       { raw: "AirAsia Sdn. Bhd.", expected: "AirAsia Sendirian Berhad" },
       { raw: "BHP Group Pty Ltd", expected: "BHP Group Proprietary Limited" },
       { raw: "Siemens AG", expected: "Siemens Aktiengesellschaft" },
-      { raw: "BMW GmbH & Co. KG", expected: "BMW Gesellschaft mit beschränkter Haftung & Co. Kommanditgesellschaft" },
-      { raw: "Acme S.A.", expected: "Acme Société anonyme" },
-      { raw: "Acme S.R.L.", expected: "Acme Società a responsabilità limitata" },
+      { raw: "BMW GmbH & Co. KG", expected: "BMW Gesellschaft Mit Beschränkter Haftung & Co. Kommanditgesellschaft" },
+      { raw: "Acme S.A.", expected: "Acme S.A" },
+      { raw: "Acme S.R.L.", expected: "Acme S.R.L" },
+      { raw: "Acme S.A.S.", expected: "Acme Société Par Actions Simplifiée" },
+      { raw: "Acme S.A.S.U.", expected: "Acme Société Par Actions Simplifiée Unipersonnelle" },
       { raw: "Acme BV", expected: "Acme Besloten Vennootschap" },
       { raw: "Acme NV", expected: "Acme Naamloze Vennootschap" },
-      { raw: "Grupo Bimbo S.A. de C.V.", expected: "Grupo Bimbo Sociedad Anónima de Capital Variable" },
+      { raw: "Grupo Bimbo S.A. de C.V.", country: "Mexico", expected: "Grupo Bimbo Sociedad Anónima De Capital Variable" },
+      { raw: "Acme S.L.", expected: "Acme S.L" },
+      { raw: "Acme A.S.", expected: "Acme A.S" },
+      { raw: "Acme L.P.", expected: "Acme L.P" },
+      { raw: "Acme P.A.", expected: "Acme P.A" },
+      { raw: "Acme PVT", expected: "Acme PVT" },
+      { raw: "Acme Limited Liability Company", expected: "Acme Limited Liability Company" },
+      { raw: "Acme LLC Company", expected: "Acme LLC Company" },
+      { raw: "Acme FZ-LLC", expected: "Acme Free Zone Limited Liability Company" },
       { raw: "Kolorbond (UK) Ltd.", expected: "Kolorbond UK Limited" },
       { raw: "(주) 레존텍", expected: "Jusik Hoesa 레존텍" }
     ];
     let allSuffixPassed = true;
     const suffixResults = {};
     for (const tc of suffixTestCases) {
-      const actual = Extractor.formatCompanyName(tc.raw);
+      const actual = Extractor.formatCompanyName(tc.raw, tc.country);
       suffixResults[tc.raw] = actual;
       if (actual !== tc.expected) {
         allSuffixPassed = false;
         console.error(`Suffix test failed for "${tc.raw}": expected "${tc.expected}", got "${actual}"`);
+      }
+    }
+    const jurisdictionSuffixCases = [
+      { raw: "Acme S.A.", country: "France", expected: "Acme Société Anonyme" },
+      { raw: "Acme S.A.", country: "Brazil", expected: "Acme Sociedade Anônima" },
+      { raw: "Acme S.A.", country: "Italy", expected: "Acme Società Per Azioni" },
+      { raw: "Acme S.A.", country: "Switzerland", expected: "Acme Société Anonyme" },
+      { raw: "Acme S.A.B. de C.V.", country: "Mexico", expected: "Acme Sociedad Anónima Bursátil De Capital Variable" },
+      { raw: "Acme S.L.", country: "Spain", expected: "Acme Sociedad Limitada" },
+      { raw: "Acme A.S.", country: "Czechia", expected: "Acme Akciová Společnost" },
+      { raw: "Acme A.S.", country: "Turkey", expected: "Acme Anonim Şirket" },
+      { raw: "Acme ULC", country: "Canada", expected: "Acme Unlimited Liability Company" },
+      { raw: "Acme ULC", country: "Ireland", expected: "Acme Unlimited Company" },
+      { raw: "Acme L.P.", country: "United States Of America", expected: "Acme Limited Partnership" },
+      { raw: "Acme P.A.", country: "United States Of America", expected: "Acme Professional Association" },
+      { raw: "Acme P.C.", country: "United States Of America", expected: "Acme Professional Corporation" },
+      { raw: "Acme PT", country: "Indonesia", expected: "Acme Perseroan Terbatas" }
+    ];
+    for (const tc of jurisdictionSuffixCases) {
+      const actual = Extractor.formatCompanyName(tc.raw, tc.country);
+      suffixResults[`${tc.raw} (${tc.country})`] = actual;
+      if (actual !== tc.expected) {
+        allSuffixPassed = false;
+        console.error(`Jurisdiction suffix test failed for "${tc.raw}" in ${tc.country}: expected "${tc.expected}", got "${actual}"`);
       }
     }
     renderTest("Test 6: Section 5.3 International Legal Suffix Expansion (Full Form)", allSuffixPassed, suffixResults);
