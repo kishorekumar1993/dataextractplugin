@@ -949,6 +949,45 @@
     const passStateFL = resFL.state === "Y" && resFL.city === "Y";
     qcIssuesChecks["Florida FL State/City (Y/N)"] = { expected: { state: "Y", city: "Y" }, actual: resFL, pass: passStateFL };
 
+    const countryDetectionCases = [
+      { address: "Prague, Czech Republic", expected: "Czech Republic" },
+      { address: "Aarhus, Denmark", expected: "Denmark" },
+      { address: "Cairo, Egypt", expected: "Egypt" },
+      { address: "London, England, United Kingdom", expected: "England" },
+      { address: "Paris, République française", expected: "France" },
+      { address: "Berlin, Deutschland", expected: "Germany" },
+      { address: "Athens, Ελλάδα", expected: "Greece" },
+      { address: "Hong Kong SAR", expected: "Hong Kong" },
+      { address: "400 Murray Road, Cincinnati, Ohio 45217", expected: "United States Of America" },
+      { address: "400 Murray Road, Cincinnati, OH 45217", expected: "United States Of America" },
+      { address: "400 Murray Road, Cincinnati, Ohio", expected: "United States Of America" },
+      { address: "Toronto, ON M5V 3L9", expected: "Canada" },
+      { address: "Perth, WA 6000", expected: "Australia" }
+    ];
+    const countryDetectionResults = countryDetectionCases.map(testCase => {
+      const actual = Extractor.detectCountry(null, testCase.address, testCase.address, "https://example.com", "");
+      return { ...testCase, actual, pass: actual === testCase.expected };
+    });
+    const passCountryDetection = countryDetectionResults.every(result => result.pass);
+    qcIssuesChecks["Country detection: Czech Republic, Denmark, Egypt, England, France, Germany, Greece & Hong Kong"] = {
+      actual: countryDetectionResults,
+      pass: passCountryDetection
+    };
+    const ohioAddress = "400 Murray Road, Cincinnati, Ohio 45217";
+    const ohioCountry = Extractor.detectCountry(
+      null,
+      ohioAddress,
+      `${ohioAddress} Unrelated footer: Canada`,
+      "https://example.com",
+      ""
+    );
+    const passOhioCountry = ohioCountry === "United States Of America";
+    qcIssuesChecks["Country detection: Ohio state overrides unrelated page country mention"] = {
+      expected: "United States Of America",
+      actual: ohioCountry,
+      pass: passOhioCountry
+    };
+
     const thailandAddress = "111 Moo.6 Tambon Khunkong, Amphoe Hangdong, 50230 Chiangmai";
     const thailandCountry = Extractor.detectCountry(null, thailandAddress, `${thailandAddress} Canada`, "http://www.waterth.com", "");
     const passThailandCountry = thailandCountry === "Thailand";
@@ -961,6 +1000,8 @@
     const allQcIssuesPassed = (
       passState1 &&
       passStateFL &&
+      passCountryDetection &&
+      passOhioCountry &&
       passThailandCountry &&
       passTitleCase &&
       passTrading &&

@@ -46,7 +46,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   // UK Localities (Rule 5: If England and United Kingdom both mentioned, must take England!)
   const UK_LOCALITIES = [
-    { name: "England", regex: /\b(england|london|birmingham|manchester|liverpool|leeds|sheffield|bristol)\b/i },
+    { name: "England", regex: /\b(england|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|nottingham|leicester|coventry|wolverhampton|stoke[- ]on[- ]trent|derby|southampton|portsmouth|oxford|cambridge|york|bath|newcastle(?: upon tyne)?|brighton|plymouth|exeter|norwich|milton keynes|reading|luton|blackpool|middlesbrough|sunderland|wakefield|worcester|chester|canterbury)\b/i },
     { name: "Scotland", regex: /\b(scotland|edinburgh|glasgow|aberdeen|dundee)\b/i },
     { name: "Wales", regex: /\b(wales|cardiff|swansea|newport)\b/i },
     { name: "Northern Ireland", regex: /\b(northern ireland|belfast|derry)\b/i }
@@ -63,12 +63,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { name: "Japan", iso: "JP", aliases: ["japan", "nippon", "nihon", "日本"], tlds: [".jp", ".co.jp"], dialCode: "81" },
     { name: "Canada", iso: "CA", aliases: ["canada"], tlds: [".ca"], dialCode: "1" },
     { name: "Australia", iso: "AU", aliases: ["australia"], tlds: [".au", ".com.au"], dialCode: "61" },
-    { name: "France", iso: "FR", aliases: ["france", "république française"], tlds: [".fr"], dialCode: "33" },
+    { name: "France", iso: "FR", aliases: ["france", "french republic", "république française"], tlds: [".fr"], dialCode: "33" },
     { name: "Italy", iso: "IT", aliases: ["italy", "italia"], tlds: [".it"], dialCode: "39" },
     { name: "Spain", iso: "ES", aliases: ["spain", "españa"], tlds: [".es"], dialCode: "34" },
     { name: "Netherlands", iso: "NL", aliases: ["netherlands", "nederland", "holland"], tlds: [".nl"], dialCode: "31" },
     { name: "Taiwan", iso: "TW", aliases: ["taiwan", "republic of china", "taiwan, roc", "台湾"], tlds: [".tw", ".com.tw"], dialCode: "886" },
-    { name: "Hong Kong", iso: "HK", aliases: ["hong kong", "hong kong sar", "香港"], tlds: [".hk", ".com.hk"], dialCode: "852" },
+    { name: "Hong Kong", iso: "HK", aliases: ["hong kong", "hong kong sar", "hong kong special administrative region", "香港"], tlds: [".hk", ".com.hk"], dialCode: "852" },
     { name: "Singapore", iso: "SG", aliases: ["singapore"], tlds: [".sg", ".com.sg"], dialCode: "65" },
     { name: "Malaysia", iso: "MY", aliases: ["malaysia"], tlds: [".my", ".com.my"], dialCode: "60" },
     { name: "Vietnam", iso: "VN", aliases: ["vietnam", "việt nam"], tlds: [".vn", ".com.vn"], dialCode: "84" },
@@ -89,16 +89,18 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { name: "Croatia", iso: "HR", aliases: ["croatia", "hrvatska"], tlds: [".hr"], dialCode: "385" },
     { name: "Cyprus", iso: "CY", aliases: ["cyprus"], tlds: [".cy"], dialCode: "357" },
     { name: "Austria", iso: "AT", aliases: ["austria", "österreich"], tlds: [".at"], dialCode: "43" },
-    { name: "Denmark", iso: "DK", aliases: ["denmark", "danmark"], tlds: [".dk"], dialCode: "45" },
+    { name: "Denmark", iso: "DK", aliases: ["denmark", "danmark", "kingdom of denmark"], tlds: [".dk"], dialCode: "45" },
     { name: "Norway", iso: "NO", aliases: ["norway", "norge"], tlds: [".no"], dialCode: "47" },
     { name: "Finland", iso: "FI", aliases: ["finland", "suomi"], tlds: [".fi"], dialCode: "358" },
     { name: "Ireland", iso: "IE", aliases: ["ireland"], tlds: [".ie"], dialCode: "353" },
     { name: "New Zealand", iso: "NZ", aliases: ["new zealand"], tlds: [".nz", ".co.nz"], dialCode: "64" },
     { name: "South Africa", iso: "ZA", aliases: ["south africa"], tlds: [".za", ".co.za"], dialCode: "27" },
-    { name: "Egypt", iso: "EG", aliases: ["egypt"], tlds: [".eg"], dialCode: "20" },
+    { name: "Egypt", iso: "EG", aliases: ["egypt", "arab republic of egypt", "مصر"], tlds: [".eg"], dialCode: "20" },
     { name: "Israel", iso: "IL", aliases: ["israel"], tlds: [".il"], dialCode: "972" },
     { name: "Pakistan", iso: "PK", aliases: ["pakistan"], tlds: [".pk"], dialCode: "92" },
-    { name: "Bangladesh", iso: "BD", aliases: ["bangladesh"], tlds: [".bd"], dialCode: "880" }
+    { name: "Bangladesh", iso: "BD", aliases: ["bangladesh"], tlds: [".bd"], dialCode: "880" },
+    { name: "Czech Republic", iso: "CZ", aliases: ["czech republic", "czechia", "česko"], tlds: [".cz"], dialCode: "420" },
+    { name: "Greece", iso: "GR", aliases: ["greece", "hellas", "hellenic republic", "ellada", "ελλάδα"], tlds: [".gr"], dialCode: "30" }
   ];
 
   // Global City/State to Country Mapping
@@ -123,6 +125,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Helper escape regex
   function escapeRegExp(string) {
     return String(string || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function matchesCountryTerm(text, term) {
+    if (!text || !term) return false;
+    if (/[^\x00-\x7F]/.test(term)) {
+      return text.toLocaleLowerCase().includes(term.toLocaleLowerCase());
+    }
+    return new RegExp(`\\b${escapeRegExp(term)}\\b`, "i").test(text);
   }
 
   // Capitalize first letter of every word (Title Case) — preserves ALL-CAPS corporate suffixes
@@ -734,6 +744,28 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   }
 
   // Rule 5: Country Name (Full form; Locality priority: England > United Kingdom; NEVER hardcoded!)
+  function inferCountryFromAddressRegion(address) {
+    if (!address) return "";
+
+    for (const [countryName, regions] of Object.entries(POSTAL_REGION_ABBREVIATIONS)) {
+      if (Object.values(regions).some(regionName => matchesCountryTerm(address, regionName))) {
+        return countryName;
+      }
+    }
+
+    const regionCodePatterns = {
+      "United States Of America": /\b(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\s+\d{5}(?:-\d{4})?\b/i,
+      Canada: /\b(?:AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)\s+[A-Z]\d[A-Z]\s*\d[A-Z]\d\b/i,
+      Australia: /\b(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4}\b/i
+    };
+
+    for (const [countryName, pattern] of Object.entries(regionCodePatterns)) {
+      if (pattern.test(address)) return countryName;
+    }
+
+    return "";
+  }
+
   function detectCountry(doc, addressText, fullText, url, phoneRaw) {
     const combinedAddr = `${addressText || ""}`.toLowerCase();
     // NOTE: Only scan addressText + short meta context for UK/cities, NOT the full body text!
@@ -792,13 +824,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (addressText) {
       for (const c of COUNTRIES) {
         for (const alias of c.aliases) {
-          const regex = new RegExp(`\\b${escapeRegExp(alias)}\\b`, "i");
-          if (regex.test(addressText)) return c.name;
+          if (matchesCountryTerm(addressText, alias)) return c.name;
         }
       }
     }
 
-    // 4. Match address text against City/State to Country Map
+    // 4. Infer country from a state, province, or district in the address.
+    const regionCountry = inferCountryFromAddressRegion(addressText);
+    if (regionCountry) return regionCountry;
+
+    // 5. Match address text against City/State to Country Map
     if (addressText) {
       for (const mapping of CITY_STATE_COUNTRY_MAP) {
         if (mapping.regex.test(addressText)) {
@@ -807,7 +842,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
-    // 5. Match domain TLD (e.g. .co.kr -> South Korea, .de -> Germany, .jp -> Japan, .co.uk -> England)
+    // 6. Match domain TLD (e.g. .co.kr -> South Korea, .de -> Germany, .jp -> Japan, .co.uk -> England)
     try {
       const host = new URL(url).hostname.toLowerCase();
       if (host.endsWith(".uk") || host.endsWith(".co.uk")) {
@@ -823,7 +858,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     } catch { }
 
-    // 6. Match Phone Number Dial Code (e.g. +82 -> South Korea, +49 -> Germany, +91 -> India, +44 -> England)
+    // 7. Match Phone Number Dial Code (e.g. +82 -> South Korea, +49 -> Germany, +91 -> India, +44 -> England)
     const phoneToTest = `${phoneRaw || ""} ${fullText || ""}`;
     const dialCodeMatches = phoneToTest.match(/(?:Tel|Phone|Telephone|T\.)\s*[:.-]?\s*\+([0-9]{1,4})/gi) || [];
     for (const d of dialCodeMatches) {
@@ -841,7 +876,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
-    // 7. Match full body text against City/State to Country Map (restricted to first 500 chars of header/hero to avoid false positives)
+    // 8. Match full body text against City/State to Country Map (restricted to first 500 chars of header/hero to avoid false positives)
     const bodySnippet = `${addressText || ""} ${(fullText || "").slice(0, 500)}`;
     for (const mapping of CITY_STATE_COUNTRY_MAP) {
       if (mapping.regex.test(bodySnippet)) {
@@ -849,12 +884,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
-    // 8. Match body snippet against country aliases
+    // 9. Match body snippet against country aliases
     for (const c of COUNTRIES) {
       for (const alias of c.aliases) {
         if (alias.length < 4) continue; // skip very short aliases that cause false positives
-        const regex = new RegExp(`\\b${escapeRegExp(alias)}\\b`, "i");
-        if (regex.test(bodySnippet)) return c.name;
+        if (matchesCountryTerm(bodySnippet, alias)) return c.name;
       }
     }
 
@@ -1363,7 +1397,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     for (const countryName of Object.keys(POSTAL_REGION_ABBREVIATIONS)) {
       const country = COUNTRIES.find(item => item.name === countryName);
       const names = [countryName, ...(country?.aliases || [])];
-      if (names.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(context))) {
+      if (names.some(name => matchesCountryTerm(context, name))) {
         return countryName;
       }
     }
