@@ -990,12 +990,24 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(address);
     };
 
-    const isAddressShaped = address => {
+        const isAddressShaped = address => {
+      // 1. Reject if it contains a domain name (e.g. "Dhtonline.Co.Uk", "example.com")
+      if (/\b(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|mil|int|ie|uk|us|ca|au|de|fr|cn|jp|in|br|ru|es|it|nl|kr|tw|hk|sg|my|vn|th|id|ph|tr|ae|sa|mx|pl|ch|se|be|bg|hr|cy|at|dk|no|fi|nz|za|eg|il|pk|bd|cz|gr)\b/i.test(address)) {
+        return false;
+      }
+
+      const segments = address.split(",").map(segment => segment.trim()).filter(Boolean);
+
+      // 2. Reject if it looks like a menu/list (4+ segments, no digits, short words)
+      if (!/\d/.test(address) && segments.length >= 4 && segments.every(s => s.split(/\s+/).length <= 5)) {
+        return false;
+      }
+
       const countryMatch = COUNTRIES.some(country =>
         [country.name, ...(country.aliases || [])]
           .some(term => term && matchesCountryTerm(address, term))
       );
-      const segments = address.split(",").map(segment => segment.trim()).filter(Boolean);
+      
       const isCountrySegment = segment =>
         COUNTRIES.some(country =>
           [country.name, ...(country.aliases || [])]
@@ -1005,7 +1017,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const nonCountryAddress = segments.filter(segment => !isCountrySegment(segment)).join(", ");
       const regionMatch = POSTAL_REGION_NAMES_REGEX.test(nonCountryAddress);
       const cityMatch = CITY_STATE_COUNTRY_MAP.some(mapping => mapping.regex.test(nonCountryAddress));
-      const detectedCountry = detectCountry(null, address, address, pageUrl, "");
+      
+      // 👇 FIX: Removed pageUrl here so it doesn't false-positive on the .ie TLD 👇
+      const detectedCountry = detectCountry(null, address, address, "", ""); 
+      
       const detectedLocation = detectStateAndCity(nonCountryAddress);
       const streetNumberMatch =
         /\b\d+[^\n]{0,25}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway|district|zone|block|sector|plot|suite|ste\.?|floor|fl\.?|unit|building|bldg\.?|tower|house)\b/i
@@ -1015,7 +1030,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (!streetNumberMatch) {
         if (/\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\b/i.test(address)) return false;
         if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2}\b/i.test(address)) return false;
-        if (/\b\d{1,2},?\s+(?:19|20)\d{2}\b/i.test(address)) return false;
+        if (/\b\d{1,2},?\s+(?:19|20)\d{2}\b/.test(address)) return false;
       }
 
       if (!(countryMatch || postalMatch || regionMatch || cityMatch || streetNumberMatch ||
@@ -1053,6 +1068,70 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         detectedLocation.city !== "N";
       return locationSignal || streetNumberMatch;
     };
+    
+    // const isAddressShaped = address => {
+    //   const countryMatch = COUNTRIES.some(country =>
+    //     [country.name, ...(country.aliases || [])]
+    //       .some(term => term && matchesCountryTerm(address, term))
+    //   );
+    //   const segments = address.split(",").map(segment => segment.trim()).filter(Boolean);
+    //   const isCountrySegment = segment =>
+    //     COUNTRIES.some(country =>
+    //       [country.name, ...(country.aliases || [])]
+    //         .some(term => term && matchesCountryTerm(segment, term))
+    //     );
+    //   const countrySegmentCount = segments.filter(isCountrySegment).length;
+    //   const nonCountryAddress = segments.filter(segment => !isCountrySegment(segment)).join(", ");
+    //   const regionMatch = POSTAL_REGION_NAMES_REGEX.test(nonCountryAddress);
+    //   const cityMatch = CITY_STATE_COUNTRY_MAP.some(mapping => mapping.regex.test(nonCountryAddress));
+    //   const detectedCountry = detectCountry(null, address, address, pageUrl, "");
+    //   const detectedLocation = detectStateAndCity(nonCountryAddress);
+    //   const streetNumberMatch =
+    //     /\b\d+[^\n]{0,25}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway|district|zone|block|sector|plot|suite|ste\.?|floor|fl\.?|unit|building|bldg\.?|tower|house)\b/i
+    //       .test(address);
+    //   const postalMatch = hasPostalCode(address, streetNumberMatch);
+
+    //   if (!streetNumberMatch) {
+    //     if (/\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\b/i.test(address)) return false;
+    //     if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2}\b/i.test(address)) return false;
+    //     if (/\b\d{1,2},?\s+(?:19|20)\d{2}\b/i.test(address)) return false;
+    //   }
+
+    //   if (!(countryMatch || postalMatch || regionMatch || cityMatch || streetNumberMatch ||
+    //       detectedCountry || detectedLocation.state !== "N" || detectedLocation.city !== "N")) {
+    //     return false;
+    //   }
+
+    //   if (/:\s+[A-Z]/.test(address) || /;/.test(address)) return false;
+
+    //   if (
+    //     countrySegmentCount >= 3 &&
+    //     !postalMatch &&
+    //     !regionMatch &&
+    //     !cityMatch &&
+    //     !streetNumberMatch &&
+    //     detectedLocation.state === "N" &&
+    //     detectedLocation.city === "N"
+    //   ) {
+    //     return false;
+    //   }
+
+    //   if (segments.some(segment => segment.split(/\s+/).filter(Boolean).length > 8)) {
+    //     return false;
+    //   }
+
+    //   const tokens = address.toLowerCase().split(/\s+/).filter(Boolean);
+    //   const proseHits = (address.toLowerCase().match(
+    //     /\b(?:for|with|using|the|that|which|this|is|are|can|will|from|into|it|its|their|our|your|we|you|they)\b/g
+    //   ) || []).length;
+    //   if (tokens.length && proseHits / tokens.length > 0.3) return false;
+
+    //   const locationSignal = countryMatch || postalMatch || regionMatch || cityMatch ||
+    //     Boolean(detectedCountry) ||
+    //     detectedLocation.state !== "N" ||
+    //     detectedLocation.city !== "N";
+    //   return locationSignal || streetNumberMatch;
+    // };
 
     const addCandidate = (value, source, priority = 0) => {
       const address = normalizeAddress(value);
