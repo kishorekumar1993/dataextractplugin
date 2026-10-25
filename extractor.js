@@ -208,16 +208,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const countryRules = countryExpansions.find(entry =>
       entry.countries.some(value => value.replace(/[^a-z]/g, "") === country)
     );
-    console.log("[LEGAL SUFFIX DEBUG]", {
-      input: name,
-      country: countryName,
-      beforeExpansion: s
-    });
     if (countryRules) {
       for (const [rx, rep] of countryRules.rules) {
-        const titleCasedRep = country === "italy" ? rep : rep.replace(
-          /(^|[^\p{L}\p{N}])(\p{L})/gu,
-          (_, separator, letter) => separator + letter.toUpperCase()
+        const titleCasedRep = rep.replace(/\p{L}+/gu, word =>
+          word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase()
         );
         s = s.replace(rx, titleCasedRep);
       }
@@ -408,15 +402,30 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     ];
 
     for (const [rx, rep] of EXPANSIONS) {
-      const titleCasedRep = rep.replace(
-        /(^|[^\p{L}\p{N}])(\p{L})/gu,
-        (_, separator, letter) => separator + letter.toUpperCase()
+      const titleCasedRep = rep.replace(/\p{L}+/gu, word =>
+        word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase()
       );
       s = s.replace(rx, titleCasedRep);
     }
 
-    console.log("[LEGAL SUFFIX RESULT]", s);
     return s;
+  }
+
+  // Some sites expose conflicting legal forms in different page regions. When
+  // the address starts with the same company name and gives a legal suffix,
+  // trust that explicit address form over a suffix found in unrelated text.
+  function alignItalianLegalSuffixFromAddress(companyName, rawAddress, countryName) {
+    if (!companyName || !rawAddress || !/^ital(?:y|ia)$/i.test(String(countryName || "").trim())) {
+      return companyName;
+    }
+
+    const addressLead = clean(rawAddress).split(/[,;\n|]/, 1)[0];
+    const legalForm = addressLead.match(/\b(S\s*\.\s*R\s*\.\s*L\s*\.?|S\s*\.\s*N\s*\.\s*C\s*\.?|S\s*\.\s*A\s*\.?|S\s*\.\s*A\s*\.\s*S\s*\.?)\s*$/i);
+    if (!legalForm) return companyName;
+
+    // The legal entity line is more authoritative than unrelated name-like
+    // text elsewhere on the site (for example, an old or malformed footer).
+    return addressLead;
   }
 
   // Format Company Name according to Rule 4 & Section 5.3 (Expand legal suffixes)
@@ -2299,6 +2308,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
+    // If the address repeats the legal entity name with an abbreviated
+    // jurisdiction suffix, remove it even when companyName is expanded.
+    addr = addr.replace(
+      /^\s*[\p{L}\p{N}&'’.\- ]{2,80}?\s+(?:S\s*\.\s*R\s*\.\s*L\s*\.?|S\s*\.\s*N\s*\.\s*C\s*\.?|S\s*\.\s*A\s*\.?|S\s*\.\s*A\s*\.\s*S\s*\.?)\s*[,;:|–—-]\s*/iu,
+      ""
+    );
+
     // Strip leading corporate name ending in Co., Ltd. or similar before street marker
     addr = addr.replace(/^[A-Za-z0-9&'.\s-]{2,60}\s+(?:Co\.,\s*Ltd\.?|Co\.,Ltd\.?|Pvt\.\s*Ltd\.?|Pty\.\s*Ltd\.?)\s*[,;:|]?\s*(?=\d|[A-Za-z0-9]+\s+(?:Road|Street|Avenue|Boulevard|Lane|Drive|Soi|Highway|Rd|St|Ave|Blvd|Ln|Dr)\b)/i, "");
     addr = addr.replace(/^(?:Ltd|Co(?!-)|Inc|LLC|Pvt Ltd|Pty Ltd)\b\.?\s*[,;:|]?\s*/i, "");
@@ -2393,13 +2409,20 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (addressCountry === "Australia") {
       addr = addr.replace(/(?:\s+|,\s*)\d{4}\s*$/, "").trim();
     }
+    if (addressCountry === "Italy" || String(countryName || "").toLowerCase() === "italy") {
+      // Italian CAP codes are five digits and may be separated by an en dash
+      // instead of a comma (for example: "15 – 27100 Pavia –").
+      addr = addr
+        .replace(/(?:^|[\s,–—-])\d{5}(?=$|[\s,–—-])/g, " ")
+        .replace(/\s*[–—]\s*/g, ", ");
+    }
     // Strip 5-digit postal code directly following 2-letter state code (e.g. "FL 33405" -> "FL")
     addr = addr.replace(/(?<=\b[A-Z]{2}\s+)\d{5}(?:-\d{4})?(?=[,\s;:]|$)/g, "").trim();
 
     // 7. Normalize punctuation and spaces.
     addr = addr
       .replace(/\s+/g, " ")
-      .replace(/^[,;:|.\-\s]+|[,;:|.\-\s]+$/g, "")
+      .replace(/^[,;:|.\-–—\s]+|[,;:|.\-–—\s]+$/g, "")
       .trim();
 
     // 9. Apply title case while preserving common acronyms and numbers.
@@ -2863,7 +2886,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 4. Extract Country before formatting the legal suffix.
     // Pass raw text as phoneRaw so dial codes (+82, +49 etc.) in "Tel: +82-..." can identify country
     let countryName = detectCountry(doc, rawAddress, text, url, text);
-    const companyNameRaw = extractCompanyName(doc, text, url, false);
+    let companyNameRaw = extractCompanyName(doc, text, url, false);
+    companyNameRaw = alignItalianLegalSuffixFromAddress(companyNameRaw, rawAddress, countryName);
     let companyName = formatCompanyName(companyNameRaw, countryName);
     const addressRegionCountry = inferCountryFromAddressRegion(rawAddress);
     let countryObj = COUNTRIES.find(c => c.name.toLowerCase() === countryName.toLowerCase());

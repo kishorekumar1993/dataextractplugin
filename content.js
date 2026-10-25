@@ -508,7 +508,10 @@
 
     let fieldsHtml = "";
     for (const def of FIELD_DEFINITIONS) {
-      const val = data[def.key] || '<span style="color:#94a3b8">Not detected</span>';
+      const rawValue = data[def.key];
+      const val = rawValue === undefined || rawValue === null || String(rawValue).trim() === ""
+        ? '<span style="color:#94a3b8">Not detected</span>'
+        : escapeHtml(rawValue);
       const isFull = ["companyAddress", "websiteName"].includes(def.key);
       fieldsHtml += `
         <div class="qc-field-preview ${isFull ? "full-width" : ""}">
@@ -542,6 +545,17 @@
       backdrop.remove();
       fillAllPortalFields(data);
     };
+  }
+
+  // Extracted page text is untrusted. Escape it before inserting the preview markup.
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, char => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    })[char]);
   }
 
   // Detect if this page is a data-entry portal form (has multiple labeled form controls for QC fields)
