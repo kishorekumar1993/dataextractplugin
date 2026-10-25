@@ -477,8 +477,11 @@ async function crawlAndExtractDirect(targetUrl) {
           if (["Y", "Available"].includes(contactData.city) && !["Y", "Available"].includes(mainData.city)) mainData.city = contactData.city;
           if (contactData.companyProfile === "Y" && mainData.companyProfile !== "Y") mainData.companyProfile = "Y";
           const isDummyPhone = num => !num || /^(?:0123456789|1234567890|12345678910|2345678910|123456789|12345678|1234567|9876543210|987654321|(\d)\1{6,})$/.test(num);
-          if (contactData.phoneNumber && (isDummyPhone(mainData.phoneNumber) || !mainData.phoneNumber)) mainData.phoneNumber = contactData.phoneNumber;
-
+          
+          // 👇 FIX: Always prioritize the Contact Page phone over the main page (bottom) phone
+          if (contactData.phoneNumber && !isDummyPhone(contactData.phoneNumber)) {
+            mainData.phoneNumber = contactData.phoneNumber;
+          }
           // Double check address city/capital against CITY_STATE_COUNTRY_MAP to guarantee address country consistency
           if (mainData.companyAddress) {
             for (const m of Extractor.CITY_STATE_COUNTRY_MAP || []) {
