@@ -48,6 +48,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   const TAIWAN_COUNTIES = ["changhua", "hsinchu", "miaoli", "nantou", "yunlin", "chiayi", "pingtung", "yilan", "hualien", "taitung", "penghu", "kinmen", "lienchiang"];
   const TAIWAN_CITIES_AND_DISTRICTS = ["keelung", "hsinchu", "chiayi", "fengyuan", "xitun", "beitun", "nantun", "dali", "wuri", "taiping", "zhubei", "toufen", "yuanlin", "douliu", "magong", "banqiao", "zhonghe", "xinzhuang", "tucheng", "luzhou", "sanchong", "yonghe", "xindian", "danshui", "tamsui"];
   const METROPOLITAN_CITY_REGIONS = ["seoul", "busan", "daegu", "incheon", "gwangju", "daejeon", "ulsan", "sejong", "beijing", "shanghai", "tianjin", "chongqing", "tokyo", "bangkok", "berlin", "hamburg", "bremen", "singapore", "moscow", "brasilia"];
+  const CHINA_PROVINCES_AND_REGIONS = ["anhui", "fujian", "gansu", "guangdong", "guizhou", "hainan", "hebei", "heilongjiang", "henan", "hubei", "hunan", "jiangsu", "jiangxi", "jilin", "liaoning", "qinghai", "shaanxi", "shandong", "shanxi", "sichuan", "yunnan", "zhejiang", "guangxi", "inner mongolia", "ningxia", "tibet", "xinjiang", "hong kong", "macau", "macao"];
+  const CHINA_DIRECT_MUNICIPALITIES = ["beijing", "chongqing", "shanghai", "tianjin"];
+  const CHINA_CITIES = [
+    "guangzhou", "shenzhen", "chengdu", "wuhan", "hangzhou", "nanjing", "suzhou", "dongguan", "xian", "xi'an", "xiamen", "fuzhou", "qingdao", "dalian", "shenyang", "changchun", "harbin", "jinan", "zhengzhou", "changsha", "nanchang", "kunming", "hefei", "taiyuan", "guiyang", "xining", "urumqi", "lanzhou", "haikou", "nanning", "shantou", "ningbo", "wenzhou", "wuxi", "changzhou", "nantong", "yangzhou", "xuzhou", "yancheng", "jiaxing", "shaoxing", "jinhua", "quzhou", "zhoushan", "taizhou", "lishui", "zhuhai", "foshan", "huizhou", "jiangmen", "zhanjiang", "zhaoqing", "zhongshan", "maoming", "jieyang", "meizhou", "heyuan", "qingyuan", "shaoguan", "yangjiang", "chaozhou", "yunfu", "baoding", "tangshan", "qinhuangdao", "handan", "xingtai", "zhangjiakou", "chengde", "cangzhou", "langfang", "hengshui", "datong", "changzhi", "jincheng", "linfen", "yuncheng", "baotou", "ordos", "chifeng", "tongliao", "hulunbuir", "wuhai", "bayannur", "anshan", "dandong", "jinzhou", "yingkou", "fuxin", "liaoyang", "panjin", "tieling", "chaoyang", "huludao", "jilin city", "siping", "liaoyuan", "tonghua", "baishan", "songyuan", "baicheng", "daqing", "qiqihar", "mudanjiang", "jiamusi", "jixi", "hegang", "shuangyashan", "yichun", "qitaihe", "heihe", "suihua", "luoyang", "kaifeng", "anyang", "xinxiang", "jiaozuo", "puyang", "xuchang", "luohe", "sanmenxia", "nanyang", "shangqiu", "xinyang", "zhoukou", "zhumadian", "jingzhou", "yichang", "xiangyang", "ezhou", "jingmen", "xiaogan", "huanggang", "xianning", "suizhou", "yueyang", "zhuzhou", "xiangtan", "hengyang", "shaoyang", "yongzhou", "huaihua", "loudi", "chuzhou", "bengbu", "huainan", "maanshan", "huaibei", "tongling", "anqing", "huangshan", "fuyang", "suzhou anhui", "liuzhou", "guilin", "wuzhou", "beihai", "yulin guangxi", "baise", "hezhou", "hechi", "laibin", "chongzuo", "quanzhou", "zhangzhou", "putian", "sanming", "nanping", "longyan", "ningde", "yantai", "weifang", "jining", "taian", "weihai", "rizhao", "linyi", "dezhou", "liaocheng", "binzhou", "heze", "zibo", "dongying", "zhoukou", "zigong", "panzhihua", "luzhou", "deyang", "mianyang", "guangyuan", "suining", "neijiang", "leshan", "nanchong", "meishan", "yibin", "guangan", "dazhou", "yaan", "bazhong", "ziyang", "lijiang", "dali", "qujing", "yuxi", "baoshan", "zhaotong", "lincang", "pu'er", "linzhi", "lhasa", "shigatse", "zhangye", "jiayuguan", "jinchang", "baiyin", "tianshui", "wuwei", "pingliang", "qingyang", "dingxi", "longnan", "yinchuan", "shizuishan", "wuzhong", "zhongwei", "kashgar", "korla", "kuytun", "karamay", "hami", "turpan", "yining", "altay", "aksu", "hong kong", "macau", "macao"
+  ];
   const ITALIAN_CITIES = [
     "pavia", "modena", "parma", "reggio emilia", "brescia", "bergamo", "como", "varese", "piacenza", "cremona", "mantua", "verona", "venice", "padua", "treviso", "vicenza", "bologna", "florence", "pisa", "siena", "naples", "turin", "milan", "rome", "genoa", "catania", "palermo", "bari"
   ];
@@ -69,6 +74,46 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   const UK_CITIES = [
     "london", "birmingham", "manchester", "liverpool", "leeds", "sheffield", "bristol", "nottingham", "leicester", "coventry", "wolverhampton", "stoke-on-trent", "derby", "southampton", "portsmouth", "oxford", "cambridge", "york", "bath", "newcastle", "brighton", "plymouth", "exeter", "norwich", "milton keynes", "reading", "luton", "blackpool", "middlesbrough", "sunderland", "wakefield", "worcester", "chester", "canterbury", "aldridge", "walsall", "sutton coldfield", "bloxwich", "brownhills", "lichfield", "tamworth", "west bromwich", "dudley", "rochdale", "edinburgh", "glasgow", "aberdeen", "dundee", "cardiff", "swansea", "newport", "belfast", "derry"
   ];
+  // Statistics Sweden's current 21 counties and 290 municipalities. A
+  // municipality identifies both City and its county-level State for the
+  // extension's Available/Not Available fields.
+  const SWEDEN_COUNTIES = [
+    "Blekinge County", "Blekinge län", "Dalarna County", "Dalarnas län", "Gotland County", "Gotlands län",
+    "Gävleborg County", "Gävleborgs län", "Halland County", "Hallands län", "Jämtland County", "Jämtlands län",
+    "Jönköping County", "Jönköpings län", "Kalmar County", "Kalmar län", "Kronoberg County", "Kronobergs län",
+    "Norrbotten County", "Norrbottens län", "Skåne County", "Skåne län", "Stockholm County", "Stockholms län",
+    "Södermanland County", "Södermanlands län", "Uppsala County", "Uppsala län", "Värmland County", "Värmlands län",
+    "Västerbotten County", "Västerbottens län", "Västernorrland County", "Västernorrlands län", "Västmanland County", "Västmanlands län",
+    "Västra Götaland County", "Västra Götalands län", "Örebro County", "Örebro län", "Östergötland County", "Östergötlands län"
+  ];
+  const SWEDEN_MUNICIPALITIES = [
+    "Upplands Väsby", "Vallentuna", "Österåker", "Värmdö", "Järfälla", "Ekerö", "Huddinge", "Botkyrka", "Salem", "Haninge", "Tyresö", "Upplands-Bro", "Nykvarn", "Täby", "Danderyd", "Sollentuna", "Stockholm", "Södertälje", "Nacka", "Sundbyberg", "Solna", "Lidingö", "Vaxholm", "Norrtälje", "Sigtuna", "Nynäshamn",
+    "Håbo", "Älvkarleby", "Knivsta", "Heby", "Tierp", "Uppsala", "Enköping", "Östhammar",
+    "Vingåker", "Gnesta", "Nyköping", "Oxelösund", "Flen", "Katrineholm", "Eskilstuna", "Strängnäs", "Trosa",
+    "Ödeshög", "Ydre", "Kinda", "Boxholm", "Åtvidaberg", "Finspång", "Valdemarsvik", "Linköping", "Norrköping", "Söderköping", "Motala", "Vadstena", "Mjölby",
+    "Aneby", "Gnosjö", "Mullsjö", "Habo", "Gislaved", "Vaggeryd", "Jönköping", "Nässjö", "Värnamo", "Sävsjö", "Vetlanda", "Eksjö", "Tranås",
+    "Uppvidinge", "Lessebo", "Tingsryd", "Alvesta", "Älmhult", "Markaryd", "Växjö", "Ljungby",
+    "Högsby", "Torsås", "Mörbylånga", "Hultsfred", "Mönsterås", "Emmaboda", "Kalmar", "Nybro", "Oskarshamn", "Västervik", "Vimmerby", "Borgholm", "Gotland",
+    "Olofström", "Karlskrona", "Ronneby", "Karlshamn", "Sölvesborg",
+    "Svalöv", "Staffanstorp", "Burlöv", "Vellinge", "Östra Göinge", "Örkelljunga", "Bjuv", "Kävlinge", "Lomma", "Svedala", "Skurup", "Sjöbo", "Hörby", "Höör", "Tomelilla", "Bromölla", "Osby", "Perstorp", "Klippan", "Åstorp", "Båstad", "Malmö", "Lund", "Landskrona", "Helsingborg", "Höganäs", "Eslöv", "Ystad", "Trelleborg", "Kristianstad", "Simrishamn", "Ängelholm", "Hässleholm",
+    "Hylte", "Halmstad", "Laholm", "Falkenberg", "Varberg", "Kungsbacka",
+    "Härryda", "Partille", "Öckerö", "Stenungsund", "Tjörn", "Orust", "Sotenäs", "Munkedal", "Tanum", "Dals-Ed", "Färgelanda", "Ale", "Lerum", "Vårgårda", "Bollebygd", "Grästorp", "Essunga", "Karlsborg", "Gullspång", "Tranemo", "Bengtsfors", "Mellerud", "Lilla Edet", "Mark", "Svenljunga", "Herrljunga", "Vara", "Götene", "Tibro", "Töreboda", "Göteborg", "Mölndal", "Kungälv", "Lysekil", "Uddevalla", "Strömstad", "Vänersborg", "Trollhättan", "Alingsås", "Borås", "Ulricehamn", "Åmål", "Mariestad", "Lidköping", "Skara", "Skövde", "Hjo", "Tidaholm", "Falköping",
+    "Kil", "Eda", "Torsby", "Storfors", "Hammarö", "Munkfors", "Forshaga", "Grums", "Årjäng", "Sunne", "Karlstad", "Kristinehamn", "Filipstad", "Hagfors", "Arvika", "Säffle",
+    "Lekeberg", "Laxå", "Hallsberg", "Degerfors", "Hällefors", "Ljusnarsberg", "Örebro", "Kumla", "Askersund", "Karlskoga", "Nora", "Lindesberg",
+    "Skinnskatteberg", "Surahammar", "Kungsör", "Hallstahammar", "Norberg", "Västerås", "Sala", "Fagersta", "Köping", "Arboga",
+    "Vansbro", "Malung-Sälen", "Gagnef", "Leksand", "Rättvik", "Orsa", "Älvdalen", "Smedjebacken", "Mora", "Falun", "Borlänge", "Säter", "Hedemora", "Avesta", "Ludvika",
+    "Ockelbo", "Hofors", "Ovanåker", "Nordanstig", "Ljusdal", "Gävle", "Sandviken", "Söderhamn", "Bollnäs", "Hudiksvall",
+    "Ånge", "Timrå", "Härnösand", "Sundsvall", "Kramfors", "Sollefteå", "Örnsköldsvik",
+    "Ragunda", "Bräcke", "Krokom", "Strömsund", "Åre", "Berg", "Härjedalen", "Östersund",
+    "Nordmaling", "Bjurholm", "Vindeln", "Robertsfors", "Norsjö", "Malå", "Storuman", "Sorsele", "Dorotea", "Vännäs", "Vilhelmina", "Åsele", "Umeå", "Lycksele", "Skellefteå",
+    "Arvidsjaur", "Arjeplog", "Jokkmokk", "Överkalix", "Kalix", "Övertorneå", "Pajala", "Gällivare", "Älvsbyn", "Luleå", "Piteå", "Boden", "Haparanda", "Kiruna"
+  ];
+  const swedenNameRegex = names => new RegExp(
+    `(?<![\\p{L}\\p{N}])(?:${names.map(escapeRegExp).sort((a, b) => b.length - a.length).join("|")})(?![\\p{L}\\p{N}])`,
+    "iu"
+  );
+  const SWEDEN_COUNTY_REGEX = swedenNameRegex(SWEDEN_COUNTIES);
+  const SWEDEN_MUNICIPALITY_REGEX = swedenNameRegex(SWEDEN_MUNICIPALITIES);
   const US_CITIES = [
     "new york", "los angeles", "chicago", "houston", "phoenix", "philadelphia", "san antonio", "san diego", "dallas", "san jose", "austin", "jacksonville", "fort worth", "columbus", "charlotte", "indianapolis", "san francisco", "seattle", "denver", "boston", "nashville", "detroit", "las vegas", "portland", "memphis", "baltimore", "milwaukee", "albuquerque", "tucson", "sacramento", "atlanta", "miami", "tampa", "orlando", "raleigh", "omaha", "oakland", "minneapolis", "tulsa", "cleveland", "pittsburgh", "cincinnati", "st louis", "newark", "jersey city", "springfield", "louisville", "richmond", "boise", "honolulu", "anchorage", "des moines", "madison", "boulder", "troy"
   ];
@@ -165,7 +210,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   const CITY_STATE_COUNTRY_MAP = [
     { country: "South Korea", regex: /\b(seoul|incheon|busan|daegu|daejeon|gwangju|ulsan|suwon|changwon|seongnam|cheongju|anyang|bucheon|gyeonggi|gyeonggi-do|gangwon|chungcheong|jeolla|gyeongsang|jeju)\b/i },
     { country: "Japan", regex: /\b(tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|kawasaki|saitama|hiroshima|sendai|chiba|kanagawa|hokkaido)\b/i },
-    { country: "China", regex: /\b(beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|chongqing|nanjing|xi'an|suzhou|dongguan|zhejiang|jiangsu|guangdong|shandong|fujian)\b/i },
+    { country: "China", regex: new RegExp(`\\b(?:${[...CHINA_PROVINCES_AND_REGIONS, ...CHINA_DIRECT_MUNICIPALITIES, ...CHINA_CITIES].map(escapeRegExp).sort((a, b) => b.length - a.length).join("|")})\\b`, "i") },
     { country: "India", regex: /\b(mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|lucknow|kanpur|nagpur|indore|thane|bhopal|visakhapatnam|gujarat|maharashtra|karnataka|tamil nadu|telangana|uttar pradesh|rajasthan|punjab|haryana|west bengal)\b/i },
     { country: "Germany", regex: /\b(berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|leipzig|dortmund|essen|bremen|dresden|hannover|nuremberg|nürnberg|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony)\b/i },
     { country: "France", regex: /\b(paris|marseille|lyon|toulouse|nice|nantes|strasbourg|montpellier|bordeaux|lille|rennes|reims|le havre|île-de-france)\b/i },
@@ -982,6 +1027,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   function inferCountryFromAddressRegion(address) {
     if (!address) return "";
 
+    if (SWEDEN_COUNTY_REGEX.test(address)) return "Sweden";
+
     for (const [countryName, regions] of Object.entries(POSTAL_REGION_ABBREVIATIONS)) {
       if (Object.values(regions).some(regionName => matchesCountryTerm(address, regionName))) {
         return countryName;
@@ -1154,6 +1201,20 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         /\b(?:contact us|contact|our locations|office locations|get in touch|reach us|head office|headquarters)\b/i.test(el.textContent || el.innerText || "")
       );
 
+    const cutNoticePreservingAddress = (value, noticeIndex) => {
+      const text = String(value || "");
+      const beforeNotice = text.slice(0, noticeIndex).trim();
+      const hasStreetCue = part =>
+        /\b(?:p\.?\s*o\.?\s*box|post\s+office\s+box|street|st\.?|road|rd\.?|avenue|ave\.?|lane|ln\.?|drive|dr\.?|boulevard|blvd\.?|highway|hwy\.?)\b/i.test(part);
+      if (hasStreetCue(beforeNotice)) return beforeNotice;
+
+      // Some pages place a long reuse notice before their footer contact block.
+      // If so, resume at the address cue instead of dropping the address too.
+      const afterNotice = text.slice(noticeIndex);
+      const addressCue = /\b(?:p\.?\s*o\.?\s*box|post\s+office\s+box)\b|\b\d{1,6}\s+[\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*){0,5}\s+\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|lane|ln\.?|drive|dr\.?|boulevard|blvd\.?|highway|hwy\.?)\b|\b(?:SE[- ]?)?\d{3}\s*\d{2}\s+[\p{L}]/iu.exec(afterNotice);
+      return addressCue ? afterNotice.slice(addressCue.index).trim() : beforeNotice;
+    };
+
     const normalizeAddress = value => {
       let address = String(value || "")
         .replace(/\u00a0/g, " ")
@@ -1162,7 +1223,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .replace(/\(?\+\d{1,3}\)?(?:[\s().-]*\d){7,}[\s\S]*$/i, "");
 
       const legalNotice = /©|\bcopyright\b|\ball rights reserved\b|\|\s*privacy(?:\s+policy)?\b|\bprivacy\s+policy\b|\|\s*terms(?:\s+of\s+use)?\b|\bterms\s+of\s+use\b/i.exec(address);
-      if (legalNotice) address = address.slice(0, legalNotice.index);
+      const webMaterialNotice = /\bthis\s+web\s*site\s+contains\s+material\b|\bwe\s+provide\s+some\s+images\b|\bour\s+logotype\b|\byou\s+may\s+(?:not\s+)?(?:print|copy|mirror|modify|reproduce|rebroadcast)\b|\byou\s+may\s+print\s+off\s+copies\b/i.exec(address);
+      const noticeIndex = Math.min(legalNotice?.index ?? Infinity, webMaterialNotice?.index ?? Infinity);
+      if (Number.isFinite(noticeIndex)) address = cutNoticePreservingAddress(address, noticeIndex);
 
       // Clean leading address labels like "Address:", "Location:", "HQ:", "Headquarters:"
       address = address.replace(/^[\s•\-\*#|>📍🏢🏠🏬📌]*(?:our\s+)?(?:global\s+headquarters|headquarters|head\s+office|registered\s+office|corporate\s+office|corporate\s+headquarters|corporate\s+address|company\s+address|office\s+address|office\s+location|postal\s+address|physical\s+address|mailing\s+address|street\s+address|business\s+address|main\s+office|office|address|location|hq|주소|본사|사업장\s*주소|회사위치|소재지|所在地|住所|本社|営業所|地址|公司地址|总部地址|联系地址|adresse|standort|firmensitz|dirección|sede|indirizzo|siège)\s*(?:[:：\-–—]|[\r\n,]+)\s*/i, "");
@@ -2319,6 +2382,18 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   function cleanAddressString(rawAddr, countryName, companyName) {
     if (!rawAddr) return "";
 
+    const cutNoticePreservingAddress = (value, noticeIndex) => {
+      const text = String(value || "");
+      const beforeNotice = text.slice(0, noticeIndex).trim();
+      const hasStreetCue = part =>
+        /\b(?:p\.?\s*o\.?\s*box|post\s+office\s+box|street|st\.?|road|rd\.?|avenue|ave\.?|lane|ln\.?|drive|dr\.?|boulevard|blvd\.?|highway|hwy\.?)\b/i.test(part);
+      if (hasStreetCue(beforeNotice)) return beforeNotice;
+
+      const afterNotice = text.slice(noticeIndex);
+      const addressCue = /\b(?:p\.?\s*o\.?\s*box|post\s+office\s+box)\b|\b\d{1,6}\s+[\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*){0,5}\s+\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|lane|ln\.?|drive|dr\.?|boulevard|blvd\.?|highway|hwy\.?)\b|\b(?:SE[- ]?)?\d{3}\s*\d{2}\s+[\p{L}]/iu.exec(afterNotice);
+      return addressCue ? afterNotice.slice(addressCue.index).trim() : beforeNotice;
+    };
+
     let addr = clean(String(rawAddr));
     const addressCountry = getAddressCountryContext(rawAddr, countryName) ||
       detectCountry(null, rawAddr, rawAddr, "", "");
@@ -2331,9 +2406,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .trim();
 
     const legalNotice = /©|\bcopyright\b|\ball rights reserved\b|\|\s*privacy(?:\s+policy)?\b|\bprivacy\s+policy\b|\|\s*terms(?:\s+of\s+use)?\b|\bterms\s+of\s+use\b/i.exec(addr);
-    if (legalNotice) {
-      addr = addr.slice(0, legalNotice.index).trim();
-    }
+    const webMaterialNotice = /\bthis\s+web\s*site\s+contains\s+material\b|\bwe\s+provide\s+some\s+images\b|\bour\s+logotype\b|\byou\s+may\s+(?:not\s+)?(?:print|copy|mirror|modify|reproduce|rebroadcast)\b|\byou\s+may\s+print\s+off\s+copies\b/i.exec(addr);
+    const noticeIndex = Math.min(legalNotice?.index ?? Infinity, webMaterialNotice?.index ?? Infinity);
+    if (Number.isFinite(noticeIndex)) addr = cutNoticePreservingAddress(addr, noticeIndex);
 
     // 2. Remove leading address labels.
     const leadingLabel =
@@ -2502,6 +2577,18 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
         .join("|");
 
+      // A footer or menu can be concatenated after a complete address, e.g.
+      // "Älvdalen, Sweden., Showroom, ...". Treat a punctuated country name
+      // as the end of the address and discard everything that follows it.
+      const countryMarker = new RegExp("\\b(?:" + countryPattern + ")\\b(?=[.,;])", "i");
+      const countryMatch = countryMarker.exec(addr);
+      if (countryMatch) {
+        const tail = addr.slice(countryMatch.index + countryMatch[0].length);
+        if (tail.replace(/[.,;|\s]/g, "")) {
+          addr = addr.slice(0, countryMatch.index + countryMatch[0].length).trim();
+        }
+      }
+
       const countryAtEnd = new RegExp(
         "(?:,\\s*|\\s+)\\b(?:" + countryPattern + ")\\b(?:\\s+\\d{4,10})?\\s*[.,;]*$",
         "i"
@@ -2539,6 +2626,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       country.iso.toLowerCase() === postalCountry ||
       country.aliases.some(alias => alias.toLowerCase() === postalCountry)
     );
+    // Swedish postcodes are commonly written with the country prefix and an
+    // internal space (for example, "SE-796 21 Älvdalen"). Remove the full
+    // postcode while preserving the locality that follows it.
+    if (countryInfo?.iso === "SE" || /^(?:sweden|sverige|se)$/.test(postalCountry)) {
+      addr = addr.replace(/\bSE\s*[-–—]?\s*\d{3}\s*\d{2}\b/gi, " ");
+    }
     if (countryInfo?.iso === "TW" || /\btaiwan\s*,?\s*(?:r\s*\.?\s*o\s*\.?\s*c\.?|republic\s+of\s+china)\b/i.test(addr)) {
       // Taiwan addresses often append an old three-digit ZIP to the city
       // ("Taichung City 420") and use "Taiwan R.O.C." as the country suffix.
@@ -2696,6 +2789,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     ) || /\b[\p{L}][\p{L}'’-]*(?:\s+[\p{L}][\p{L}'’-]*){0,2}\s+(?:dist\.?|district|township|city)\b/iu.test(address || "");
     const hasTaiwanContext = matchesCountryTerm(address || "", "Taiwan") || hasTaiwanCounty ||
       hasTaiwanSpecialMunicipality || hasTaiwanCityOrDistrict;
+    const hasChinaProvince = CHINA_PROVINCES_AND_REGIONS.some(name =>
+      new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)
+    );
+    const hasChinaMunicipality = CHINA_DIRECT_MUNICIPALITIES.some(name =>
+      new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)
+    );
+    const hasChinaCity = CHINA_CITIES.some(name =>
+      new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)
+    );
+    const hasChinaContext = hasChinaProvince || hasChinaMunicipality || hasChinaCity;
     const hasStateLevelMunicipality = [...TAIWAN_SPECIAL_MUNICIPALITIES, ...METROPOLITAN_CITY_REGIONS].some(name =>
       new RegExp(`\\b${escapeRegExp(name)}(?:\\s+(?:city|special\\s+municipality|municipality))?\\b`, "i").test(addrLower)
     );
@@ -2706,6 +2809,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const hasUkCountyOrNation = UK_COUNTIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
       /\b(?:england|scotland|wales|northern ireland)\b/i.test(addrLower);
     const hasUkCity = UK_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const hasSwedenCounty = SWEDEN_COUNTY_REGEX.test(address || "");
+    const hasSwedenMunicipality = SWEDEN_MUNICIPALITY_REGEX.test(address || "");
     const hasNewZealandCity = NEW_ZEALAND_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const australianCityState = AUSTRALIAN_CITY_STATES.find(entry =>
       entry.cities.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower))
@@ -2719,7 +2824,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       : null;
 
     // State indicators in address
-    if (state === "N" && (hasTaiwanCounty || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasMalaysiaState || hasUkCountyOrNation || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
+    if (state === "N" && (hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasMalaysiaState || hasUkCountyOrNation || hasSwedenCounty || hasSwedenMunicipality || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
         POSTAL_REGION_US_CODES_REGEX.test(address || "") ||
         /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower))) {
       state = "Y";
@@ -2734,6 +2839,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       city = "Y";
     }
     if (hasNewZealandCity) city = "Y";
+
+    if (hasChinaMunicipality || hasChinaCity) city = "Y";
+
+    if (hasSwedenMunicipality) city = "Y";
 
     if (city === "N" && (hasMalaysiaCity || NEW_ZEALAND_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
         INDIAN_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
@@ -2771,10 +2880,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       state = hasTaiwanCounty || hasTaiwanSpecialMunicipality ? "Y" : "N";
       city = hasTaiwanSpecialMunicipality || hasTaiwanCityOrDistrict || hasWorldCapital ? "Y" : "N";
     }
+    if (hasChinaContext) {
+      state = hasChinaProvince || hasChinaMunicipality ? "Y" : "N";
+      city = hasChinaCity || hasChinaMunicipality || hasWorldCapital ? "Y" : "N";
+    }
 
     // Completeness validation (Rule 18): If address has fewer than 2 segments, State is likely invalid
     const parts = (address || "").split(",").map(p => p.trim()).filter(Boolean);
-    const hasExplicitStateEvidence = hasTaiwanCounty || hasStateLevelMunicipality || hasGenericStateLevel ||
+    const hasExplicitStateEvidence = hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasSwedenCounty || hasSwedenMunicipality ||
       hasIndianState || hasMalaysiaState || hasUkCountyOrNation || australianCityState || hasAustralianStateCode ||
       (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
       POSTAL_REGION_US_CODES_REGEX.test(address || "");
