@@ -1480,6 +1480,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       // Replace semicolons with commas to prevent premature rejection
       address = address.replace(/;/g, ", ");
 
+      const germanStreetAddress = /\b[\p{L}][\p{L}\p{M}'’.-]*(?:straße|strasse)\s+\d+[a-z]?\b/iu.exec(address);
+      if (germanStreetAddress) address = address.slice(germanStreetAddress.index);
+
       return address
         .replace(/\s*\n+\s*/g, ", ")
         .replace(/[ \t]+/g, " ")
@@ -1541,6 +1544,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       // Flexible street & building markers: matches number before marker OR marker before number (e.g. "Suite 200", "Plot 45", "PO Box 123", "No. 106-2")
       const streetNumberMatch =
         /\b\d+[^\n]{0,35}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway|district|zone|block|sector|plot|suite|ste\.?|floor|fl\.?|unit|building|bldg\.?|tower|house|apartment|apt\.?|flat|level|phase)\b/i.test(cleaned) ||
+        /\b[\p{L}][\p{L}\p{M}'’.-]*(?:straße|strasse)\s+\d+[a-z]?\b/iu.test(cleaned) ||
         /\b(?:plot|sector|suite|ste\.?|unit|building|bldg\.?|tower|apartment|apt\.?|flat|level|floor|fl\.?|p\.?o\.?\s*box|post\s+office\s+box|no\.?)\b[^\n]{0,25}\d+/i.test(cleaned);
 
       const postalMatch = hasPostalCode(cleaned, streetNumberMatch);
@@ -1905,7 +1909,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (!s || s.length < 12 || s.length > 220) return false;
       if (stopLinePattern.test(s) || /@|https?:\/\/|www\.|all rights reserved/i.test(s)) return false;
       const hasNumber = /\d/.test(s);
-      const hasStreetMarker = /\b(?:p\.?\s*o\.?\s*box|post\s+office\s+box|street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|gu\b|si\b|do\b|ro\b|dong\b|gun\b|min\b|city\b|province\b|county\b)/i.test(s);
+      const hasStreetMarker = /\b(?:straße|strasse|p\.?\s*o\.?\s*box|post\s+office\s+box|street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|gu\b|si\b|do\b|ro\b|dong\b|gun\b|min\b|city\b|province\b|county\b)/i.test(s);
       const commaSegments = s.split(",").map(p => p.trim()).filter(Boolean);
       return (hasNumber && (commaSegments.length >= 2 || hasStreetMarker)) ||
         (hasStreetMarker && commaSegments.length >= 2);
@@ -2162,14 +2166,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
       const streetNumberMatch =
         /\b\d+[^\n]{0,25}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway)\b/i
-          .test(address);
+          .test(address) ||
+        /\b[\p{L}][\p{L}\p{M}'’.-]*(?:straße|strasse)\s+\d+[a-z]?\b/iu.test(address);
       const hasLeadingStreetNumber = /^\s*\d{1,6}\s+.{1,80}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway)\b/i.test(address);
-      if (hasLeadingStreetNumber) score += 30;
+      const hasLeadingGermanStreetNumber = /^\s*[\p{L}][\p{L}\p{M}'’.-]*(?:straße|strasse)\s+\d+[a-z]?\b/iu.test(address);
+      if (hasLeadingStreetNumber || hasLeadingGermanStreetNumber) score += 30;
       const postalMatch = hasPostalCode(address, streetNumberMatch);
       if (postalMatch) score += 15;
       if (countryMatch || detectedCountry) score += 12;
 
-      if (/\b\d+[^\n]{0,25}\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway)\b/i.test(address)) {
+      if (streetNumberMatch) {
         score += 10;
       }
 

@@ -924,6 +924,42 @@
       allAddressPassed = false;
       console.error(`UK address extraction failed: ${JSON.stringify({ raw: ukRawAddress, cleaned: ukCleanAddress })}`);
     }
+    const euchnerAddressDoc = new DOMParser().parseFromString(`
+      <footer class="footer">
+        <address id="footer-column-4" class="widget-footer">
+          <div class="h3 mb-4">Contacts</div>
+          <div class="textwidget custom-html-widget">
+            <dl>
+              <dt><i class="fas fa-home"></i></dt>
+              <dd>EUCHNER GmbH + Co. KG<br>Kohlhammerstraße 16<br>70771 Leinfelden-Echterdingen</dd>
+              <dt><i class="fas fa-phone"></i></dt>
+              <dd>+49 711 7597-0</dd>
+              <dt><i class="fas fa-envelope"></i></dt>
+              <dd><a href="mailto:info@euchner.de">info@euchner.de</a></dd>
+            </dl>
+          </div>
+        </address>
+      </footer>`,
+      "text/html"
+    );
+    const euchnerAddress = Extractor.extractFromDocument(
+      euchnerAddressDoc,
+      Extractor.getElementText(euchnerAddressDoc.body),
+      "https://www.euchner.com/en-us/"
+    );
+    const passEuchnerAddress =
+      euchnerAddress.companyAddress === "Kohlhammerstraße 16, Leinfelden-Echterdingen" &&
+      euchnerAddress.countryName === "Germany";
+    addressResults["EUCHNER footer extracts the German headquarters address without contact headings or company name"] = {
+      expectedAddress: "Kohlhammerstraße 16, Leinfelden-Echterdingen",
+      actualAddress: euchnerAddress.companyAddress,
+      actualCountry: euchnerAddress.countryName,
+      passed: passEuchnerAddress
+    };
+    if (!passEuchnerAddress) {
+      allAddressPassed = false;
+      console.error(`EUCHNER address extraction failed: ${JSON.stringify(euchnerAddress)}`);
+    }
     const datedNewsAddressDoc = new DOMParser().parseFromString(`
       <html>
         <body>
