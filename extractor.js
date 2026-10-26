@@ -29,7 +29,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { name: "Weapons (Knife)", regex: /\b(weapons?|knives|knife|blades?|firearms?|ammunition|guns?|swords?)\b/i },
     { name: "Defence", regex: /\b(defen[cs]e|military|warfare|missiles?|tactical weapons?|munitions?)\b/i },
     { name: "Aircraft / Aerospace", regex: /\b(aircraft|aerospace|aviation|airplanes?|helicopters?|spacecraft|drones?)\b/i },
-    { name: "Marine / Ship", regex: /\b(marine|ships?|shipping|shipments?|shipbuilding|shipyards?|yachts?|naval|boats?|sea freight|ocean freight|freight forwarders?|freight forwarding|vessels?)\b/i },
+    { name: "Marine / Ship", regex: /\b(marine|ships?|shipbuilding|shipyards?|yachts?|naval|boats?|sea freight|ocean freight|freight forwarders?|freight forwarding|vessels?|(?:maritime|ocean|sea)\s+shipping|shipping\s+(?:companies?|lines?|fleets?|vessels?|industry|services|agents?))\b/i },
     { name: "Chemical", regex: /\b(chemicals?|chemical|petrochemicals?|reagents?|solvents?|pesticides?)\b/i },
     { name: "Alcohol", regex: /\b(alcohol|alcoholic|brew(?:ery|ing)|distiller(?:y|ies)|wineries?|liquor|beer|wine|vodka|whiskey|whisky|spirits)\b/i },
     { name: "Animals", regex: /\b(animals?|livestock|poultry|pets?|cattle|veterinary|vet(?:erinary)?|slaughterhouses?|dogs?|cats?|horses?)\b/i }
@@ -329,23 +329,33 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Works reliably both on live DOM elements and unrendered DOMParser documents!
   function getElementText(el) {
     if (!el) return "";
-    try {
-      const clone = el.cloneNode(true);
-      // Remove script and style tags completely
-      const nonContent = clone.querySelectorAll("script, style, noscript, svg, canvas");
-      for (const nc of nonContent) nc.remove();
-
-      const breaks = clone.querySelectorAll("br, hr");
-      for (const b of breaks) b.replaceWith("\n");
-
-      const blocks = clone.querySelectorAll("p, div, li, tr, td, th, h1, h2, h3, h4, h5, h6, header, footer, section, article, dt, dd, blockquote, address");
-      for (const blk of blocks) {
-        blk.append("\n");
+    const ignoredTags = new Set(["script", "style", "noscript", "svg", "canvas"]);
+    const blockTags = new Set([
+      "p", "div", "li", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5",
+      "h6", "header", "footer", "section", "article", "dt", "dd",
+      "blockquote", "address"
+    ]);
+    const textParts = [];
+    const visit = node => {
+      if (node.nodeType === 3) {
+        textParts.push(node.nodeValue || "");
+        return;
       }
-      return (clone.textContent || "").replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n").trim();
-    } catch {
-      return (el.innerText || el.textContent || "").trim();
-    }
+
+      const tagName = node.nodeType === 1 ? String(node.localName || node.tagName).toLowerCase() : "";
+      if (ignoredTags.has(tagName)) return;
+      if (tagName === "br" || tagName === "hr") {
+        textParts.push("\n");
+        return;
+      }
+
+      for (let child = node.firstChild; child; child = child.nextSibling) {
+        visit(child);
+      }
+      if (blockTags.has(tagName)) textParts.push("\n");
+    };
+    visit(el);
+    return textParts.join("").replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n").trim();
   }
 
   // 5.3 International Legal Suffix Reference
@@ -2463,6 +2473,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 3. Building, Unit, and Floor Abbreviations (Section 7.5)
     // Building Number first before Building
     addr = addr.replace(/\bBldg\b\.?\s*No\b\.?/gi, "Building Number");
+    addr = addr.replace(/\bSec\b\.?(?=\s+\d+\b)/gi, "Section");
     addr = addr.replace(/\bBldg\b\.?/gi, "Building");
     addr = addr.replace(/\bSte\b\.?/gi, "Suite");
     addr = addr.replace(/\bApt\b\.?/gi, "Apartment");
@@ -2889,8 +2900,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         "i"
       );
 
-      // Remove a country suffix, but preserve all preceding address parts.
-      addr = addr.replace(countryAtEnd, "").trim();
+      // Retain Taiwan on the address line as requested; other country names
+      // remain in the separate country field.
+      if (addressCountry !== "Taiwan") {
+        addr = addr.replace(countryAtEnd, "").trim();
+      }
     }
 
     addr = expandPostalRegionPostcodes(addr, addressCountry);
@@ -3040,6 +3054,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 7. Normalize punctuation and spaces.
     addr = addr
       .replace(/\s+/g, " ")
+      .replace(/\.(?=\s*,)/g, "")
       .replace(/^[,;:|.\-–—\s]+|[,;:|.\-–—\s]+$/g, "")
       .trim();
 

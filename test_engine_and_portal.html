@@ -665,6 +665,11 @@
       {
         raw: "Building 4, 2f, Industrial Area, West Palm Beach, FL 33405",
         expected: "Building 4, Second Floor, Industrial Area, West Palm Beach, FL"
+      },
+      {
+        raw: "Seventh Floor., Number 12, Lane 270, Sec. 3, Beishen Road, Shenkeng District, New Taipei City, Taiwan",
+        country: "Taiwan",
+        expected: "Seventh Floor, Number 12, Lane 270, Section 3, Beishen Road, Shenkeng District, New Taipei City, Taiwan"
       }
     ];
 
@@ -796,7 +801,7 @@
     let allAddressPassed = true;
     const addressResults = {};
     for (const tc of addressTestCases) {
-      const actual = Extractor.cleanAddressString(tc.raw);
+      const actual = Extractor.cleanAddressString(tc.raw, tc.country);
       addressResults[tc.raw] = { expected: tc.expected, actual, passed: actual === tc.expected };
       if (actual !== tc.expected) {
         allAddressPassed = false;
@@ -828,7 +833,7 @@
       true
     );
     const cosenAddress = Extractor.cleanAddressString(cosenRawAddress.address, "Taiwan");
-    const expectedCosenAddress = "Number 106-2, Lane 175, Xinxi Street, Zhubei City, Hsinchu County";
+    const expectedCosenAddress = "Number 106-2, Lane 175, Xinxi Street, Zhubei City, Hsinchu County, Taiwan";
     const passCosenAddress = cosenRawAddress.source === "footer-labelled" && cosenAddress === expectedCosenAddress;
     addressResults["Cosen footer address excludes postal code and contact details"] = {
       source: cosenRawAddress.source,
@@ -1260,6 +1265,45 @@
       actual: forbiddenFar,
       pass: passForbidden
     };
+    const profileRubberResult = Extractor.extractFromHtml(
+      `<html>
+        <head><title>Profile Rubber : Manufacturer of Custom Molded Rubber Products</title></head>
+        <body>
+          <h1>Custom Molded Rubber Products</h1>
+          <p>Profile Rubber manufactures custom molded rubber products and offers shipping.</p>
+        </body>
+      </html>`,
+      "https://www.profilerubber.com/"
+    );
+    const maritimeShipping = Extractor.checkForbiddenCategories(
+      "The company provides maritime shipping services for commercial vessels.",
+      null
+    );
+    const passShippingClassification =
+      profileRubberResult.forbidden.isForbidden === false &&
+      profileRubberResult.websiteStatus === "Working" &&
+      maritimeShipping.isForbidden === true &&
+      maritimeShipping.category === "Marine / Ship" &&
+      maritimeShipping.matchedText === "maritime shipping";
+    qcIssuesChecks["Issue 9a: Generic shipping is not classified as Marine / Ship"] = {
+      profileRubber: {
+        websiteStatus: profileRubberResult.websiteStatus,
+        forbidden: profileRubberResult.forbidden
+      },
+      maritimeShipping,
+      pass: passShippingClassification
+    };
+    const malformedSvgDoc = new DOMParser().parseFromString(
+      `<body><p>Visible page text</p><svg preserveAspectRatio=""><title>Ignored SVG text</title></svg><p>Footer text</p></body>`,
+      "text/html"
+    );
+    const safeSvgText = Extractor.getElementText(malformedSvgDoc.body);
+    const passSvgText = safeSvgText === "Visible page text\nFooter text";
+    qcIssuesChecks["Issue 9b: Text extraction tolerates invalid SVG attributes"] = {
+      expected: "Visible page text\nFooter text",
+      actual: safeSvgText,
+      pass: passSvgText
+    };
 
     // 10: Business type Distributer and Industrial Services
     const bTypeDist = Extractor.detectBusinessType("Authorized industrial distributer of machine components");
@@ -1347,6 +1391,8 @@
       passBldgNum &&
       passEmail &&
       passForbidden &&
+      passShippingClassification &&
+      passSvgText &&
       passBType &&
       passKorean
     );
