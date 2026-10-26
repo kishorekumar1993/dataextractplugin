@@ -23,16 +23,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   // Forbidden Categories (Rule: Even if these appear anywhere, DO NOT work on that site!)
   const FORBIDDEN_CATEGORIES = [
-    { name: "Porn / Adult", regex: /\b(porn|pornography|xxx|adult video|erotic|sex toy|escort)\b/i },
-    { name: "Medicine / Medical / Hospital", regex: /\b(pharmacy|pharmaceutical|medicine|hospital|medical clinic|surgical|physician|prescriptions|therapeutics)\b/i },
-    { name: "Food", regex: /\b(restaurant|bakery|catering|snack food|confectionery|edible|beverage supply|meat processing)\b/i },
-    { name: "Weapons (Knife)", regex: /\b(weapon|weapons|knife|knives|blade|firearm|ammunition|gun maker|swords)\b/i },
-    { name: "Defence", regex: /\b(defence system|defense contractor|military equipment|warfare|missile|tactical weapon)\b/i },
-    { name: "Aircraft / Aerospace", regex: /\b(aircraft|aerospace|aviation|airplane manufacturing|helicopter|spacecraft)\b/i },
-    { name: "Marine / Ship", regex: /\b(shipbuilding|shipyard|marine vessel|yacht building|naval ship|boat builder)\b/i },
-    { name: "Chemical", regex: /\b(chemical factory|petrochemical|industrial chemical|chemical synthesis|hazardous reagent)\b/i },
-    { name: "Alcohol", regex: /\b(brewery|distillery|winery|liquor|alcoholic beverage|beer brewing|vodka|whiskey)\b/i },
-    { name: "Animals", regex: /\b(livestock|poultry|pet breeding|cattle|veterinary|animal breeding|slaughterhouse)\b/i }
+    { name: "Porn / Adult", regex: /\b(porn|pornography|xxx|adult|erotic|sex|escort|prostitut(?:e|ion)|explicit content)\b/i },
+    { name: "Medicine / Medical / Hospital", regex: /\b(medicine|medical|hospital|pharmacy|pharmaceuticals?|clinic|surgical|physicians?|prescriptions?|therapeutics?|healthcare|health care)\b/i },
+    { name: "Food", regex: /\b(food|foods|restaurant|bakery|catering|snacks?|confectionery|edible|beverages?|drinks?|groceries|fruit|vegetables?|meat|seafood|dairy|tea|coffee|foodstuff)\b/i },
+    { name: "Weapons (Knife)", regex: /\b(weapons?|knives|knife|blades?|firearms?|ammunition|guns?|swords?)\b/i },
+    { name: "Defence", regex: /\b(defen[cs]e|military|warfare|missiles?|tactical weapons?|munitions?)\b/i },
+    { name: "Aircraft / Aerospace", regex: /\b(aircraft|aerospace|aviation|airplanes?|helicopters?|spacecraft|drones?)\b/i },
+    { name: "Marine / Ship", regex: /\b(marine|ships?|shipping|shipments?|shipbuilding|shipyards?|yachts?|naval|boats?|sea freight|ocean freight|freight forwarders?|freight forwarding|vessels?)\b/i },
+    { name: "Chemical", regex: /\b(chemicals?|chemical|petrochemicals?|reagents?|solvents?|pesticides?)\b/i },
+    { name: "Alcohol", regex: /\b(alcohol|alcoholic|brew(?:ery|ing)|distiller(?:y|ies)|wineries?|liquor|beer|wine|vodka|whiskey|whisky|spirits)\b/i },
+    { name: "Animals", regex: /\b(animals?|livestock|poultry|pets?|cattle|veterinary|vet(?:erinary)?|slaughterhouses?|dogs?|cats?|horses?)\b/i }
   ];
 
   // World Capitals (If capital is in address, both City & State are Considered Available!)
@@ -703,17 +703,36 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return res;
   }
 
-  // Check Forbidden Categories Filter (Scans header/hero context only to prevent false positives from case studies)
+  // Check the full page copy and visible image/accessibility metadata for any forbidden category.
   function checkForbiddenCategories(text, doc) {
-    const headerContext = [
+    const pageContext = [
       doc?.title || "",
       doc?.querySelector?.('meta[name="description"]')?.content || "",
-      doc?.querySelector?.("h1")?.textContent || "",
-      (text || "").slice(0, 500)
-    ].join(" ").toLowerCase();
+      doc?.querySelector?.('meta[property="og:description"]')?.content || "",
+      doc?.querySelector?.('meta[name="keywords"]')?.content || "",
+      text || getElementText(doc?.body) || ""
+    ];
+    if (doc?.querySelectorAll) {
+      for (const el of doc.querySelectorAll("img, a[href], [aria-label], [title], [alt], [style], svg title")) {
+        pageContext.push(
+          el.getAttribute?.("alt") || "",
+          el.getAttribute?.("aria-label") || "",
+          el.getAttribute?.("title") || "",
+          el.getAttribute?.("src") || "",
+          el.getAttribute?.("data-src") || "",
+          el.getAttribute?.("srcset") || "",
+          el.getAttribute?.("href") || "",
+          el.getAttribute?.("style") || "",
+          el.getAttribute?.("class") || "",
+          el.getAttribute?.("id") || "",
+          el.textContent || ""
+        );
+      }
+    }
+    const fullPageContext = pageContext.join(" ").toLowerCase();
 
     for (const cat of FORBIDDEN_CATEGORIES) {
-      if (cat.regex.test(headerContext)) {
+      if (cat.regex.test(fullPageContext)) {
         return {
           isForbidden: true,
           category: cat.name,
