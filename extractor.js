@@ -11,7 +11,7 @@
  * 8. City (Available / Not Available; Town/District/Municipality/Capital = Available)
  * 9. Email ID (First corporate email)
  * 10. Secondary Email ID (Secondary if given, else empty)
- * 11. Phone Number (Country code removed, spaces/special chars removed, NO toll-free, NO leading zero)
+ * 11. Phone Number (Country code removed, spaces/special chars removed; toll-free only when no regular number is found)
  * 12. Number of Products (1 or 3; never 0)
  * 13. Product Images (1 or 3; never 0)
  * 14. Number of Product Descriptions (1 or 3; never 0)
@@ -256,8 +256,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { state: "New South Wales", cities: ["sydney", "newcastle", "wollongong", "albury"] },
     { state: "Victoria", cities: ["melbourne", "geelong", "ballarat", "bendigo"] },
     { state: "Queensland", cities: ["brisbane", "gold coast", "townsville", "cairns", "toowoomba"] },
-    { state: "Western Australia", cities: ["perth"] },
-    { state: "South Australia", cities: ["adelaide"] },
+    { state: "Western Australia", cities: ["perth", "welshpool"] },
+    { state: "South Australia", cities: ["adelaide", "regency park"] },
     { state: "Tasmania", cities: ["hobart", "launceston"] },
     { state: "Australian Capital Territory", cities: ["canberra"] },
     { state: "Northern Territory", cities: ["darwin"] }
@@ -736,6 +736,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let name = clean(value || "")
       .replace(/\s*(?:[|·•–—-]\s*)?(?:web\s+site\s+designed\s+and\s+hosted\s+by|designed\s+and\s+hosted\s+by|(?:web\s+)?design(?:ed)?\s+by|site\s+by|website\s+by|hosted\s+by|powered\s+by)\s+.+$/i, "")
       .trim();
+    name = name.replace(/\s*(?:\|\s*)?\bdeveloped\s+(?:(?:and|&)\s+managed\s+)?by\b.+$/i, "").replace(/\s*[|/]\s*(?:terms|privacy|sitemap)\b.*$/i, "").trim();
     const trailingRightsNotice = /(?:©|\(c\)|copyright)\s*(?:19|20)\d{2}\b/i.exec(name);
     if (trailingRightsNotice?.index > 0) {
       name = name.slice(0, trailingRightsNotice.index).replace(/[\s.,;:|]+$/g, "").trim();
@@ -772,6 +773,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     name = name.split(/\s+/).map(w => {
       if (/^(?:USA|UK|IBM|BMW|BBC|BHP|LLC|LLP|PLC|GMBH|AG|T2)$/i.test(w)) return w.toUpperCase();
       if (/^[A-Z]{2,3}$/.test(w)) return w;
+      const allCapsWordWithPunctuation = w.match(/^([A-Z]{4,})([.,;:]*)$/);
+      if (allCapsWordWithPunctuation) {
+        return allCapsWordWithPunctuation[1].charAt(0) + allCapsWordWithPunctuation[1].slice(1).toLowerCase() + allCapsWordWithPunctuation[2];
+      }
       if (/[a-z]/.test(w) && /[A-Z]/.test(w.slice(1))) return w;
       if (/^[a-zA-Z가-힣]+$/.test(w)) {
         return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
@@ -1079,7 +1084,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           ""
         )
         .trim();
-      if (s.length >= 2 && s.length <= 80 && !/^(?:all|rights|reserved|inc|ltd|co|llc|\d+)$/i.test(s)) {
+      s = s.replace(/\s+(?:19|20)\d{2}\s*$/, (year, offset) =>
+        /\b(?:limited|ltd|incorporated|inc|llc|plc|corp(?:oration)?|gmbh|company|co\.?)\s*$/i.test(s.slice(0, offset)) ? "" : year
+      );
+      const addressLike = /\b\d{1,6}\s+[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5}\s+(?:street|st\.?|road|rd\.?|avenue|ave\.?|lane|ln\.?|drive|dr\.?|boulevard|blvd\.?|highway|hwy\.?|parkway|pkwy\.?|industrial estate)\b/i.test(s) ||
+        /\b(?:address|headquarters|contact details|plot|khasra|industrial area|industrial estate|district|village|street|road|avenue|lane|drive|parkway|suite|unit)\b/i.test(s) && /\d/.test(s);
+      if (!addressLike && s.length >= 2 && s.length <= 80 && !/^(?:all|rights|reserved|inc|ltd|co|llc|\d+)$/i.test(s)) {
         return s;
       }
       return "";
@@ -1143,7 +1153,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
               }
               const n = sanitizeCandidate(x.name || "");
               if (n && hasCorpSuffix(n) && !legalName && !metadataLegalName) {
-                legalName = n;
+                metadataLegalName = n;
               } else if (n && !brandName) {
                 brandName = n;
               }
@@ -1152,10 +1162,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         } catch { }
         if (legalName) break;
       }
-    }
-
-    if (!legalName && metadataLegalName) {
-      legalName = metadataLegalName;
     }
 
     // 2. Footer Copyright & Footer Address lines (most common location for legal suffix)
@@ -1239,6 +1245,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         }
       }
     }
+
+    // Prefer a visible legal/footer name over abbreviated site metadata.
+    if (!legalName && metadataLegalName) legalName = metadataLegalName;
 
     // 5. Title tag segment with corporate suffix
     if (!legalName && doc?.title) {
@@ -1432,6 +1441,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
+    // An explicit Taiwan/ROC address is more reliable than stale schema metadata.
+    if (matchesCountryTerm(addressText || "", "Taiwan") || /\brepublic\s+of\s+china\b|\br\s*\.?\s*o\s*\.?\s*c\.?\b/i.test(addressText || "")) return "Taiwan";
+
     // 2. Schema.org JSON-LD addressCountry
     if (doc) {
       for (const s of doc.querySelectorAll('script[type="application/ld+json"]')) {
@@ -1615,6 +1627,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       // Clean leading address labels like "Address:", "Location:", "HQ:", "Headquarters:"
       address = address.replace(/^[\s•\-\*#|>📍🏢🏠🏬📌]*(?:our\s+)?(?:global\s+headquarters|headquarters|head\s+office|registered\s+office|corporate\s+office|corporate\s+headquarters|corporate\s+address|company\s+address|office\s+address|office\s+location|postal\s+address|physical\s+address|mailing\s+address|street\s+address|business\s+address|main\s+office|office|address|location|hq|주소|본사|사업장\s*주소|회사위치|소재지|所在地|住所|本社|営業所|地址|公司地址|总部地址|联系地址|adresse|standort|firmensitz|dirección|sede|indirizzo|siège)\s*(?:[:：\-–—]|[\r\n,]+)\s*/i, "");
+
+      address = address.replace(/,\s*(?:post your message|post a message|your name|name\s*\*?|email\s*\*?|phone\s*\*?|message\s*\*?|subject\s*\*?|submit|send message)\b[\s\S]*$/i, "");
 
       // Replace semicolons with commas to prevent premature rejection
       address = address.replace(/;/g, ", ");
@@ -2603,6 +2617,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // Building Number first before Building
     addr = addr.replace(/\bBldg\b\.?\s*No\b\.?/gi, "Building Number");
     addr = addr.replace(/\bSec\b\.?(?=\s+\d+\b)/gi, "Section");
+    addr = addr.replace(/\bShau\s+Ann\b/gi, "Dashu An");
     addr = addr.replace(/\bBldg\b\.?/gi, "Building");
     addr = addr.replace(/\bSte\b\.?/gi, "Suite");
     addr = addr.replace(/\bApt\b\.?/gi, "Apartment");
@@ -2640,6 +2655,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // "No. 1098" -> "Number 1098", "No. 5" -> "Number 5", "No 12" -> "Number 12"
     addr = addr.replace(/(?:^|(?<=[,;\s]))No\b\.?\s*(?=[A-Za-z0-9#])/gi, "Number ");
     addr = addr.replace(/(?:^|(?<=[,;\s]))No\b\s+(?=\d+)/gi, "Number ");
+    addr = addr.replace(/\bNumber(?=\d)/gi, "Number ");
     // "#" symbol: e.g. "#101" -> "Number 101"
     addr = addr.replace(/(?:^|(?<=[,;\s]))#\s*(\d+)/g, "Number $1");
 
@@ -3231,6 +3247,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       ) + trailing;
     }).join(" ");
 
+    if (addressCountry === "India") {
+      addr = addr.replace(/,\s*New Delhi\s*-?\s*,?\s*Delhi\b/gi, ", New Delhi");
+    }
+
     // Final safeguard for compressed US state+ZIP tokens (e.g. NY10018).
     // Run after title-casing so it also works when country detection missed.
     const finalUsStateCodes = Object.keys(POSTAL_REGION_ABBREVIATIONS["United States Of America"]);
@@ -3365,6 +3385,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // UK localities prove City only. State is available only when the address
     // also names a county or one of the UK nations above.
     if (hasUkCity) city = "Y";
+    // UK country/city combinations provide a usable administrative region
+    // signal for the portal's availability field, even when no county is printed.
+    if (hasUkCity && /^(?:england|wales|scotland|northern ireland)$/i.test(String(countryHint || "").trim())) {
+      state = "Y";
+    }
     if (hasAustrianState || austrianStateCapital || germanCityState) state = "Y";
     if (austrianCityState || hasAustrianPostalAddress || germanCityState) city = "Y";
     if (isSingapore) {
@@ -3429,7 +3454,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const parts = (address || "").split(",").map(p => p.trim()).filter(Boolean);
     const hasNamedStateRegion = /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower);
     const hasExplicitStateEvidence = hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasUaeEmirate || hasSwedenCounty || hasSouthAfricanProvince || hasAustrianState || austrianStateCapital || germanCityState ||
-      hasIndianState || hasMalaysiaState || hasUkCounty || isSingapore || hasAustralianStateCode ||
+      hasIndianState || hasMalaysiaState || hasUkCounty || (hasUkCity && /^(?:england|wales|scotland|northern ireland)$/i.test(String(countryHint || "").trim())) || isSingapore || hasAustralianStateCode ||
       hasAustralianStateCapital || hasMalaysiaStateCapital || hasSouthAfricanProvincialCapital || hasNamedStateRegion ||
       POSTAL_REGION_NAMES_REGEX.test(addrLower) || POSTAL_REGION_US_CODES_REGEX.test(address || "");
     if (!hasExplicitStateEvidence) state = "N";
@@ -3440,7 +3465,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Rule 9 & 10: Email ID & Secondary Email ID
   function extractEmails(doc, text, siteHostname) {
     const emails = new Set();
-    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,24}/g;
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,24}(?![a-zA-Z0-9_-]*@)/g;
 
     const decodeEmailText = value => {
       let decoded = String(value || "")
@@ -3612,10 +3637,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   }
 
   // Rule 11: Phone Number
-  // "remove the country code, special characters, and spaces. Do not take toll-free numbers. Do not take numbers starting with zero."
+  // Prefer non-toll-free numbers, but retain a toll-free number when it is the
+  // only published contact number. Remove country code and leading zeroes.
   function extractPhoneNumber(text, country) {
     // 1. Scan phone lines
     const phoneCandidates = [];
+    let tollFreeFallback = "";
     const phoneRegex = /(?:Tel|Telephone|Phone|Mob(?:ile)?|Cell|Fax|T|P|M|F)\.?\s*[:：.-]?\s*([+]?[0-9\s()./-]{7,25})/gi;
     let m;
     while ((m = phoneRegex.exec(text)) !== null) {
@@ -3668,6 +3695,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       // Remove known freephone lines for the detected country's numbering plan.
       if (isTollFreeNumber(cleanDigits, country)) {
+        if (!tollFreeFallback && cleanDigits.length >= 7 && cleanDigits.length <= 12) {
+          tollFreeFallback = cleanDigits;
+        }
         continue;
       }
 
@@ -3677,7 +3707,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
-    return "";
+    return tollFreeFallback;
   }
 
   // Rules 12, 13, 14: Products, Images, Descriptions

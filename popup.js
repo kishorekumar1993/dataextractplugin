@@ -200,14 +200,11 @@ async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs = 25000) {
   if (!String(tab.url || "").startsWith("chrome-error://")) return tab;
 
   const fallbackUrl = new URL(requestedUrl);
-  if (fallbackUrl.protocol !== "https:") {
-    throw new Error("The website could not be loaded in the browser.");
-  }
-  fallbackUrl.protocol = "http:";
+  fallbackUrl.protocol = fallbackUrl.protocol === "https:" ? "http:" : "https:";
   await chrome.tabs.update(tabId, { url: fallbackUrl.href });
   await waitForTabComplete(tabId, timeoutMs);
   tab = await chrome.tabs.get(tabId);
-  if (!/^https?:\/\//i.test(tab.url || "")) {
+  if (!/^https?:\/\//i.test(tab.url || "") || String(tab.url || "").startsWith("chrome-error://")) {
     throw new Error("The website could not be loaded over HTTPS or HTTP.");
   }
   return tab;

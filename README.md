@@ -23,7 +23,7 @@ The extension may flag prohibited categories (Porn/Adult, Medicine/Medical/Hospi
 | 9 | **City** | Dropdown | Detected city/locality verified (`Available`) | `Available` |
 | 10 | **Email Id** | Email Input | Primary corporate email (`sales@`, `info@`, etc.) | `sales@rezontech.com` |
 | 11 | **Secondary Email Id** | Email Input | Alternate / local email (`yacht@`, `insa@`, etc.) | `yacht@rezontech.com` |
-| 12 | **Phone Number** | Number Input | Country code stripped, clean digits | `313484246` |
+| 12 | **Phone Number** | Number Input | Country code stripped, clean digits; prefers non-toll-free numbers and uses toll-free only when no regular number is available | `313484246` |
 | 13 | **Number of Product** | Dropdown | Counts product catalog items (set to target `3`) | `3` |
 | 14 | **Image Product** | Dropdown | Counts product photos (set to target `3`) | `3` |
 | 15 | **No. of Product Description** | Dropdown | Counts product description items (set to target `3`) | `3` |
