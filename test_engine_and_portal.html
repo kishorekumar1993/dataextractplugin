@@ -1264,17 +1264,33 @@
       pass: passEmail
     };
 
-    // 9: Forbidden category only checks header/hero context (title, meta, h1, first 500 chars)
+    // 9: Forbidden categories are checked throughout page text, including deep body content.
     const medicalDoc = {
       title: "Industrial Conveyor Systems & Steel Belt Solutions",
       querySelector: (sel) => null
     };
     const bodyFar = "We provide conveyor belts to various industries worldwide. ".repeat(20) + " In 2020 we supplied hospital beds framing.";
     const forbiddenFar = Extractor.checkForbiddenCategories(bodyFar, medicalDoc);
-    const passForbidden = forbiddenFar.isForbidden === false;
-    qcIssuesChecks["Issue 9: Forbidden scanner header/hero scope (avoids body false positives)"] = {
+    const passForbidden = forbiddenFar.isForbidden === true &&
+      forbiddenFar.category === "Medicine / Medical / Hospital" &&
+      forbiddenFar.matchedText === "hospital";
+    qcIssuesChecks["Issue 9: Forbidden scanner detects category terms anywhere in page text"] = {
       actual: forbiddenFar,
       pass: passForbidden
+    };
+    const medicineMetadataDoc = {
+      title: "Industrial equipment",
+      querySelector: () => null,
+      querySelectorAll: () => [
+        { getAttribute: (name) => name === "alt" ? "Medicines and medical supplies" : "", textContent: "" }
+      ]
+    };
+    const forbiddenImageMetadata = Extractor.checkForbiddenCategories("Industrial equipment", medicineMetadataDoc);
+    qcIssuesChecks["Issue 9c: Forbidden scanner detects category terms in image metadata"] = {
+      actual: forbiddenImageMetadata,
+      pass: forbiddenImageMetadata.isForbidden === true &&
+        forbiddenImageMetadata.category === "Medicine / Medical / Hospital" &&
+        forbiddenImageMetadata.matchedText === "medicines"
     };
     const profileRubberResult = Extractor.extractFromHtml(
       `<html>

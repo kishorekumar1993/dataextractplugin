@@ -6,6 +6,10 @@ A high-performance Chrome extension designed for **Data Entry & QC (Quality Chec
 
 ## 🎯 15 Fields Extracted & Auto-Filled
 
+### Compliance restriction
+
+Do not process a website if any prohibited category term appears anywhere in its page text or image/accessibility metadata: Porn/Adult, Medicine/Medical/Hospital, Food, Weapons/Knife, Defence, Aircraft/Aerospace, Marine/Ship, Chemical, Alcohol, or Animals. The extension marks matching sites as Not Working and fills only the status field.
+
 | # | Field Name | Type | How It Is Extracted | Example (Rezontech) |
 |---|---|---|---|---|
 | 1 | **Website Name** | URL Input | Read from portal or popup input (Preserved; never updated during form fill) | `http://www.rezontech.co.kr` |

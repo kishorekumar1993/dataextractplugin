@@ -24,7 +24,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Forbidden Categories (Rule: Even if these appear anywhere, DO NOT work on that site!)
   const FORBIDDEN_CATEGORIES = [
     { name: "Porn / Adult", regex: /\b(porn|pornography|xxx|adult|erotic|sex|prostitut(?:e|ion)|explicit content|escort\s+(?:services?|agenc(?:y|ies)|companies|company|directory|girls?)|(?:independent|female|male)\s+escorts?)\b/i },
-    { name: "Medicine / Medical / Hospital", regex: /\b(medicine|medical|hospital|pharmacy|pharmaceuticals?|clinic|surgical|physicians?|prescriptions?|therapeutics?|healthcare|health care)\b/i },
+    { name: "Medicine / Medical / Hospital", regex: /\b(medicines?|medical|hospital|pharmacy|pharmaceuticals?|clinic|surgical|physicians?|prescriptions?|therapeutics?|healthcare|health care)\b/i },
     { name: "Food", regex: /\b(food|foods|restaurant|bakery|catering|snacks?|confectionery|edible|beverages?|drinks?|groceries|fruit|vegetables?|meat|seafood|dairy|tea|coffee|foodstuff)\b/i },
     { name: "Weapons (Knife)", regex: /\b(weapons?|knives|knife|blades?|firearms?|ammunition|guns?|swords?)\b/i },
     { name: "Defence", regex: /\b(defen[cs]e|military|warfare|missiles?|tactical weapons?|munitions?)\b/i },
