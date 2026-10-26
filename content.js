@@ -92,7 +92,8 @@
     }
   ];
 
-  const PORTAL_FIELD_COUNT = FIELD_DEFINITIONS.length;
+  // 14 fillable fields on portal (Website Name is read-only input and must not update)
+  const PORTAL_FIELD_COUNT = 14;
   let cachedExtractedData = null;
 
   const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -242,19 +243,8 @@
     return true;
   }
 
-  // Discriminative matching rules matching popup.js
+  // Discriminative matching rules matching popup.js (14 fillable portal fields; Website Name must not update)
   const FIELD_RULES = [
-    {
-      key: "websiteName",
-      label: "Website Name",
-      isSelect: false,
-      match: (ctrl, label, desc) => {
-        if (ctrl.tagName === "SELECT") return 0;
-        if (label.includes("websitename") || label === "website") return 60;
-        if (desc.includes("websitename") || desc.includes("targeturl") || desc.includes("siteurl")) return 50;
-        return 0;
-      }
-    },
     {
       key: "websiteStatus",
       label: "Website Status",
@@ -440,22 +430,49 @@
     }
   ];
 
-  // Auto-fill all portal fields based on extracted data
+  // Identify Website Name / URL control to protect it from being updated (Rule: Website Name must not update)
+  function isWebsiteNameControl(ctrl) {
+    if (!ctrl || ctrl.tagName === "SELECT") return false;
+    const lbl = norm(getExactLabel(ctrl));
+    const desc = norm([
+      ctrl.id,
+      ctrl.name,
+      ctrl.placeholder,
+      ctrl.getAttribute("aria-label"),
+      ctrl.getAttribute("data-field")
+    ].join(" "));
+    if (lbl.includes("websitename") || lbl === "website" || lbl === "websiteurl") return true;
+    if (desc.includes("websitename") || desc.includes("targeturl") || desc.includes("siteurl") || desc.includes("weburl")) return true;
+    if (lbl.includes("website") && !lbl.includes("status")) return true;
+    return false;
+  }
+
+  // Auto-fill all portal fields based on extracted data (Website Name is preserved / not updated)
   function fillAllPortalFields(data) {
     if (!data) return { filled: 0, total: PORTAL_FIELD_COUNT, details: [] };
     const forbiddenDetected = Boolean(data.forbidden?.isForbidden);
     const onlinePurchaseRejected = Boolean(data.onlinePurchase?.isOnlineStore);
     const websiteNotWorking = forbiddenDetected || onlinePurchaseRejected || String(data.websiteStatus || "").trim().toLowerCase() === "not working";
     const fillData = websiteNotWorking
-      ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteName", "websiteStatus"].includes(key)))
-      : data;
+      ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteStatus"].includes(key)))
+      : Object.fromEntries(Object.entries(data).filter(([key]) => key !== "websiteName"));
 
     const controls = getCandidateControls();
     const usedControls = new Set();
+
+    // Protect Website Name control: Rule is that Website Name should NOT update
+    for (const ctrl of controls) {
+      if (isWebsiteNameControl(ctrl)) {
+        usedControls.add(ctrl);
+      }
+    }
+
     const results = [];
     let filledCount = 0;
 
     for (const rule of FIELD_RULES) {
+      if (rule.key === "websiteName") continue;
+
       const val = fillData[rule.key];
       if (val === undefined || val === null || String(val).trim() === "") {
         results.push({ field: rule.label, status: "missing" });
@@ -500,10 +517,10 @@
     showToast(`✅ ${filledCount}/${PORTAL_FIELD_COUNT} Fields Filled! Review before submit.`);
     if (websiteNotWorking) {
       showToast(forbiddenDetected
-        ? `${data.forbidden.message || "Forbidden category detected."} Website marked Not Working; only name and status were filled.`
+        ? `${data.forbidden.message || "Forbidden category detected."} Website marked Not Working; status was filled.`
         : onlinePurchaseRejected
-          ? "ERROR: Online purchase site is not accepted. Website marked Not Working; only name and status were filled."
-          : "Website is Not Working; only name and status were filled.");
+          ? "ERROR: Online purchase site is not accepted. Website marked Not Working; status was filled."
+          : "Website is Not Working; status was filled.");
       return { filled: filledCount, total: PORTAL_FIELD_COUNT, details: results, blocked: true };
     }
     return { filled: filledCount, total: PORTAL_FIELD_COUNT, details: results };
@@ -540,12 +557,12 @@
     card.className = "qc-modal-card";
 
     let fieldsHtml = "";
-    for (const def of FIELD_DEFINITIONS) {
+    for (const def of FIELD_DEFINITIONS.filter(({ key }) => key !== "websiteName")) {
       const rawValue = data[def.key];
       const val = rawValue === undefined || rawValue === null || String(rawValue).trim() === ""
         ? '<span style="color:#94a3b8">Not detected</span>'
         : escapeHtml(rawValue);
-      const isFull = ["companyAddress", "websiteName"].includes(def.key);
+      const isFull = def.key === "companyAddress";
       fieldsHtml += `
         <div class="qc-field-preview ${isFull ? "full-width" : ""}">
           <div class="qc-preview-label">${def.label}</div>

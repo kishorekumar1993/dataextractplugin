@@ -25,7 +25,8 @@ const ALL_FIELD_KEYS = [
   "imageProduct",
   "noOfProductDescription"
 ];
-const PORTAL_FIELD_COUNT = ALL_FIELD_KEYS.length + 1;
+// 14 fillable fields on portal (Website Name is read-only input and must not update)
+const PORTAL_FIELD_COUNT = ALL_FIELD_KEYS.length;
 
 // Display status banner
 function setStatus(msg, type = "info") {
@@ -795,8 +796,8 @@ async function fillPortal(data) {
   const onlinePurchaseRejected = Boolean(data?.onlinePurchase?.isOnlineStore);
   const websiteNotWorking = forbiddenDetected || onlinePurchaseRejected || String(data?.websiteStatus || "").trim().toLowerCase() === "not working";
   const portalData = websiteNotWorking
-    ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteName", "websiteStatus"].includes(key)))
-    : data;
+    ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteStatus"].includes(key)))
+    : Object.fromEntries(Object.entries(data).filter(([key]) => key !== "websiteName"));
 
   if (!portalTabId) {
     const tab = await getActiveTab();
@@ -850,16 +851,24 @@ async function fillPortal(data) {
         return "";
       }
 
+      // Identify Website Name / URL control to protect it from being updated (Rule: Website Name must not update)
+      function isWebsiteNameControl(ctrl) {
+        if (!ctrl || ctrl.tagName === "SELECT") return false;
+        const lbl = norm(getExactLabel(ctrl));
+        const desc = norm([
+          ctrl.id,
+          ctrl.name,
+          ctrl.placeholder,
+          ctrl.getAttribute("aria-label"),
+          ctrl.getAttribute("data-field")
+        ].join(" "));
+        if (lbl.includes("websitename") || lbl === "website" || lbl === "websiteurl") return true;
+        if (desc.includes("websitename") || desc.includes("targeturl") || desc.includes("siteurl") || desc.includes("weburl")) return true;
+        if (lbl.includes("website") && !lbl.includes("status")) return true;
+        return false;
+      }
+
       const FIELD_RULES = [
-        {
-          key: "websiteName",
-          match: (ctrl, label, desc) => {
-            if (ctrl.tagName === "SELECT") return 0;
-            if (label.includes("websitename") || label === "website") return 60;
-            if (desc.includes("websitename") || desc.includes("targeturl") || desc.includes("siteurl")) return 50;
-            return 0;
-          }
-        },
         {
           key: "websiteStatus",
           isSelect: true,
@@ -1033,9 +1042,16 @@ async function fillPortal(data) {
 
       let filled = 0;
       const used = new Set();
+      // Protect Website Name field: Rule is that Website Name should NOT update
+      for (const ctrl of controls) {
+        if (isWebsiteNameControl(ctrl)) {
+          used.add(ctrl);
+        }
+      }
       const details = [];
 
       for (const rule of FIELD_RULES) {
+        if (rule.key === "websiteName") continue;
         const val = formData[rule.key];
         if (val === undefined || val === null || String(val).trim() === "") {
           details.push({ field: rule.key, status: "missing" });
@@ -1142,10 +1158,10 @@ async function fillPortal(data) {
   const totalFilled = totals.reduce((sum, result) => sum + result.filled, 0);
   if (websiteNotWorking) {
     setStatus(forbiddenDetected
-      ? `${data.forbidden.message || "Forbidden category detected."} Website marked Not Working; only website name and status were filled.`
+      ? `${data.forbidden.message || "Forbidden category detected."} Website marked Not Working; status was filled.`
       : onlinePurchaseRejected
-        ? "ERROR: Online purchase site is not accepted. Website marked Not Working; only website name and status were filled."
-        : "Website status is Not Working. Filled the website name and status only; company details were skipped.", "err");
+        ? "ERROR: Online purchase site is not accepted. Website marked Not Working; status was filled."
+        : "Website status is Not Working. Filled website status only; company details were skipped.", "err");
     return;
   }
   setStatus(`✅ Filled ${totalFilled}/${PORTAL_FIELD_COUNT} fields in portal! Review and Submit.`, "ok");

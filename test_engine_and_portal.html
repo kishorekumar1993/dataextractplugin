@@ -83,7 +83,7 @@
     <form id="portal-form" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px;">
       <div>
         <label for="websiteName">Website Name:</label>
-        <input type="text" id="websiteName" name="websiteName" value="http://www.rezontech.co.kr">
+        <input type="text" id="websiteName" name="websiteName" value="https://manually-entered.example/">
       </div>
       <div>
         <label for="websiteStatus">Website Status:</label>
@@ -1118,6 +1118,10 @@
 
     let filledCount = 0;
     const used = new Set();
+    let websiteNameEvents = 0;
+    const websiteNameControl = document.getElementById("websiteName");
+    websiteNameControl.addEventListener("input", () => websiteNameEvents++);
+    websiteNameControl.addEventListener("change", () => websiteNameEvents++);
     for (const rule of FIELD_RULES) {
       const val = resKorea[rule.key] || (rule.isSelect ? "3" : "");
       if (!val) continue;
@@ -1165,8 +1169,12 @@
     const cAddrVal = document.getElementById("companyAddress").value;
     const cCountryVal = document.getElementById("countryName").value;
 
+    const websiteNameVal = websiteNameControl.value;
+    const isWebsiteNameUntouched = websiteNameVal === "https://manually-entered.example/" && websiteNameEvents === 0;
+
     const passPortal = (
       filledCount >= 13 &&
+      isWebsiteNameUntouched &&
       cNameVal === "Rezontech Company Limited" &&
       cAddrVal.includes("Megavalley") &&
       !cAddrVal.includes("14056") &&
@@ -1174,8 +1182,11 @@
       cCountryVal === "South Korea"
     );
 
-    renderTest("Test 8: Portal Form Exact Filling (Company Name, Address, Country)", passPortal, {
+    renderTest("Test 8: Portal Form Exact Filling (Company Name, Address, Country, Website Name Preserved)", passPortal, {
       totalFilled: `${filledCount}/14 fields`,
+      websiteNamePreserved: isWebsiteNameUntouched,
+      websiteNameEvents,
+      websiteNameVal,
       filledCompanyName: cNameVal,
       filledCompanyAddress: cAddrVal,
       filledCountryName: cCountryVal,
@@ -1293,13 +1304,41 @@
       maritimeShipping,
       pass: passShippingClassification
     };
+    const tciMobilityResult = Extractor.extractFromHtml(
+      `<html>
+        <head><title>TCI Mobility - Industrial Electric Utility Vehicle Manufacturing</title></head>
+        <body>
+          <h1>TCI Mobility - Industrial Electric Utility Vehicles</h1>
+          <p>TCI Mobility manufactures industrial electric utility vehicles.</p>
+          <img alt="Escort TA">
+        </body>
+      </html>`,
+      "https://www.tcimobility.com/"
+    );
+    const adultEscortServices = Extractor.checkForbiddenCategories(
+      "The business operates an escort agency.",
+      null
+    );
+    const passEscortClassification =
+      tciMobilityResult.forbidden.isForbidden === false &&
+      tciMobilityResult.websiteStatus === "Working" &&
+      adultEscortServices.isForbidden === true &&
+      adultEscortServices.category === "Porn / Adult";
+    qcIssuesChecks["Issue 9b: Escort vehicle model does not trigger adult-content classification"] = {
+      tciMobility: {
+        websiteStatus: tciMobilityResult.websiteStatus,
+        forbidden: tciMobilityResult.forbidden
+      },
+      adultEscortServices,
+      pass: passEscortClassification
+    };
     const malformedSvgDoc = new DOMParser().parseFromString(
       `<body><p>Visible page text</p><svg preserveAspectRatio=""><title>Ignored SVG text</title></svg><p>Footer text</p></body>`,
       "text/html"
     );
     const safeSvgText = Extractor.getElementText(malformedSvgDoc.body);
     const passSvgText = safeSvgText === "Visible page text\nFooter text";
-    qcIssuesChecks["Issue 9b: Text extraction tolerates invalid SVG attributes"] = {
+    qcIssuesChecks["Issue 9c: Text extraction tolerates invalid SVG attributes"] = {
       expected: "Visible page text\nFooter text",
       actual: safeSvgText,
       pass: passSvgText
@@ -1392,6 +1431,7 @@
       passEmail &&
       passForbidden &&
       passShippingClassification &&
+      passEscortClassification &&
       passSvgText &&
       passBType &&
       passKorean
