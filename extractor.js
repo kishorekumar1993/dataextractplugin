@@ -3653,7 +3653,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     return {
       websiteName: url,
-      websiteStatus: urlRules.isSubdomain ? "Not Working" : "Working",
+      websiteStatus: (urlRules.isSubdomain || forbidden.isForbidden) ? "Not Working" : "Working",
       businessType,
       companyProfile,
       companyName,

@@ -443,15 +443,11 @@
   // Auto-fill all portal fields based on extracted data
   function fillAllPortalFields(data) {
     if (!data) return { filled: 0, total: PORTAL_FIELD_COUNT, details: [] };
-    if (data.forbidden?.isForbidden) {
-      showToast(data.forbidden.message || "This website is not eligible for processing.");
-      return {
-        filled: 0,
-        total: PORTAL_FIELD_COUNT,
-        blocked: true,
-        details: [{ status: "blocked", message: data.forbidden.message || "Forbidden website." }]
-      };
-    }
+    const forbiddenDetected = Boolean(data.forbidden?.isForbidden);
+    const websiteNotWorking = forbiddenDetected || String(data.websiteStatus || "").trim().toLowerCase() === "not working";
+    const fillData = websiteNotWorking
+      ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteName", "websiteStatus"].includes(key)))
+      : data;
 
     const controls = getCandidateControls();
     const usedControls = new Set();
@@ -459,7 +455,7 @@
     let filledCount = 0;
 
     for (const rule of FIELD_RULES) {
-      const val = data[rule.key];
+      const val = fillData[rule.key];
       if (val === undefined || val === null || String(val).trim() === "") {
         results.push({ field: rule.label, status: "missing" });
         continue;
@@ -501,6 +497,12 @@
     }
 
     showToast(`✅ ${filledCount}/${PORTAL_FIELD_COUNT} Fields Filled! Review before submit.`);
+    if (websiteNotWorking) {
+      showToast(forbiddenDetected
+        ? `${data.forbidden.message || "Forbidden category detected."} Website marked Not Working; only name and status were filled.`
+        : "Website is Not Working; only name and status were filled.");
+      return { filled: filledCount, total: PORTAL_FIELD_COUNT, details: results, blocked: true };
+    }
     return { filled: filledCount, total: PORTAL_FIELD_COUNT, details: results };
   }
 

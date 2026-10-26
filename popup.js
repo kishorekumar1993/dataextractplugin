@@ -644,6 +644,12 @@ function readFieldsFromUi() {
     const el = $(`field-${key}`);
     if (el) data[key] = el.value.trim();
   }
+  // Preserve the extracted compliance decision when the user presses the
+  // separate Fill button; this prevents an intervening UI edit from bypassing it.
+  if (currentExtractedData?.forbidden?.isForbidden) {
+    data.forbidden = currentExtractedData.forbidden;
+    data.websiteStatus = "Not Working";
+  }
   return data;
 }
 
@@ -751,12 +757,8 @@ async function performExtraction(targetUrl) {
 
 // Fill directly into portal tab via executeScript (no sendMessage, 100% reliable)
 async function fillPortal(data) {
-  if (data?.forbidden?.isForbidden) {
-    setStatus(data.forbidden.message || "This website is not eligible for processing.", "err");
-    return { filled: 0, total: PORTAL_FIELD_COUNT, blocked: true };
-  }
-
-  const websiteNotWorking = String(data?.websiteStatus || "").trim().toLowerCase() === "not working";
+  const forbiddenDetected = Boolean(data?.forbidden?.isForbidden);
+  const websiteNotWorking = forbiddenDetected || String(data?.websiteStatus || "").trim().toLowerCase() === "not working";
   const portalData = websiteNotWorking
     ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteName", "websiteStatus"].includes(key)))
     : data;
@@ -1104,7 +1106,9 @@ async function fillPortal(data) {
   const totals = execResults?.map(r => r?.result).filter(Boolean) || [];
   const totalFilled = totals.reduce((sum, result) => sum + result.filled, 0);
   if (websiteNotWorking) {
-    setStatus("Website status is Not Working. Filled the website name and status only; company details were skipped.", "warn");
+    setStatus(forbiddenDetected
+      ? `${data.forbidden.message || "Forbidden category detected."} Website marked Not Working; only website name and status were filled.`
+      : "Website status is Not Working. Filled the website name and status only; company details were skipped.", "warn");
     return;
   }
   setStatus(`✅ Filled ${totalFilled}/${PORTAL_FIELD_COUNT} fields in portal! Review and Submit.`, "ok");
