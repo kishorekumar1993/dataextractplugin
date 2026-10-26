@@ -92,6 +92,12 @@ function mergeFrameExtractionResults(results) {
     if (["Available", "Y"].includes(data.state)) merged.state = "Available";
     if (["Available", "Y"].includes(data.city)) merged.city = "Available";
     merged.contactUrls = [...new Set([...(merged.contactUrls || []), ...(data.contactUrls || [])])];
+    // Preserve the strongest exclusion result across every same-site frame.
+    if (data.forbidden?.isForbidden) merged.forbidden = data.forbidden;
+    if (data.onlinePurchase?.isOnlineStore) merged.onlinePurchase = data.onlinePurchase;
+  }
+  if (merged.forbidden?.isForbidden || merged.onlinePurchase?.isOnlineStore || merged.urlRules?.isSubdomain) {
+    merged.websiteStatus = "Not Working";
   }
   return merged;
 }
@@ -385,6 +391,9 @@ async function crawlAndExtractDirect(targetUrl) {
         const enData = await extractFetchedPage(tab.id, testUrl);
 
         if (enData && !enData.error) {
+          if (enData.forbidden?.isForbidden) mainData.forbidden = enData.forbidden;
+          if (enData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = enData.onlinePurchase;
+          if (mainData.forbidden?.isForbidden || mainData.onlinePurchase?.isOnlineStore) mainData.websiteStatus = "Not Working";
           // Prefer Latin-alphabet company name from English subpage
           if (enData.companyName && /[a-zA-Z]{3,}/.test(enData.companyName) &&
               (!mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName))) {
@@ -459,6 +468,9 @@ async function crawlAndExtractDirect(targetUrl) {
         const contactData = await extractFetchedPage(tab.id, contactUrl, isDiscoveredContactUrl);
 
         if (contactData && !contactData.error) {
+          if (contactData.forbidden?.isForbidden) mainData.forbidden = contactData.forbidden;
+          if (contactData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = contactData.onlinePurchase;
+          if (mainData.forbidden?.isForbidden || mainData.onlinePurchase?.isOnlineStore) mainData.websiteStatus = "Not Working";
           const contactAddr = contactData.companyAddress || "";
           const mainAddr = mainData.companyAddress || "";
           const contactPriority = contactAddressSourcePriority(contactData.addressSource);
@@ -594,8 +606,11 @@ function populateFields(data) {
   const alertEl = $("compliance-alert");
   if (data.forbidden?.isForbidden) {
     alertEl.style.display = "flex";
-    alertEl.textContent = data.forbidden.message;
-    setStatus(data.forbidden.message, "err");
+    const message = data.forbidden.matchedText
+      ? `${data.forbidden.message} Matched text: "${data.forbidden.matchedText}".`
+      : data.forbidden.message;
+    alertEl.textContent = message;
+    setStatus(message, "err");
   } else if (data.onlinePurchase?.isOnlineStore) {
     const message = "ERROR: Online purchase detected. This site is not accepted; Website Status marked Not Working.";
     alertEl.style.display = "flex";

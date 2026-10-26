@@ -54,6 +54,13 @@ function mergeFrameExtractionResults(results) {
     if (["Available", "Y"].includes(data.state)) merged.state = "Available";
     if (["Available", "Y"].includes(data.city)) merged.city = "Available";
     merged.contactUrls = [...new Set([...(merged.contactUrls || []), ...(data.contactUrls || [])])];
+    // Compliance is an exclusion rule: any same-site frame that identifies a
+    // forbidden category or a disallowed online store must win the merge.
+    if (data.forbidden?.isForbidden) merged.forbidden = data.forbidden;
+    if (data.onlinePurchase?.isOnlineStore) merged.onlinePurchase = data.onlinePurchase;
+  }
+  if (merged.forbidden?.isForbidden || merged.onlinePurchase?.isOnlineStore || merged.urlRules?.isSubdomain) {
+    merged.websiteStatus = "Not Working";
   }
   return merged;
 }
@@ -282,6 +289,9 @@ async function crawlInTab(targetUrl, timeoutMs = 15000) {
         const enData = await extractFetchedPage(tab.id, candidateEnUrl);
 
         if (enData && !enData.error) {
+          if (enData.forbidden?.isForbidden) mainData.forbidden = enData.forbidden;
+          if (enData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = enData.onlinePurchase;
+          if (mainData.forbidden?.isForbidden || mainData.onlinePurchase?.isOnlineStore) mainData.websiteStatus = "Not Working";
           // Only override if original company name lacks Latin letters (Issue 13)
           if (enData.companyName && /[a-zA-Z]{3,}/.test(enData.companyName) &&
               (!mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName))) {
@@ -361,6 +371,9 @@ async function crawlInTab(targetUrl, timeoutMs = 15000) {
         const contactData = await extractFetchedPage(tab.id, contactUrl, isDiscoveredContactUrl);
 
         if (contactData && !contactData.error) {
+          if (contactData.forbidden?.isForbidden) mainData.forbidden = contactData.forbidden;
+          if (contactData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = contactData.onlinePurchase;
+          if (mainData.forbidden?.isForbidden || mainData.onlinePurchase?.isOnlineStore) mainData.websiteStatus = "Not Working";
           const contactAddr = contactData.companyAddress || "";
           const mainAddr = mainData.companyAddress || "";
           const contactPriority = contactAddressSourcePriority(contactData.addressSource);

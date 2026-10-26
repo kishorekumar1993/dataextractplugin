@@ -708,12 +708,19 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const pageContext = [
       doc?.title || "",
       doc?.querySelector?.('meta[name="description"]')?.content || "",
+      doc?.querySelector?.('meta[property="og:title"]')?.content || "",
       doc?.querySelector?.('meta[property="og:description"]')?.content || "",
       doc?.querySelector?.('meta[name="keywords"]')?.content || "",
       text || getElementText(doc?.body) || ""
     ];
     if (doc?.querySelectorAll) {
-      for (const el of doc.querySelectorAll("img, a[href], [aria-label], [title], [alt], [style], svg title")) {
+      for (const script of doc.querySelectorAll("script[type='application/ld+json']")) {
+        pageContext.push(script.textContent || "");
+      }
+      // Scan user-facing copy, accessibility text, and media/link filenames.
+      // Do not scan CSS class/id/style values: common names like "cat-item"
+      // can otherwise be misread as prohibited subject matter.
+      for (const el of doc.querySelectorAll("img, a[href], [aria-label], [title], [alt], svg title")) {
         pageContext.push(
           el.getAttribute?.("alt") || "",
           el.getAttribute?.("aria-label") || "",
@@ -722,9 +729,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           el.getAttribute?.("data-src") || "",
           el.getAttribute?.("srcset") || "",
           el.getAttribute?.("href") || "",
-          el.getAttribute?.("style") || "",
-          el.getAttribute?.("class") || "",
-          el.getAttribute?.("id") || "",
           el.textContent || ""
         );
       }
@@ -732,10 +736,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const fullPageContext = pageContext.join(" ").toLowerCase();
 
     for (const cat of FORBIDDEN_CATEGORIES) {
-      if (cat.regex.test(fullPageContext)) {
+      const match = fullPageContext.match(cat.regex);
+      if (match) {
         return {
           isForbidden: true,
           category: cat.name,
+          matchedText: match[0],
           message: `⛔ FORBIDDEN CATEGORY DETECTED: [${cat.name}]. Rule: Do not work on this site!`
         };
       }
@@ -3653,7 +3659,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const urlRules = checkUrlRules(url);
 
     // 2. Check Forbidden Categories (Rule 1)
-    const forbidden = checkForbiddenCategories(text, doc);
+    let forbidden = checkForbiddenCategories(text, doc);
 
     // 3. Extract Raw Multi-Line Address (Rule 6)
     const addressResult = findRawAddress(doc, text, url, true);
@@ -3666,6 +3672,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let companyNameRaw = extractCompanyName(doc, text, url, false);
     companyNameRaw = alignItalianLegalSuffixFromAddress(companyNameRaw, rawAddress, countryName);
     let companyName = formatCompanyName(companyNameRaw, countryName);
+    // Names can come from structured metadata rather than visible copy; run
+    // the compliance scan against the extracted identity as well.
+    const identityForbidden = checkForbiddenCategories([text, companyNameRaw, companyName].filter(Boolean).join(" "), doc);
+    if (identityForbidden.isForbidden) forbidden = identityForbidden;
     const addressRegionCountry = inferCountryFromAddressRegion(rawAddress);
     let countryObj = COUNTRIES.find(c => c.name.toLowerCase() === countryName.toLowerCase());
 
