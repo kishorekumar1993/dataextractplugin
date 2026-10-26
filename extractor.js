@@ -3530,7 +3530,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     return {
       websiteName: url,
-      websiteStatus: "W-Working",
+      websiteStatus: urlRules.isSubdomain ? "Not Working" : "Working",
       businessType,
       companyProfile,
       companyName,

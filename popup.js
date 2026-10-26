@@ -756,6 +756,11 @@ async function fillPortal(data) {
     return { filled: 0, total: PORTAL_FIELD_COUNT, blocked: true };
   }
 
+  const websiteNotWorking = String(data?.websiteStatus || "").trim().toLowerCase() === "not working";
+  const portalData = websiteNotWorking
+    ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteName", "websiteStatus"].includes(key)))
+    : data;
+
   if (!portalTabId) {
     const tab = await getActiveTab();
     portalTabId = tab.id;
@@ -1093,11 +1098,15 @@ async function fillPortal(data) {
       }
       return { filled, total: FIELD_RULES.length, details };
     },
-    args: [data]
+    args: [portalData]
   });
 
   const totals = execResults?.map(r => r?.result).filter(Boolean) || [];
   const totalFilled = totals.reduce((sum, result) => sum + result.filled, 0);
+  if (websiteNotWorking) {
+    setStatus("Website status is Not Working. Filled the website name and status only; company details were skipped.", "warn");
+    return;
+  }
   setStatus(`✅ Filled ${totalFilled}/${PORTAL_FIELD_COUNT} fields in portal! Review and Submit.`, "ok");
 }
 
