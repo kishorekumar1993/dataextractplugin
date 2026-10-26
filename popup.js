@@ -702,7 +702,7 @@ function renderQcChecklist(data) {
       name: "Rule 11: Phone Number",
       ok: Boolean(data.phoneNumber) &&
           !data.phoneNumber.startsWith("0") &&
-          !/^(1800|1888|800|0800|1544|1588|1577|1566)/.test(data.phoneNumber.replace(/\D/g, "")),
+          !Extractor.isTollFreeNumber(data.phoneNumber, data.countryName),
       msg: data.phoneNumber ? `Digits: ${data.phoneNumber} (No country code, no 0, no toll-free)` : "Phone not found"
     },
     {

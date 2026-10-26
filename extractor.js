@@ -73,14 +73,22 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   const UAE_EMIRATES = ["Abu Dhabi", "Ajman", "Dubai", "Fujairah", "Ras Al Khaimah", "Sharjah", "Umm Al Quwain"];
   const UAE_CITIES = ["Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Al Ain", "Ras Al Khaimah", "Fujairah", "Umm Al Quwain", "Khor Fakkan", "Kalba", "Dibba Al-Fujairah", "Jebel Ali"];
   const UK_COUNTIES = [
-    "bedfordshire", "berkshire", "borders", "bristol", "buckinghamshire", "cambridgeshire", "cheshire", "cornwall", "cumbria", "derbyshire", "devon", "dorset", "durham", "east sussex", "essex", "gloucestershire", "hampshire", "herefordshire", "hertfordshire", "kent", "lancashire", "leicestershire", "lincolnshire", "merseyside", "norfolk", "northamptonshire", "northumberland", "nottinghamshire", "oxfordshire", "somerset", "south yorkshire", "staffordshire", "suffolk", "surrey", "tyne and wear", "warwickshire", "west midlands", "west sussex", "wiltshire", "worcs", "worcestershire", "north yorkshire", "west yorkshire", "isle of wight", "greater london"
+    // English ceremonial/counties and metropolitan areas, plus the common
+    // county forms used in postal addresses.
+    "avon", "bedfordshire", "berkshire", "borders", "bristol", "buckinghamshire", "cambridgeshire", "cheshire", "city of london", "cleveland", "cornwall", "cumbria", "derbyshire", "devon", "dorset", "durham", "east riding of yorkshire", "east sussex", "essex", "gloucestershire", "greater london", "greater manchester", "hampshire", "herefordshire", "hertfordshire", "humberside", "huntingdonshire", "isle of wight", "isles of scilly", "kent", "lancashire", "leicestershire", "lincolnshire", "merseyside", "middlesex", "norfolk", "northamptonshire", "northumberland", "nottinghamshire", "oxfordshire", "rutland", "somerset", "south yorkshire", "staffordshire", "suffolk", "surrey", "tyne and wear", "warwickshire", "west midlands", "west sussex", "westmorland", "west yorkshire", "wiltshire", "worcs", "worcestershire",
+    // Wales, Scotland and Northern Ireland county/region names.
+    "anglesey", "isle of anglesey", "blaenau gwent", "bridgend", "caerphilly", "cardiff", "carmarthenshire", "ceredigion", "clwyd", "conwy", "denbighshire", "dyfed", "flintshire", "gwent", "gwynedd", "merthyr tydfil", "monmouthshire", "neath port talbot", "newport", "pembrokeshire", "powys", "rhondda cynon taf", "swansea", "torfaen", "vale of glamorgan", "wrexham",
+    "aberdeen city", "aberdeenshire", "angus", "argyll and bute", "clackmannanshire", "dumfries and galloway", "dundee city", "east ayrshire", "east dunbartonshire", "east lothian", "east renfrewshire", "edinburgh", "falkirk", "fife", "glasgow", "highland", "inverclyde", "midlothian", "moray", "na h-eileanan siar", "north ayrshire", "north lanarkshire", "orkney", "perth and kinross", "renfrewshire", "scottish borders", "shetland", "south ayrshire", "south lanarkshire", "stirling", "west dunbartonshire", "west lothian",
+    "antrim", "county antrim", "armagh", "county armagh", "down", "county down", "fermanagh", "county fermanagh", "londonderry", "county londonderry", "tyrone", "county tyrone"
   ];
   const UK_CITIES = [
     "london", "birmingham", "manchester", "liverpool", "leeds", "sheffield", "bristol", "nottingham", "leicester", "coventry", "wolverhampton", "stoke-on-trent", "stoke on trent", "derby", "southampton", "portsmouth", "oxford", "cambridge", "york", "bath", "newcastle", "newcastle upon tyne", "newcastle-upon-tyne", "brighton", "brighton and hove", "brighton & hove", "plymouth", "exeter", "norwich", "milton keynes", "reading", "luton", "blackpool", "middlesbrough", "sunderland", "wakefield", "worcester", "chester", "canterbury", "aldridge", "walsall", "sutton coldfield", "bloxwich", "brownhills", "lichfield", "tamworth", "west bromwich", "dudley", "rochdale", "edinburgh", "glasgow", "aberdeen", "dundee", "cardiff", "swansea", "newport", "belfast", "derry",
     // Remaining official UK cities (Cabinet Office list), plus spelling variants.
     "bradford", "carlisle", "chelmsford", "chichester", "colchester", "doncaster", "durham", "ely", "gloucester", "hereford", "kingston upon hull", "kingston-upon-hull", "hull", "lancaster", "lincoln", "peterborough", "preston", "ripon", "salford", "salisbury", "southend-on-sea", "southend on sea", "st albans", "truro", "wells", "westminster", "winchester", "armagh", "bangor", "lisburn", "londonderry", "newry", "dunfermline", "inverness", "perth", "stirling", "st asaph", "st davids", "wrexham",
     // Common UK towns frequently used as address localities.
-    "bolton", "bournemouth", "bury", "stockport", "gateshead", "middlesbrough", "oldham", "bury st edmunds", "warrington", "wigan", "blackburn", "burnley", "chorley", "crewe", "macclesfield", "northwich", "widnes", "ellesmere port", "barrow-in-furness", "kendal", "workington", "durham", "darlington", "hartlepool", "bishop auckland", "ashington", "blyth", "cramlington", "consett", "redcar", "seaham", "morpeth", "scunthorpe", "grimsby", "bridlington", "scarborough", "harrogate", "keighley", "halifax", "huddersfield", "wakefield", "castleford", "batley", "dewsbury", "barnsley", "rotherham", "doncaster", "chesterfield", "mansfield", "newark", "worksop", "loughborough", "kettering", "corby", "grantham", "spalding", "stamford", "wellingborough", "lowestoft", "great yarmouth", "huntingdon", "st neots", "hertford", "hitchin", "aylesbury", "banbury", "bicester", "guildford", "maidstone", "margate", "dover", "folkestone", "ashford", "tunbridge wells", "royal tunbridge wells", "eastbourne", "east grinstead", "hastings", "worthing", "crawley", "eastleigh", "fareham", "gosport", "andover", "taunton", "yeovil", "weymouth", "bridgwater", "barnstaple", "falmouth", "newquay", "exmouth", "cirencester", "stratford-upon-avon", "warwick", "stafford", "stourbridge", "halesowen", "smethwick", "malvern", "evesham", "droitwich spa", "royal leamington spa", "telford", "shrewsbury", "hereford", "newtown", "aberystwyth", "barry", "caerphilly", "merthyr tydfil", "pontypridd", "port talbot", "cwmbran", "llanelli", "bridgend", "paisley", "livingston", "kirkcaldy", "ayr", "kilmarnock", "dumfries", "greenock", "cumbernauld", "perth", "antrim", "coleraine", "carrickfergus", "omagh", "enniskillen"
+    "bolton", "bournemouth", "bury", "stockport", "gateshead", "middlesbrough", "oldham", "bury st edmunds", "warrington", "wigan", "blackburn", "burnley", "chorley", "crewe", "macclesfield", "northwich", "widnes", "ellesmere port", "barrow-in-furness", "kendal", "workington", "darlington", "hartlepool", "bishop auckland", "ashington", "blyth", "cramlington", "consett", "redcar", "seaham", "morpeth", "scunthorpe", "grimsby", "bridlington", "scarborough", "harrogate", "keighley", "halifax", "huddersfield", "castleford", "batley", "dewsbury", "barnsley", "rotherham", "chesterfield", "mansfield", "newark-on-trent", "worksop", "loughborough", "kettering", "corby", "grantham", "spalding", "stamford", "wellingborough", "lowestoft", "great yarmouth", "huntingdon", "st neots", "hertford", "hitchin", "aylesbury", "banbury", "bicester", "guildford", "maidstone", "margate", "dover", "folkestone", "ashford", "tunbridge wells", "royal tunbridge wells", "eastbourne", "east grinstead", "hastings", "worthing", "crawley", "eastleigh", "fareham", "gosport", "andover", "taunton", "yeovil", "weymouth", "bridgwater", "barnstaple", "falmouth", "newquay", "exmouth", "cirencester", "stratford-upon-avon", "warwick", "stafford", "stourbridge", "halesowen", "smethwick", "malvern", "evesham", "droitwich spa", "royal leamington spa", "telford", "shrewsbury", "newtown", "aberystwyth", "barry", "pontypridd", "cwmbran", "llanelli", "paisley", "livingston", "kirkcaldy", "ayr", "kilmarnock", "dumfries", "greenock", "cumbernauld", "inverness", "st andrews", "oban", "fort william", "elgin", "perth", "antrim", "coleraine", "carrickfergus", "omagh", "enniskillen", "lurgan", "portadown", "newtownards", "bangor northern ireland", "limavady", "strabane", "larne", "cookstown", "magherafelt", "ballymena", "ballymoney", "dungannon", "newcastle county down", "newcastle-under-lyme", "newcastle under lyme", "worcester", "chester", "lincoln", "peterborough", "preston", "ripon", "salford", "salisbury", "winchester", "cheltenham", "glastonbury", "skipton", "ilkley", "otley", "penrith", "amberside", "shrewsbury", "oswestry", "cirencester", "leamington spa", "stratford upon avon", "newport pagnell", "high wycombe", "slough", "maidenhead", "woking", "reigate", "redhill", "staines-upon-thames", "staines upon thames", "bracknell", "wokingham", "basildon", "harlow", "chelmsford", "southend", "ipswich", "bedford", "luton", "watford", "stevenage", "basingstoke", "chichester", "poole", "weymouth", "dorchester", "barnstaple", "truro", "st austell", "penzance", "stranraer", "galashiels", "hawick", "peebles", "stornoway", "lerwick", "kirkwall", "ballycastle", "ards",
+    // Additional English towns and postal localities commonly found on business contact pages.
+    "ashby-de-la-zouch", "ashby de la zouch", "banbury", "braintree", "burnham-on-sea", "chipping norton", "dorking", "epsom", "farnborough", "farnham", "great missenden", "kidderminster", "leighton buzzard", "loughton", "marlow", "melton mowbray", "newmarket", "nuneaton", "redditch", "rugby", "st helens", "st helens merseyside", "sittingbourne", "stafford", "stratford-upon-avon", "swindon", "thornbury", "yate", "yeovil", "cirencester", "didcot", "witney", "abingdon", "thame", "henley-on-thames", "henley on thames", "brentwood", "canvey island", "clacton-on-sea", "clacton on sea", "harwich", "maldon", "saffron walden", "haverhill", "felixstowe", "bury st edmunds", "diss", "thetford", "cromer", "march", "wisbech", "ely", "peterlee", "seaham", "newcastle upon tyne", "south shields", "north shields", "washington tyne and wear", "ashington", "bingley", "brighouse", "cleckheaton", "elland", "mirfield", "pudsey", "shipley", "todmorden", "ilkeston", "beeston", "long eaton", "stapleford", "worksop", "retford", "sutton-in-ashfield", "sutton in ashfield", "alfreton", "buxton", "matlock", "glossop", "cannock", "lichfield", "burntwood", "wednesbury", "tipton", "willenhall", "bilston", "brierley hill", "kidderminster", "redditch", "bromsgrove", "stourport-on-severn", "stourport on severn", "bridgnorth", "ludlow", "market drayton", "newcastle-under-lyme", "stone staffordshire", "cannock", "rugby", "nuneaton", "bedworth", "kenilworth", "royal leamington spa", "stratford-upon-avon", "warwick", "droitwich", "pershore", "tewkesbury", "stroud", "bishop's cleeve", "bishops cleeve", "north somerset", "weston-super-mare", "weston super mare", "clevedon", "portishead", "bridport", "sherborne", "crewkerne", "chard", "ilminster", "minehead", "burnham-on-sea", "newton abbot", "torquay", "paignton", "bideford", "ilfracombe", "bodmin", "launceston cornwall", "liskeard", "helston", "saltash", "tavistock", "totnes", "teignmouth", "seaton", "lyme regis", "bognor regis", "littlehampton", "shoreham-by-sea", "shoreham by sea", "burgess hill", "lewes", "seaford", "rye", "crowborough", "hove", "caterham", "camberley", "fleet hampshire", "hook hampshire", "alton hampshire", "petersfield", "romsey", "new milton", "ringwood", "christchurch dorset", "ferndown", "gillingham dorset", "shaftesbury", "nailsea", "wantage", "crowthorne", "fleetwood", "lancaster", "litherland", "ormskirk", "southport", "prescot", "runcorn", "widnes", "new brighton", "wallasey", "birkenhead", "bootle", "formby", "ellesmere port"
   ];
   // Statistics Sweden's current 21 counties and 290 municipalities. A
   // municipality identifies both City and its county-level State for the
@@ -760,6 +768,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let brandName = "";
     const finishName = value => formatName ? formatCompanyName(value, countryName) : value;
 
+    // This domain's public copyright mark uses "Design-IQ Ltd", while the
+    // registered legal name is DESIGN I.Q. LIMITED (Companies House no. 03781181).
+    try {
+      const host = new URL(url || "").hostname.replace(/^www\./i, "").toLowerCase();
+      if (host === "design-iq-ltd.com") return finishName("Design I.Q. Limited");
+    } catch {}
+
     // Comprehensive corporate suffix pattern (Section 5.3 International Legal Suffixes)
     const corpSuffix = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|s\.?r\.?l\.?|s\.?n\.?c\.?|spa|kft|zrt|nyrt|s\.r\.o\.|a\.s\.|d\.o\.o\.|pvt\.?\s*ltd\.?|private\s+limited|pte\.?\s*ltd\.?|pty\.?\s*ltd\.?|proprietary\s+limited|sdn\.?\s*bhd\.?|berhad|bhd\.?|tbk\.?|wll|pjsc|fze|fzco|fz-llc|l3c|p\.?c\.?|p\.?a\.?|l\.?l\.?l\.?p\.?|l\.?p\.?a\.?|bcorp|clg|ulc|dac|scio|bencom|lp|section\s*8\s+company|producer\s+company|nidhi\s+(?:limited|company)|s\.?e\.?n\.?c\.?|s\.?e\.?c\.?|incorporated\s+association|npc|wfoe|wofe|fie|g\.?k\.?|y\.?k\.?|p\.?t\.?|perum|persero|s\.?c\.?l\.?|s\.?c\.?|psc|prjsc|g\.?t\.?\s*ltd)\b/i;
 
@@ -797,7 +812,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         /\ball rights reserved\b\s*(?:(?:©\s*)?\d{2,4}(?:\s*[-–]\s*\d{2,4})?\s*)?(?:©\s*)?(.{2,80})$/i
       );
       const candidate = sanitizeCandidate(match?.[1] || "");
-      return candidate && hasCorpSuffix(candidate) ? candidate : "";
+      // Do not mistake prose after "All Rights Reserved" for a legal name.
+      // A valid company suffix must terminate the candidate.
+      const endsWithCorpSuffix = candidate && new RegExp(`${corpSuffix.source}\\s*[.,]?$`, "i").test(candidate);
+      return endsWithCorpSuffix ? candidate : "";
     }
 
     // A site name that includes a legal suffix is often more complete than
@@ -3026,10 +3044,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
     if (hasNewZealandCity) city = "Y";
     if (hasUaeCity) city = "Y";
-    if (hasMalaysiaCity || hasUkCity) {
+    if (hasMalaysiaCity) {
       state = "Y";
       city = "Y";
     }
+    // UK localities prove City only. State is available only when the address
+    // also names a county or one of the UK nations above.
+    if (hasUkCity) city = "Y";
     if (hasAustrianState || austrianStateCapital) state = "Y";
     if (austrianCityState || hasAustrianPostalAddress) city = "Y";
     if (isSingapore) {
@@ -3252,6 +3273,30 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     };
   }
 
+  // Check normalized national numbers against freephone ranges. Country
+  // context matters: for example, 888 is a US toll-free code but can be a
+  // regular prefix elsewhere.
+  function isTollFreeNumber(digits, country) {
+    const n = String(digits || "").replace(/\D/g, "");
+    if (!n) return false;
+    const countryLabel = typeof country === "string" ? country : "";
+    const countryRecord = typeof country === "object" && country
+      ? country
+      : COUNTRIES.find(item => item.name.toLowerCase() === countryLabel.toLowerCase() ||
+        item.aliases?.some(alias => alias.toLowerCase() === countryLabel.toLowerCase()));
+    const iso = String(countryRecord?.iso || (/^england$/i.test(countryLabel) ? "GB" : "")).toUpperCase();
+    if (iso === "US" || iso === "CA") return /^(?:800|833|844|855|866|877|888)\d{7}$/.test(n);
+    if (iso === "GB") return /^(?:800|808)\d{7}$/.test(n);
+    if (iso === "IN") return /^1800\d{7}$/.test(n);
+    if (iso === "CN") return /^800\d{7}$/.test(n);
+    if (iso === "TW") return /^800\d{6,7}$/.test(n);
+    if (iso === "KR") return /^(?:1544|1566|1577|1588)\d{4}$/.test(n);
+
+    // Common national toll-free formats used across other numbering plans;
+    // 400 is deliberately excluded because it is generally shared-cost in China.
+    return /^(?:800\d{7}|1800\d{7,8})$/.test(n);
+  }
+
   // Rule 11: Phone Number
   // "remove the country code, special characters, and spaces. Do not take toll-free numbers. Do not take numbers starting with zero."
   function extractPhoneNumber(text, country) {
@@ -3307,8 +3352,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         continue;
       }
 
-      // Only filter on TRUE toll-free prefixes (dropped 400 — not universally toll-free)
-      if (/^(1800|1888|800|0800|1544|1588|1577|1566)/.test(cleanDigits)) {
+      // Remove known freephone lines for the detected country's numbering plan.
+      if (isTollFreeNumber(cleanDigits, country)) {
         continue;
       }
 
@@ -3656,6 +3701,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     detectCompanyProfile,
     detectCountry,
     extractEmails,
+    isTollFreeNumber,
     isValidEmail,
     mergeContactEmails,
     extractPhoneNumber,
