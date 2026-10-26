@@ -596,6 +596,11 @@ function populateFields(data) {
     alertEl.style.display = "flex";
     alertEl.textContent = data.forbidden.message;
     setStatus(data.forbidden.message, "err");
+  } else if (data.onlinePurchase?.isOnlineStore) {
+    const message = "ERROR: Online purchase detected. This site is not accepted; Website Status marked Not Working.";
+    alertEl.style.display = "flex";
+    alertEl.textContent = message;
+    setStatus(message, "err");
   } else if (data.urlRules?.isSubdomain) {
     alertEl.style.display = "flex";
     alertEl.textContent = data.urlRules.warning;
@@ -649,6 +654,9 @@ function readFieldsFromUi() {
   if (currentExtractedData?.forbidden?.isForbidden) {
     data.forbidden = currentExtractedData.forbidden;
     data.websiteStatus = "Not Working";
+  }
+  if (currentExtractedData?.onlinePurchase) {
+    data.onlinePurchase = currentExtractedData.onlinePurchase;
   }
   return data;
 }
@@ -715,6 +723,13 @@ function renderQcChecklist(data) {
       name: "Rules 12-14: Products & Images",
       ok: data.numberOfProduct !== "0",
       msg: `Products: ${data.numberOfProduct}, Images: ${data.imageProduct}, Descs: ${data.noOfProductDescription}`
+    },
+    {
+      name: "Rule 15: Online Purchase",
+      ok: data.onlinePurchase?.checked === true && data.onlinePurchase?.isOnlineStore !== true,
+      msg: data.onlinePurchase?.isOnlineStore
+        ? `ERROR: Online store not accepted${data.onlinePurchase.evidence?.length ? ` (${data.onlinePurchase.evidence.slice(0, 3).join(", ")})` : ""}`
+        : `No online purchase detected${data.onlinePurchase?.evidence?.length ? ` (${data.onlinePurchase.evidence.slice(0, 3).join(", ")})` : ""}`
     }
   ];
 
@@ -749,6 +764,10 @@ async function performExtraction(targetUrl) {
     setStatus(data.forbidden.message || "This website is not eligible for processing.", "err");
     return currentExtractedData;
   }
+  if (data.onlinePurchase?.isOnlineStore) {
+    setStatus("ERROR: Online purchase detected. This site is not accepted; Website Status marked Not Working.", "err");
+    return currentExtractedData;
+  }
 
   const name = data.companyName ? `"${data.companyName}"` : "no name detected";
   setStatus(`✅ Done! Company: ${name}. Review all fields before filling.`, "ok");
@@ -758,7 +777,8 @@ async function performExtraction(targetUrl) {
 // Fill directly into portal tab via executeScript (no sendMessage, 100% reliable)
 async function fillPortal(data) {
   const forbiddenDetected = Boolean(data?.forbidden?.isForbidden);
-  const websiteNotWorking = forbiddenDetected || String(data?.websiteStatus || "").trim().toLowerCase() === "not working";
+  const onlinePurchaseRejected = Boolean(data?.onlinePurchase?.isOnlineStore);
+  const websiteNotWorking = forbiddenDetected || onlinePurchaseRejected || String(data?.websiteStatus || "").trim().toLowerCase() === "not working";
   const portalData = websiteNotWorking
     ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteName", "websiteStatus"].includes(key)))
     : data;
@@ -1108,7 +1128,9 @@ async function fillPortal(data) {
   if (websiteNotWorking) {
     setStatus(forbiddenDetected
       ? `${data.forbidden.message || "Forbidden category detected."} Website marked Not Working; only website name and status were filled.`
-      : "Website status is Not Working. Filled the website name and status only; company details were skipped.", "warn");
+      : onlinePurchaseRejected
+        ? "ERROR: Online purchase site is not accepted. Website marked Not Working; only website name and status were filled."
+        : "Website status is Not Working. Filled the website name and status only; company details were skipped.", "err");
     return;
   }
   setStatus(`✅ Filled ${totalFilled}/${PORTAL_FIELD_COUNT} fields in portal! Review and Submit.`, "ok");

@@ -444,7 +444,8 @@
   function fillAllPortalFields(data) {
     if (!data) return { filled: 0, total: PORTAL_FIELD_COUNT, details: [] };
     const forbiddenDetected = Boolean(data.forbidden?.isForbidden);
-    const websiteNotWorking = forbiddenDetected || String(data.websiteStatus || "").trim().toLowerCase() === "not working";
+    const onlinePurchaseRejected = Boolean(data.onlinePurchase?.isOnlineStore);
+    const websiteNotWorking = forbiddenDetected || onlinePurchaseRejected || String(data.websiteStatus || "").trim().toLowerCase() === "not working";
     const fillData = websiteNotWorking
       ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteName", "websiteStatus"].includes(key)))
       : data;
@@ -500,7 +501,9 @@
     if (websiteNotWorking) {
       showToast(forbiddenDetected
         ? `${data.forbidden.message || "Forbidden category detected."} Website marked Not Working; only name and status were filled.`
-        : "Website is Not Working; only name and status were filled.");
+        : onlinePurchaseRejected
+          ? "ERROR: Online purchase site is not accepted. Website marked Not Working; only name and status were filled."
+          : "Website is Not Working; only name and status were filled.");
       return { filled: filledCount, total: PORTAL_FIELD_COUNT, details: results, blocked: true };
     }
     return { filled: filledCount, total: PORTAL_FIELD_COUNT, details: results };

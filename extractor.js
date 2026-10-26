@@ -724,6 +724,112 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return { isForbidden: false };
   }
 
+  // Rule 15: detect a real online checkout path. Informational product
+  // catalogs, payment logos, and policy links alone are supporting evidence,
+  // not enough to classify a site as an online store.
+  function detectOnlinePurchase(doc, text = "") {
+    const evidence = [];
+    let hasTransactionAction = false;
+    let hasCart = false;
+    let hasPricedCatalog = false;
+    let hasProductOffer = false;
+    let hasInventory = false;
+    let hasAccount = false;
+    let hasPayment = false;
+    let hasShippingPolicy = false;
+    let hasReturnsPolicy = false;
+
+    if (doc?.querySelectorAll) {
+      const actionPattern = /\b(?:add\s+to\s+(?:cart|basket|bag)|buy\s+now|checkout|proceed\s+to\s+checkout|place\s+(?:your\s+)?order|pay\s+now)\b/i;
+      for (const el of doc.querySelectorAll("button, a, [role='button'], input[type='submit'], input[type='button']")) {
+        const label = [el.textContent, el.getAttribute?.("aria-label"), el.getAttribute?.("title"), el.value]
+          .filter(Boolean).join(" ").trim();
+        if (label.length <= 120 && actionPattern.test(label)) {
+          hasTransactionAction = true;
+          evidence.push(label.replace(/\s+/g, " ").slice(0, 60));
+          break;
+        }
+      }
+
+      const cartPattern = /\b(?:cart|basket|shopping\s+bag)\b/i;
+      hasCart = Boolean(doc.querySelector(
+        "a[href*='cart' i], a[href*='basket' i], [aria-label*='cart' i], [title*='cart' i], [data-testid*='cart' i]"
+      ));
+      if (!hasCart) {
+        hasCart = [...doc.querySelectorAll("a, button, [role='button'], [aria-label], [title]")].some(el =>
+          cartPattern.test([el.textContent, el.getAttribute?.("aria-label"), el.getAttribute?.("title")].filter(Boolean).join(" "))
+        );
+      }
+      if (hasCart) evidence.push("Shopping cart or basket control");
+
+      const pricePattern = /(?:[$£€¥₹]\s?\d|\b(?:USD|GBP|EUR|CNY|RMB|INR|TWD)\s?\d)/i;
+      const productNodes = doc.querySelectorAll(
+        "[itemtype*='Product' i], [itemprop='price'], [class*='product' i], [id*='product' i], [data-product]"
+      );
+      hasPricedCatalog = [...productNodes].some(el => {
+        const productContext = el.matches?.("[itemprop='price']")
+          ? el.closest?.("[itemtype*='Product' i], [class*='product' i], [id*='product' i], [data-product]")
+          : el.closest?.("[itemtype*='Product' i], [class*='product' i], [id*='product' i], [data-product]") || el;
+        if (!productContext) return false;
+        const productText = (productContext.textContent || "").slice(0, 2500);
+        const hasPrice = pricePattern.test(productText) || Boolean(el.querySelector?.("[itemprop='price'], [class*='price' i], [data-price]"));
+        return hasPrice && productText.length > 0;
+      });
+      if (hasPricedCatalog) evidence.push("Product listing with prices");
+
+      const productItems = doc.querySelectorAll("[itemtype*='Product' i], [itemprop='offers'], [itemprop='price']");
+      hasProductOffer = [...productItems].some(el =>
+        Boolean(el.querySelector?.("[itemprop='offers'], [itemprop='price'], [itemprop='availability']")) ||
+        Boolean(el.getAttribute?.("itemprop") === "price" && el.getAttribute?.("content"))
+      );
+      for (const script of doc.querySelectorAll("script[type='application/ld+json']")) {
+        try {
+          const visit = value => {
+            if (!value) return;
+            if (Array.isArray(value)) return value.forEach(visit);
+            if (typeof value !== "object") return;
+            const type = Array.isArray(value["@type"]) ? value["@type"].join(" ") : String(value["@type"] || "");
+            const offers = Array.isArray(value.offers) ? value.offers : [value.offers];
+            if (/\bProduct\b/i.test(type) && offers.some(offer => offer && (offer.price != null || offer.lowPrice != null))) {
+              hasProductOffer = true;
+            }
+            Object.values(value).forEach(visit);
+          };
+          visit(JSON.parse(script.textContent || ""));
+        } catch {}
+      }
+      if (hasProductOffer) evidence.push("Structured product offer or price");
+
+      const visibleText = String(text || getElementText(doc.body) || "");
+      hasInventory = /\b(?:in\s+stock|out\s+of\s+stock|backorder|available\s+now|ships\s+in\s+\d+)\b/i.test(visibleText);
+      hasAccount = Boolean(doc.querySelector("a[href*='account' i], a[href*='login' i], a[href*='order-tracking' i]")) ||
+        /\b(?:my account|track (?:my )?order)\b/i.test(visibleText);
+      hasPayment = Boolean(doc.querySelector("[class*='payment' i], [id*='payment' i], [alt*='visa' i], [alt*='paypal' i], [alt*='mastercard' i], [alt*='stripe' i]"));
+      hasShippingPolicy = Boolean([...doc.querySelectorAll("a")].some(el => /shipping\s+policy|delivery\s+information/i.test(el.textContent || "")));
+      hasReturnsPolicy = Boolean([...doc.querySelectorAll("a")].some(el => /return|refund/i.test(el.textContent || "")));
+    }
+
+    if (hasInventory) evidence.push("Inventory availability");
+    if (hasAccount) evidence.push("Customer account or order tracking");
+    if (hasPayment) evidence.push("Payment method indicators");
+    if (hasShippingPolicy) evidence.push("Shipping policy");
+    if (hasReturnsPolicy) evidence.push("Returns or refund policy");
+
+    // One direct checkout action or a priced Product/Offer is decisive.
+    // Otherwise require a cart and priced catalog plus at least one further
+    // transaction signal (inventory, account, payment, or policies).
+    const supportingSignals = Number(hasInventory) + Number(hasAccount) + Number(hasPayment) +
+      Number(hasShippingPolicy) + Number(hasReturnsPolicy);
+    const isOnlineStore = hasTransactionAction || hasProductOffer ||
+      (hasCart && hasPricedCatalog && supportingSignals >= 1);
+    return {
+      checked: true,
+      isOnlineStore,
+      classification: isOnlineStore ? "Online Purchase Available" : "No Online Purchase Detected",
+      evidence
+    };
+  }
+
   // Rule 2: Business Type (Excel values: Manufacturer, Wholesaler, Distributer, Exporter, Trader, Supplier, Industrial Services)
   function detectBusinessType(text) {
     const lower = (text || "").toLowerCase();
@@ -3643,7 +3749,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 11. Products, Images, Descriptions (Rules 12, 13, 14)
     const counts = extractProductCounts(doc, text);
 
-    // 12. Social Media (Facebook, LinkedIn)
+    // 12. Online purchase capability (informational classification only)
+    const onlinePurchase = detectOnlinePurchase(doc, text);
+
+    // 13. Social Media (Facebook, LinkedIn)
     const social = extractSocialMedia(doc, text);
 
     // 13. Subpage (English & Contact)
@@ -3653,7 +3762,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     return {
       websiteName: url,
-      websiteStatus: (urlRules.isSubdomain || forbidden.isForbidden) ? "Not Working" : "Working",
+      websiteStatus: (urlRules.isSubdomain || forbidden.isForbidden || onlinePurchase.isOnlineStore) ? "Not Working" : "Working",
       businessType,
       companyProfile,
       companyName,
@@ -3669,6 +3778,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       numberOfProduct: counts.numberOfProduct,
       imageProduct: counts.imageProduct,
       noOfProductDescription: counts.noOfProductDescription,
+      onlinePurchase,
       forbidden,
       urlRules,
       social,
@@ -3690,6 +3800,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     extractFromHtml,
     checkUrlRules,
     checkForbiddenCategories,
+    detectOnlinePurchase,
     getElementText,
     formatCompanyName,
     expandLegalSuffixes,
