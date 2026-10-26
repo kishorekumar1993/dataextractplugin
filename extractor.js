@@ -2386,11 +2386,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/(?<=[A-Za-z0-9])\s+Trl\b\.?(?=[,\s;:\/]|$)/gi, " Trail");
 
     // 6. Direction and Location Abbreviations (Section 7.7)
-    // Standalone directional prefixes before street names
-    addr = addr.replace(/(?<![A-Za-z.])\bN\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "North ");
-    addr = addr.replace(/(?<![A-Za-z.])\bS\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "South ");
-    addr = addr.replace(/(?<![A-Za-z.])\bE\.\s+(?=(?:\d+(?:st|nd|rd|th)?|[A-Z][a-z0-9]+)\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)\b)/gi, "East ");
-    addr = addr.replace(/(?<![A-Za-z.])\bW\.\s+(?=[A-Z][a-z0-9]+(?:\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace)))/gi, "West ");
+    // Expand cardinal prefixes only when followed by a clear street-name/type
+    // pattern, so ordinary initials and names such as "S Australian Ave" remain intact.
+    const directionStreetTypes = "Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace|Expressway|Freeway|Turnpike|Parkway|Circle|Trail";
+    const cardinalPrefix = `(?<![A-Za-z.])\\b%s\\.?\\s+(?=[A-Z0-9][A-Za-z0-9'-]*(?:\\s+[A-Z0-9][A-Za-z0-9'-]*){0,3}\\s+(?:${directionStreetTypes})\\b)`;
+    addr = addr.replace(new RegExp(cardinalPrefix.replace("%s", "N"), "gi"), "North ");
+    addr = addr.replace(new RegExp(cardinalPrefix.replace("%s", "S"), "gi"), "South ");
+    addr = addr.replace(new RegExp(cardinalPrefix.replace("%s", "E"), "gi"), "East ");
+    addr = addr.replace(new RegExp(cardinalPrefix.replace("%s", "W"), "gi"), "West ");
+
+    // Cardinal suffixes after a street type (e.g. "Main Street, S.").
+    const cardinalSuffix = `(\\b(?:${directionStreetTypes})\\s*,?\\s*)%s\\.?(?=\\s*(?:,|;|$))`;
+    addr = addr.replace(new RegExp(cardinalSuffix.replace("%s", "N"), "gi"), "$1North");
+    addr = addr.replace(new RegExp(cardinalSuffix.replace("%s", "S"), "gi"), "$1South");
+    addr = addr.replace(new RegExp(cardinalSuffix.replace("%s", "E"), "gi"), "$1East");
+    addr = addr.replace(new RegExp(cardinalSuffix.replace("%s", "W"), "gi"), "$1West");
 
     // Directional suffixes
     addr = addr.replace(/\bN\.E\.(?=\s|,|;|$)/gi, "Northeast");

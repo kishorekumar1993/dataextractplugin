@@ -62,7 +62,15 @@ function contactAddressSourcePriority(source) {
 
 function mergeFrameExtractionResults(results) {
   const records = (results || []).map(item => item?.result).filter(data => data && !data.error);
-  if (!records.length) return null;
+  if (!records.length) {
+    const frameErrors = (results || [])
+      .map(item => item?.result?.error)
+      .filter(Boolean)
+      .map(error => String(error));
+    return frameErrors.length
+      ? { error: `Page extraction failed: ${frameErrors.slice(0, 3).join("; ")}` }
+      : null;
+  }
   const completeness = data => ["companyName", "companyAddress", "countryName", "emailId", "phoneNumber"]
     .reduce((score, key) => score + (data[key] ? 1 : 0), 0);
   records.sort((a, b) => completeness(b) - completeness(a));
@@ -343,7 +351,17 @@ async function crawlAndExtractDirect(targetUrl) {
       },
       args: [tab.url || normUrl]  // use final redirected URL from tab
     });
-    const mainData = mergeFrameExtractionResults(frameResults);
+    let mainData = mergeFrameExtractionResults(frameResults);
+
+    // If script extraction failed in every frame, try the site's source HTML.
+    // This recovers pages whose live frames block or interrupt script execution.
+    if (!mainData || mainData.error) {
+      const frameError = mainData?.error;
+      const fetchedData = await extractFetchedPage(tab.id, tab.url || normUrl);
+      if (fetchedData && !fetchedData.error) mainData = fetchedData;
+      else if (fetchedData?.error) mainData = fetchedData;
+      else if (frameError) mainData = { error: frameError };
+    }
 
     if (!mainData || mainData.error) {
       throw new Error(mainData?.error || "Could not extract details from page.");
