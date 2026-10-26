@@ -3099,11 +3099,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
     if (countryInfo?.iso === "TW" || /\btaiwan\s*,?\s*(?:r\s*\.?\s*o\s*\.?\s*c\.?|republic\s+of\s+china)\b/i.test(addr)) {
       // Taiwan addresses often append an old three-digit ZIP to the city
-      // ("Taichung City 420") and use "Taiwan R.O.C." as the country suffix.
+      // ("Taichung City 420"). Keep Taiwan but remove the R.O.C. suffix.
       addr = addr
         .replace(/\b(city|district|dist\.?|county)\s+\d{3}\b/gi, "$1")
         .replace(/,\s*\d{3}(?=\s*(?:,|$))/g, "")
-        .replace(/(?:,\s*|\s+)(?:taiwan\s*,?\s*(?:r\s*\.?\s*o\s*\.?\s*c\s*\.?|republic\s+of\s+china)|r\s*\.?\s*o\s*\.?\s*c\s*\.?)\s*[.,;]*$/i, "");
+        .replace(/(?:,\s*|\s+)(?:r\s*\.?\s*o\s*\.?\s*c\s*\.?|republic\s+of\s+china)\s*[.,;]*$/i, "");
     }
     // Standard numeric postal codes are usually five or six digits. Remove
     // these wherever they occur, not only when they happen to be a final token.

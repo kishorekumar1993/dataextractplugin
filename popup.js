@@ -600,6 +600,7 @@ function populateFields(data) {
     const el = $(`field-${key}`);
     if (el && data[key] !== undefined && data[key] !== null) {
       let value = data[key];
+      if (key === "websiteStatus" && String(value).trim().toLowerCase() === "not working") value = "";
       if ((key === "state" || key === "city") && el.tagName === "SELECT") {
         const normalized = String(value).toLowerCase().replace(/[^a-z]/g, "");
         if (["available", "yes", "true"].includes(normalized)) value = "Y";
@@ -808,9 +809,8 @@ async function fillPortal(data) {
   const forbiddenDetected = Boolean(data?.forbidden?.isForbidden);
   const onlinePurchaseRejected = Boolean(data?.onlinePurchase?.isOnlineStore);
   const websiteNotWorking = forbiddenDetected || onlinePurchaseRejected || String(data?.websiteStatus || "").trim().toLowerCase() === "not working";
-  const portalData = websiteNotWorking
-    ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteStatus"].includes(key)))
-    : Object.fromEntries(Object.entries(data).filter(([key]) => key !== "websiteName"));
+  const portalData = Object.fromEntries(Object.entries(data).filter(([key]) => key !== "websiteName" && !(websiteNotWorking && key === "websiteStatus")));
+  portalData._clearWebsiteStatus = websiteNotWorking;
 
   if (!portalTabId) {
     const tab = await getActiveTab();
@@ -1061,6 +1061,19 @@ async function fillPortal(data) {
           used.add(ctrl);
         }
       }
+      if (formData._clearWebsiteStatus) {
+        const statusRule = FIELD_RULES.find(rule => rule.key === "websiteStatus");
+        const statusCtrl = controls.find(ctrl => statusRule && statusRule.match(ctrl, norm(getExactLabel(ctrl)), norm([
+          ctrl.id, ctrl.name, ctrl.placeholder, ctrl.getAttribute("aria-label"), ctrl.getAttribute("data-field")
+        ].join(" "))) > 0);
+        if (statusCtrl) {
+          const descriptor = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value");
+          if (descriptor?.set) descriptor.set.call(statusCtrl, "");
+          else statusCtrl.value = "";
+          statusCtrl.dispatchEvent(new Event("input", { bubbles: true }));
+          statusCtrl.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }
       const details = [];
 
       for (const rule of FIELD_RULES) {
@@ -1170,11 +1183,11 @@ async function fillPortal(data) {
   const totals = execResults?.map(r => r?.result).filter(Boolean) || [];
   const totalFilled = totals.reduce((sum, result) => sum + result.filled, 0);
   if (websiteNotWorking) {
-    setStatus(forbiddenDetected
-      ? `${data.forbidden.message || "Forbidden category detected."} Website marked Not Working; status was filled.`
-      : onlinePurchaseRejected
-        ? "ERROR: Online purchase site is not accepted. Website marked Not Working; status was filled."
-        : "Website status is Not Working. Filled website status only; company details were skipped.", "err");
+    const warning = data.forbidden?.message ||
+      (onlinePurchaseRejected ? "Online purchase detected; review this website." : "") ||
+      data.urlRules?.warning ||
+      "Website marked for review.";
+    setStatus(`${warning} Website Status left blank. Prefilled ${totalFilled}/${PORTAL_FIELD_COUNT} available fields; review before submitting.`, "warn");
     return;
   }
   setStatus(`✅ Filled ${totalFilled}/${PORTAL_FIELD_COUNT} fields in portal! Review and Submit.`, "ok");

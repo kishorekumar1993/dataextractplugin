@@ -453,9 +453,7 @@
     const forbiddenDetected = Boolean(data.forbidden?.isForbidden);
     const onlinePurchaseRejected = Boolean(data.onlinePurchase?.isOnlineStore);
     const websiteNotWorking = forbiddenDetected || onlinePurchaseRejected || String(data.websiteStatus || "").trim().toLowerCase() === "not working";
-    const fillData = websiteNotWorking
-      ? Object.fromEntries(Object.entries(data).filter(([key]) => ["websiteStatus"].includes(key)))
-      : Object.fromEntries(Object.entries(data).filter(([key]) => key !== "websiteName"));
+    const fillData = Object.fromEntries(Object.entries(data).filter(([key]) => key !== "websiteName" && !(websiteNotWorking && key === "websiteStatus")));
 
     const controls = getCandidateControls();
     const usedControls = new Set();
@@ -464,6 +462,19 @@
     for (const ctrl of controls) {
       if (isWebsiteNameControl(ctrl)) {
         usedControls.add(ctrl);
+      }
+    }
+    if (websiteNotWorking) {
+      const statusRule = FIELD_RULES.find(rule => rule.key === "websiteStatus");
+      const statusCtrl = controls.find(ctrl => statusRule && statusRule.match(ctrl, norm(getExactLabel(ctrl)), norm([
+        ctrl.id, ctrl.name, ctrl.placeholder, ctrl.getAttribute("aria-label"), ctrl.getAttribute("data-field")
+      ].join(" "))) > 0);
+      if (statusCtrl) {
+        const descriptor = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value");
+        if (descriptor?.set) descriptor.set.call(statusCtrl, "");
+        else statusCtrl.value = "";
+        statusCtrl.dispatchEvent(new Event("input", { bubbles: true }));
+        statusCtrl.dispatchEvent(new Event("change", { bubbles: true }));
       }
     }
 
@@ -516,12 +527,11 @@
 
     showToast(`✅ ${filledCount}/${PORTAL_FIELD_COUNT} Fields Filled! Review before submit.`);
     if (websiteNotWorking) {
-      showToast(forbiddenDetected
-        ? `${data.forbidden.message || "Forbidden category detected."} Website marked Not Working; status was filled.`
-        : onlinePurchaseRejected
-          ? "ERROR: Online purchase site is not accepted. Website marked Not Working; status was filled."
-          : "Website is Not Working; status was filled.");
-      return { filled: filledCount, total: PORTAL_FIELD_COUNT, details: results, blocked: true };
+      const warning = data.forbidden?.message ||
+        (onlinePurchaseRejected ? "Online purchase detected; review this website." : "") ||
+        data.urlRules?.warning ||
+        "Website marked for review.";
+      showToast(`${warning} Website Status left blank. Prefilled ${filledCount}/${PORTAL_FIELD_COUNT} available fields; review before submitting.`);
     }
     return { filled: filledCount, total: PORTAL_FIELD_COUNT, details: results };
   }

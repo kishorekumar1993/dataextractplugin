@@ -8,7 +8,7 @@ A high-performance Chrome extension designed for **Data Entry & QC (Quality Chec
 
 ### Compliance restriction
 
-Do not process a website if any prohibited category term appears anywhere in its page text or image/accessibility metadata: Porn/Adult, Medicine/Medical/Hospital, Food, Weapons/Knife, Defence, Aircraft/Aerospace, Marine/Ship, Chemical, Alcohol, or Animals. The extension marks matching sites as Not Working and fills only the status field.
+The extension may flag prohibited categories (Porn/Adult, Medicine/Medical/Hospital, Food, Weapons/Knife, Defence, Aircraft/Aerospace, Marine/Ship, Chemical, Alcohol, or Animals) and online stores for review. A Not Working status is left blank in the portal, while all available extracted details are prefilled for review.
 
 | # | Field Name | Type | How It Is Extracted | Example (Rezontech) |
 |---|---|---|---|---|
