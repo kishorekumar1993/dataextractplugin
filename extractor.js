@@ -2616,7 +2616,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 3. Building, Unit, and Floor Abbreviations (Section 7.5)
     // Building Number first before Building
     addr = addr.replace(/\bBldg\b\.?\s*No\b\.?/gi, "Building Number");
-    addr = addr.replace(/\bSec\b\.?(?=\s+\d+\b)/gi, "Section");
+    // Accept compact source forms such as "Sec.2" as well as "Sec. 2".
+    addr = addr.replace(/\bSec\b\.?\s*(?=\d+\b)/gi, "Section ");
     addr = addr.replace(/\bShau\s+Ann\b/gi, "Dashu An");
     addr = addr.replace(/\bBldg\b\.?/gi, "Building");
     addr = addr.replace(/\bSte\b\.?/gi, "Suite");
@@ -2656,6 +2657,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/(?:^|(?<=[,;\s]))No\b\.?\s*(?=[A-Za-z0-9#])/gi, "Number ");
     addr = addr.replace(/(?:^|(?<=[,;\s]))No\b\s+(?=\d+)/gi, "Number ");
     addr = addr.replace(/\bNumber(?=\d)/gi, "Number ");
+    // Separate street/locality labels from a following number when a source
+    // omits whitespace (e.g. "Lane71" or "Tainan City702"). This also lets
+    // the country-specific postal-code cleanup recognize the code below.
+    addr = addr.replace(/\b(Number|Lane|Section|Street|Road|Avenue|Drive|District|City)(?=\d)/gi, "$1 ");
     // "#" symbol: e.g. "#101" -> "Number 101"
     addr = addr.replace(/(?:^|(?<=[,;\s]))#\s*(\d+)/g, "Number $1");
 
@@ -2970,6 +2975,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // Strip leading corporate name ending in Co., Ltd. or similar before street marker
     addr = addr.replace(/^[A-Za-z0-9&'.\s-]{2,60}\s+(?:Co\.,\s*Ltd\.?|Co\.,Ltd\.?|Pvt\.\s*Ltd\.?|Pty\.\s*Ltd\.?)\s*[,;:|]?\s*(?=\d|[A-Za-z0-9]+\s+(?:Road|Street|Avenue|Boulevard|Lane|Drive|Soi|Highway|Rd|St|Ave|Blvd|Ln|Dr)\b)/i, "");
+    // Some contact pages prepend a generic label/legal suffix as separate
+    // comma-delimited pieces ("Company, Inc, Number 6, ..."). Remove that
+    // preamble only when the next piece clearly starts the street address.
+    addr = addr.replace(
+      /^\s*[\p{L}\p{N}&'(). -]{2,60},\s*(?:Inc\.?|Incorporated|Ltd\.?|Limited|LLC|Corp\.?|Corporation)\s*,\s*(?=(?:Number\b|\d+\b|(?:Street|Road|Avenue|Lane|Drive|Boulevard)\b))/iu,
+      ""
+    );
     addr = addr.replace(/^(?:Ltd|Co(?!-)|Inc|LLC|Pvt Ltd|Pty Ltd)\b\.?\s*[,;:|]?\s*/i, "");
 
     if (addr.includes(",")) {
@@ -3045,11 +3057,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         "i"
       );
 
-      // Retain Taiwan on the address line as requested; other country names
-      // remain in the separate country field.
-      if (addressCountry !== "Taiwan") {
-        addr = addr.replace(countryAtEnd, "").trim();
-      }
+      // Keep the country in the dedicated country field, not in the address.
+      // Apply this uniformly, including Taiwan and country aliases.
+      addr = addr.replace(countryAtEnd, "").trim();
     }
 
     addr = expandPostalRegionPostcodes(addr, addressCountry);
@@ -3936,6 +3946,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
             break;
           }
         }
+      }
+      // Prefer the country explicitly named by the cleaned physical address
+      // over conflicting schema metadata (for example, Taiwan vs. China).
+      if (matchesCountryTerm(companyAddress, "Taiwan") || /\brepublic\s+of\s+china\b|\br\s*\.?\s*o\s*\.?\s*c\.?\b/i.test(companyAddress)) {
+        countryName = "Taiwan";
+        countryObj = COUNTRIES.find(c => c.name === countryName);
       }
     }
 
