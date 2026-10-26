@@ -181,6 +181,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     "eisenstadt", "klagenfurt", "st polten", "st. polten", "st pölten", "st. pölten",
     "sankt polten", "sankt pölten", "linz", "salzburg", "graz", "innsbruck", "bregenz", "vienna", "wien"
   ];
+  const GERMAN_CITY_STATES = [
+    { state: "Baden-Württemberg", cities: ["leinfelden-echterdingen"] }
+  ];
   const NEW_ZEALAND_CITIES = [
     "auckland", "wellington", "christchurch", "hamilton", "tauranga", "dunedin", "palmerston north", "napier", "hastings", "nelson", "rotorua", "new plymouth", "whangarei", "invercargill", "queenstown", "gisborne", "timaru", "blenheim", "taupo", "papakura"
   ];
@@ -272,7 +275,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { country: "Japan", regex: /\b(tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|kawasaki|saitama|hiroshima|sendai|chiba|kanagawa|hokkaido)\b/i },
     { country: "China", regex: new RegExp(`\\b(?:${[...CHINA_PROVINCES_AND_REGIONS, ...CHINA_DIRECT_MUNICIPALITIES, ...CHINA_CITIES].map(escapeRegExp).sort((a, b) => b.length - a.length).join("|")})\\b`, "i") },
     { country: "India", regex: /\b(mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|lucknow|kanpur|nagpur|indore|thane|bhopal|visakhapatnam|gujarat|maharashtra|karnataka|tamil nadu|telangana|uttar pradesh|rajasthan|punjab|haryana|west bengal)\b/i },
-    { country: "Germany", regex: /\b(berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|leipzig|dortmund|essen|bremen|dresden|hannover|nuremberg|nürnberg|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony)\b/i },
+    { country: "Germany", regex: /\b(berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|leipzig|dortmund|essen|bremen|dresden|hannover|nuremberg|nürnberg|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|leinfelden-echterdingen)\b/i },
     { country: "France", regex: /\b(paris|marseille|lyon|toulouse|nice|nantes|strasbourg|montpellier|bordeaux|lille|rennes|reims|le havre|île-de-france)\b/i },
     { country: "Italy", regex: /\b(rome|roma|milan|milano|naples|napoli|turin|torino|palermo|genoa|genova|bologna|florence|firenze|bari|catania|venice|venezia|verona|lombardy|lombardia|tuscany|toscana|piedmont|piemonte|veneto)\b/i },
     { country: "United States Of America", regex: /\b(new york|los angeles|chicago|houston|phoenix|philadelphia|san antonio|san diego|dallas|san jose|austin|jacksonville|fort worth|columbus|charlotte|indianapolis|san francisco|seattle|denver|washington dc|boston|el paso|nashville|detroit|las vegas|portland|memphis|louisville|baltimore|milwaukee|albuquerque|tucson|fresno|sacramento|atlanta|kansas city|colorado springs|miami|west palm beach|palm beach|tampa|orlando|fort lauderdale|boca raton|raleigh|omaha|long beach|virginia beach|oakland|minneapolis|tulsa|arlington|california|texas|florida|\bfl\b|new york state|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington state|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|west virginia|hawaii|new hampshire|maine|montana|rhode island|delaware|south dakota|north dakota|alaska|vermont|wyoming)\b/i },
@@ -383,8 +386,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     const EXPANSIONS = [
       // --- D. Germany, Austria, and Switzerland (compounds first) ---
-      [/\b(?:gmbh\s*(?:&|and)\s*co\.?\s*kgaa)\b/gi, "Gesellschaft mit beschränkter Haftung & Co. Kommanditgesellschaft auf Aktien"],
-      [/\b(?:gmbh\s*(?:&|and)\s*co\.?\s*kg)\b/gi, "Gesellschaft mit beschränkter Haftung & Co. Kommanditgesellschaft"],
+      [/\b(?:gmbh\s*(?:&|and)\s*co\.?\s*kgaa)\b/gi, "Gesellschaft mit beschränkter Haftung & Company Kommanditgesellschaft auf Aktien"],
+      [/\b(?:gmbh\s*(?:&|and)\s*co\.?\s*kg)\b/gi, "Gesellschaft mit beschränkter Haftung & Company Kommanditgesellschaft"],
       [/\b(?:gmbh\s*(?:&|and)\s*co\.?)\b/gi, "Gesellschaft mit beschränkter Haftung & Company"],
       [/\bggmbh\b/gi, "Gemeinnützige Gesellschaft mit beschränkter Haftung"],
       [/\bkgaa\b/gi, "Kommanditgesellschaft auf Aktien"],
@@ -567,6 +570,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       [/\bco\.?(?=\s+(?:limited|ltd|incorporated|corporation)\b)/gi, "Company"],
       [/\bco\.?(?=[,]?\s*$)/gi, "Company"]
     ];
+
+    // Normalize the common German spelling before compound suffix expansion.
+    s = s.replace(/\bgmbh\s*\+\s*(co\.?\s*k\.?g\.?)/gi, "GmbH & $1");
 
     for (const [rx, rep] of EXPANSIONS) {
       const titleCasedRep = rep.replace(/\p{L}+/gu, word =>
@@ -914,7 +920,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (!str || /^\s*(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4}\s*$/i.test(str)) {
         return false;
       }
-      return corpSuffix.test(str);
+      // A short legal form such as "AS" or "SE" must terminate the name;
+      // otherwise ordinary title words ("Euchner as an employer") look legal.
+      return new RegExp(`(?:${corpSuffix.source})\\s*[.,;]?\\s*$`, "i").test(String(str).trim());
     };
 
     // Helper to validate and clean a company name candidate
@@ -936,6 +944,18 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         return s;
       }
       return "";
+    }
+
+    // Strip page descriptors from title-derived brands (for example,
+    // "EUCHNER as an employer") before using them as company names.
+    function cleanBrandDescriptor(value) {
+      let candidate = sanitizeCandidate(value || "");
+      candidate = candidate
+        .replace(/\s+(?:as\s+an?\s+employer|career(?:s|\s+opportunities)?|job(?:s)?|vacancies|recruitment|employment)\s*$/i, "")
+        .replace(/^(?:career(?:s)?|job(?:s)?|vacancies)\s+(?:at|for|with)\s+/i, "")
+        .replace(/^(?:welcome\s+to|about)\s+/i, "")
+        .trim();
+      return sanitizeCandidate(candidate) || candidate;
     }
 
     function companyNameAfterRightsNotice(value) {
@@ -1088,10 +1108,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (corpPart) {
         legalName = sanitizeCandidate(corpPart);
       } else if (!brandName) {
-        const genericTitlePart = /^(?:home(?:page)?|welcome|contact(?:\s+us)?|about(?:\s+us)?|privacy(?:\s+policy)?|terms(?:\s+(?:and|&)\s+conditions)?|products?|services?|shop|store|furniture|blog|news|login|search)(?:\s+page)?$/i;
-        brandName = [...titleParts].reverse().find(part =>
-          part.length >= 2 && part.length <= 80 && !genericTitlePart.test(part)
-        ) || "";
+        const genericTitlePart = /^(?:home(?:page)?|welcome|contact(?:\s+us)?|about(?:\s+us)?|privacy(?:\s+policy)?|terms(?:\s+(?:and|&)\s+conditions)?|products?|services?|shop|store|furniture|blog|news|login|search|career(?:s)?|jobs?|vacancies|employer)(?:\s+page)?$/i;
+        brandName = [...titleParts].reverse()
+          .map(part => cleanBrandDescriptor(part))
+          .find(part => part.length >= 2 && part.length <= 80 && !genericTitlePart.test(part)) || "";
       }
     }
 
@@ -1173,11 +1193,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
+    brandName = cleanBrandDescriptor(brandName);
+
     // --- PHASE 3: EXTENDED CONTENT SEARCH ---
     // If we have a brand name (e.g. "Accurite Industries"), check the extended content
     // of the page (footer, address, full text) to see if this brand name appears with a legal suffix (e.g. "Accurite Industries Ltd")!
     if (brandName && text) {
       const baseClean = brandName.replace(/\s+/g, "\\s+");
+      const germanGmbhCoRegex = new RegExp(
+        `\\b(${baseClean}\\s+gmbh\\s*(?:\\+|&)\\s*co\\.?\\s*k\\.?g\\.?)(?=$|[\\s,.;])`,
+        "i"
+      );
+      const germanGmbhCoMatch = text.match(germanGmbhCoRegex);
+      if (germanGmbhCoMatch?.[1]) {
+        return finishName(germanGmbhCoMatch[1]);
+      }
       const suffixSearchRegex = new RegExp(
         `\\b(${baseClean}\\s+(?:co[.,\\s]*ltd\\.?|co[.,\\s]+limited|company\\s+limited|corporation|corp\\.?|incorporated|inc\\.?|limited|ltd\\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|s\\.?r\\.?l\\.?|s\\.?n\\.?c\\.?|srl|spa|kft|zrt|nyrt|s\\.r\\.o\\.|a\\.s\\.|d\\.o\\.o\\.|pvt\\.?\\s*ltd\\.?|private\\s+limited|pte\\.?\\s*ltd\\.?|pty\\.?\\s*ltd\\.?|proprietary\\s+limited|sdn\\.?\\s*bhd\\.?|berhad|bhd\\.?|tbk\\.?|wll|pjsc|fze|fzco|fz-llc))\\b`,
         "i"
@@ -3139,6 +3169,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const austrianStateCapital = AUSTRIAN_STATE_CAPITALS.some(name =>
       new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(address || "")
     );
+    const germanCityState = GERMAN_CITY_STATES.find(entry =>
+      entry.cities.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(address || ""))
+    );
     const hasAustrianPostalAddress = /\b[1-9]\d{3}\s+[\p{L}][\p{L}.'’ -]*\b/iu.test(address || "") &&
       (/^(?:austria|österreich)$/i.test(String(countryHint || "").trim()) || /\bA-\s*[1-9]\d{3}\b/i.test(address || ""));
     const hasSwedenCounty = SWEDEN_COUNTY_REGEX.test(address || "");
@@ -3182,8 +3215,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // UK localities prove City only. State is available only when the address
     // also names a county or one of the UK nations above.
     if (hasUkCity) city = "Y";
-    if (hasAustrianState || austrianStateCapital) state = "Y";
-    if (austrianCityState || hasAustrianPostalAddress) city = "Y";
+    if (hasAustrianState || austrianStateCapital || germanCityState) state = "Y";
+    if (austrianCityState || hasAustrianPostalAddress || germanCityState) city = "Y";
     if (isSingapore) {
       state = "Y";
       city = "Y";
@@ -3245,7 +3278,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // Completeness validation (Rule 18): If address has fewer than 2 segments, State is likely invalid
     const parts = (address || "").split(",").map(p => p.trim()).filter(Boolean);
     const hasNamedStateRegion = /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower);
-    const hasExplicitStateEvidence = hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasUaeEmirate || hasSwedenCounty || hasSouthAfricanProvince || hasAustrianState || austrianStateCapital ||
+    const hasExplicitStateEvidence = hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasUaeEmirate || hasSwedenCounty || hasSouthAfricanProvince || hasAustrianState || austrianStateCapital || germanCityState ||
       hasIndianState || hasMalaysiaState || hasUkCounty || isSingapore || hasAustralianStateCode ||
       hasAustralianStateCapital || hasMalaysiaStateCapital || hasSouthAfricanProvincialCapital || hasNamedStateRegion ||
       POSTAL_REGION_NAMES_REGEX.test(addrLower) || POSTAL_REGION_US_CODES_REGEX.test(address || "");
