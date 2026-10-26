@@ -63,7 +63,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     "mumbai", "delhi", "new delhi", "bengaluru", "bangalore", "hyderabad", "ahmedabad", "chennai", "kolkata", "surat", "pune", "jaipur", "lucknow", "kanpur", "nagpur", "indore", "thane", "bhopal", "visakhapatnam", "patna", "vadodara", "ghaziabad", "ludhiana", "agra", "nashik", "faridabad", "meerut", "rajkot", "varanasi", "srinagar", "aurangabad", "dhanbad", "amritsar", "allahabad", "prayagraj", "ranchi", "howrah", "coimbatore", "jodhpur", "madurai", "raipur", "kochi", "ernakulam", "thiruvananthapuram", "guwahati", "chandigarh", "dehradun", "shimla", "imphal", "gangtok", "itanagar", "panaji", "dispur", "shillong", "aizawl", "kohima", "agartala", "bhubaneswar", "vijayawada", "warangal", "mysuru", "mysore", "mangalore", "mangaluru"
   ];
   const MALAYSIA_STATES_AND_TERRITORIES = [
-    "johor", "kedah", "kelantan", "melaka", "malacca", "negeri sembilan", "pahang", "penang", "pulau pinang", "perak", "perlis", "sabah", "sarawak", "selangor", "terengganu", "kuala lumpur", "putrajaya", "labuan"
+    "johor", "kedah", "kelantan", "melaka", "malacca", "negeri sembilan", "pahang", "penang", "pulau pinang", "perak", "perlis", "sabah", "sarawak", "selangor", "terengganu", "kuala lumpur", "putrajaya", "labuan",
+    "wilayah persekutuan kuala lumpur", "wilayah persekutuan putrajaya", "wilayah persekutuan labuan",
+    "federal territory of kuala lumpur", "federal territory of putrajaya", "federal territory of labuan"
   ];
   const MALAYSIA_CITIES = [
     "kuala lumpur", "george town", "johor bahru", "ipoh", "shah alam", "petaling jaya", "subang jaya", "klang", "kuantan", "kota kinabalu", "kuching", "seremban", "malacca city", "melaka city", "alor setar", "miri", "sandakan", "tawau", "kota bharu", "kuala terengganu", "putrajaya", "cyberjaya", "kulim", "batu pahat", "kuala kedah", "sibu", "bintulu", "taiping", "teluk intan", "pasir gudang", "iskandar puteri", "bayan lepas", "butterworth", "langkawi", "port dickson", "temerloh", "kemaman", "labuan town", "ampang", "ayer keroh", "balik pulau", "bandar baru bangi", "bandar sunway", "bangsar", "batu gajah", "bukit mertajam", "gombak", "jitra", "kajang", "kampar", "kangar", "keningau", "kluang", "kuala kangsar", "kulai", "lahad datu", "muar", "nilai", "pekan", "seberang perai", "sungai petani", "simpang ampat", "tanah merah", "tampin", "bentong", "rawang", "sabak bernam", "beranang", "setapak", "cheras", "kepong", "sentul", "mont kiara", "damansara", "puchong", "seri kembangan", "shah alam", "kota damansara", "sri petaling"
@@ -133,6 +135,44 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { state: "Australian Capital Territory", cities: ["canberra"] },
     { state: "Northern Territory", cities: ["darwin"] }
   ];
+  const AUSTRALIAN_STATE_CAPITALS = ["sydney", "melbourne", "brisbane", "perth", "adelaide", "hobart", "canberra", "darwin"];
+  const MALAYSIAN_STATE_CAPITALS = ["johor bahru", "alor setar", "kota bharu", "ayer keroh", "seremban", "kuantan", "george town", "ipoh", "kangar", "shah alam", "kuala terengganu", "kota kinabalu", "kuching", "kuala lumpur", "putrajaya", "labuan"];
+  const SOUTH_AFRICAN_CITY_PROVINCES = [
+    { province: "Eastern Cape", cities: ["gqeberha", "port elizabeth", "east london", "bhisho", "mthatha", "makhanda", "grahamstown", "queenstown", "komani"] },
+    { province: "Free State", cities: ["bloemfontein", "welkom", "bethlehem", "sasolburg"] },
+    { province: "Gauteng", cities: ["johannesburg", "pretoria", "tshwane", "sandton", "centurion", "midrand", "germiston", "benoni", "boksburg", "kempton park", "vereeninging", "randburg", "roodepoort", "ekurhuleni"] },
+    { province: "KwaZulu-Natal", cities: ["durban", "ethekwini", "pietermaritzburg", "richards bay", "newcastle", "ladysmith", "umhlanga"] },
+    { province: "Limpopo", cities: ["polokwane", "tzaneen", "thohoyandou", "mokopane"] },
+    { province: "Mpumalanga", cities: ["mbombela", "nelspruit", "emalahleni", "witbank", "secunda", "middelburg"] },
+    { province: "Northern Cape", cities: ["kimberley", "upington", "kuruman"] },
+    { province: "North West", cities: ["rustenburg", "mahikeng", "mafikeng", "potchefstroom", "klerksdorp"] },
+    { province: "Western Cape", cities: ["cape town", "stellenbosch", "paarl", "george", "worcester", "mossel bay", "knysna", "hermanus"] }
+  ];
+  const SOUTH_AFRICAN_PROVINCES = [
+    "Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal", "KwaZulu Natal",
+    "Limpopo", "Mpumalanga", "Northern Cape", "North West", "Western Cape"
+  ];
+  const SOUTH_AFRICAN_PROVINCIAL_CAPITALS = ["bhisho", "bloemfontein", "johannesburg", "pietermaritzburg", "polokwane", "mbombela", "nelspruit", "kimberley", "mahikeng", "mafikeng", "cape town"];
+  const AUSTRIAN_CITY_STATES = [
+    { state: "Burgenland", cities: ["eisenstadt", "oberwart", "mattersburg", "neusiedl am see"] },
+    { state: "Carinthia", cities: ["klagenfurt", "villach", "wolfsberg", "spittal an der drau", "sankt veit an der glan", "st veit an der glan"] },
+    { state: "Lower Austria", cities: ["st polten", "st. polten", "st pölten", "st. pölten", "sankt polten", "sankt pölten", "krems", "krems an der donau", "wiener neustadt", "baden", "amstetten", "klosterneuburg", "tulln", "mödling", "modling", "wieselburg", "scheibbs", "melk", "pöchlarn", "pochlarn", "ybbs an der donau"] },
+    { state: "Upper Austria", cities: ["linz", "wels", "steyr", "leonding", "traun", "gmunden", "ried im innkreis"] },
+    { state: "Salzburg", cities: ["salzburg", "hallein", "zell am see", "saalfelden"] },
+    { state: "Styria", cities: ["graz", "leoben", "kapfenberg", "leibnitz", "bruck an der mur", "feldbach"] },
+    { state: "Tyrol", cities: ["innsbruck", "kufstein", "hall in tirol", "schwaz", "telfs", "lienz"] },
+    { state: "Vorarlberg", cities: ["bregenz", "dornbirn", "feldkirch", "lustenau", "hohenems", "bludenz"] },
+    { state: "Vienna", cities: ["vienna", "wien"] }
+  ];
+  const AUSTRIAN_STATES = [
+    "Burgenland", "Carinthia", "Kärnten", "Kaernten", "Lower Austria", "Niederösterreich", "Niederosterreich",
+    "Upper Austria", "Oberösterreich", "Oberosterreich", "Salzburg", "Styria", "Steiermark", "Tyrol", "Tirol",
+    "Vorarlberg", "Vienna", "Wien"
+  ];
+  const AUSTRIAN_STATE_CAPITALS = [
+    "eisenstadt", "klagenfurt", "st polten", "st. polten", "st pölten", "st. pölten",
+    "sankt polten", "sankt pölten", "linz", "salzburg", "graz", "innsbruck", "bregenz", "vienna", "wien"
+  ];
   const NEW_ZEALAND_CITIES = [
     "auckland", "wellington", "christchurch", "hamilton", "tauranga", "dunedin", "palmerston north", "napier", "hastings", "nelson", "rotorua", "new plymouth", "whangarei", "invercargill", "queenstown", "gisborne", "timaru", "blenheim", "taupo", "papakura"
   ];
@@ -155,7 +195,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   // UK Localities (Rule 5: If England and United Kingdom both mentioned, must take England!)
   const UK_LOCALITIES = [
-    { name: "England", regex: /\b(england|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|nottingham|leicester|coventry|wolverhampton|stoke[- ]on[- ]trent|derby|southampton|portsmouth|oxford|cambridge|york|bath|newcastle(?: upon tyne)?|brighton|plymouth|exeter|norwich|milton keynes|reading|luton|blackpool|middlesbrough|sunderland|wakefield|worcester|chester|canterbury|aldridge|walsall|sutton coldfield|bloxwich|brownhills|lichfield|tamworth|west bromwich|dudley)\b/i },
+    { name: "England", regex: /\b(england|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|nottingham|leicester|coventry|wolverhampton|stoke[- ]on[- ]trent|derby|southampton|portsmouth|oxford|cambridge|york|bath|newcastle(?: upon tyne)?|brighton(?:\s*(?:&|and)\s*hove)?|plymouth|exeter|norwich|milton keynes|reading|luton|blackpool|middlesbrough|sunderland|wakefield|worcester|chester|canterbury|aldridge|walsall|sutton coldfield|bloxwich|brownhills|lichfield|tamworth|west bromwich|dudley|bradford|carlisle|chelmsford|chichester|colchester|doncaster|durham|ely|gloucester|hereford|kingston[- ]upon[- ]hull|hull|lancaster|lincoln|peterborough|preston|ripon|salford|salisbury|southend[- ]on[- ]sea|st albans|truro|wells|westminster|winchester)\b/i },
     { name: "Scotland", regex: /\b(scotland|edinburgh|glasgow|aberdeen|dundee)\b/i },
     { name: "Wales", regex: /\b(wales|cardiff|swansea|newport)\b/i },
     { name: "Northern Ireland", regex: /\b(northern ireland|belfast|derry)\b/i }
@@ -217,6 +257,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   const CITY_STATE_COUNTRY_MAP = [
     { country: "United Arab Emirates", regex: /\b(?:abu dhabi|ajman|al ain|dubai|fujairah|jebel ali|kalba|khor fakkan|ras al khaimah|sharjah|umm al quwain|dibba al-fujairah)\b/i },
     { country: "South Korea", regex: /\b(seoul|incheon|busan|daegu|daejeon|gwangju|ulsan|suwon|changwon|seongnam|cheongju|anyang|bucheon|gyeonggi|gyeonggi-do|gangwon|chungcheong|jeolla|gyeongsang|jeju)\b/i },
+    { country: "South Africa", regex: new RegExp(`\\b(?:${[...SOUTH_AFRICAN_PROVINCES, ...SOUTH_AFRICAN_CITY_PROVINCES.flatMap(entry => entry.cities)].map(escapeRegExp).sort((a, b) => b.length - a.length).join("|")})\\b`, "i") },
+    { country: "Austria", regex: new RegExp(`\\b(?:${[...AUSTRIAN_STATES, ...AUSTRIAN_CITY_STATES.flatMap(entry => entry.cities)].map(escapeRegExp).sort((a, b) => b.length - a.length).join("|")})\\b`, "i") },
+    { country: "Malaysia", regex: new RegExp(`\\b(?:${[...MALAYSIA_STATES_AND_TERRITORIES, ...MALAYSIA_CITIES].map(escapeRegExp).sort((a, b) => b.length - a.length).join("|")})\\b`, "i") },
+    { country: "Singapore", regex: /\bsingapore\b/i },
     { country: "Japan", regex: /\b(tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|kawasaki|saitama|hiroshima|sendai|chiba|kanagawa|hokkaido)\b/i },
     { country: "China", regex: new RegExp(`\\b(?:${[...CHINA_PROVINCES_AND_REGIONS, ...CHINA_DIRECT_MUNICIPALITIES, ...CHINA_CITIES].map(escapeRegExp).sort((a, b) => b.length - a.length).join("|")})\\b`, "i") },
     { country: "India", regex: /\b(mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|lucknow|kanpur|nagpur|indore|thane|bhopal|visakhapatnam|gujarat|maharashtra|karnataka|tamil nadu|telangana|uttar pradesh|rajasthan|punjab|haryana|west bengal)\b/i },
@@ -1313,7 +1357,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const cityMatch = CITY_STATE_COUNTRY_MAP.some(mapping => mapping.regex.test(nonCountryAddress));
       
       const detectedCountry = detectCountry(null, cleaned, cleaned, "", ""); 
-      const detectedLocation = detectStateAndCity(nonCountryAddress);
+      const detectedLocation = detectStateAndCity(nonCountryAddress, detectedCountry);
 
       // Flexible street & building markers: matches number before marker OR marker before number (e.g. "Suite 200", "Plot 45", "PO Box 123", "No. 106-2")
       const streetNumberMatch =
@@ -2221,6 +2265,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // Post Office Box Number first before Post Office Box
     addr = addr.replace(/\bP\.?O\.?\s*Box\b\s*No\b\.?/gi, "Post Office Box Number");
     addr = addr.replace(/\bP\.?O\.?\s*Box\b/gi, "Post Office Box");
+    // Normalize source labels such as "P.O. Box: 16846" to "Post Office Box 16846".
+    addr = addr.replace(/\b(Post Office Box(?: Number)?)\s*[:：]\s*/gi, "$1 ");
     addr = addr.replace(/(?:^|(?<=[,;\s]))H\.?O\.?(?=[\s:,\-]|$)/gi, "Head Office");
     addr = addr.replace(/(?:^|(?<=[,;\s]))S\.?O\.?(?=[\s:,\-]|$)/gi, "Sub Office");
     addr = addr.replace(/(?:^|(?<=[,;\s]))P\.?O\.?(?=\s+[A-Za-z])/gi, "Post Office ");
@@ -2869,7 +2915,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   // Rules 7 & 8: State & City (Y / N)
   // Scans ONLY the verified address (never full body text) to prevent false positives from blog posts/global offices
-  function detectStateAndCity(address) {
+  function detectStateAndCity(address, countryHint = "") {
     const addrLower = (address || "").toLowerCase();
     let state = "N";
     let city = "N";
@@ -2909,9 +2955,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const hasIndianState = INDIAN_STATES_AND_TERRITORIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasMalaysiaState = MALAYSIA_STATES_AND_TERRITORIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasMalaysiaCity = MALAYSIA_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
-    const hasUkCountyOrNation = UK_COUNTIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower)) ||
-      /\b(?:england|scotland|wales|northern ireland)\b/i.test(addrLower);
+    const hasUkCounty = UK_COUNTIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const hasUkCountyOrNation = hasUkCounty || /\b(?:england|scotland|wales|northern ireland)\b/i.test(addrLower);
     const hasUkCity = UK_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const isSingapore = /^(?:singapore)$/i.test(String(countryHint || "").trim());
     const usAddressSegments = String(address || "").split(",").map(segment => segment.trim());
     const usStateNames = Object.values(POSTAL_REGION_ABBREVIATIONS["United States Of America"])
       .map(name => name.toLowerCase());
@@ -2928,6 +2975,23 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       !/\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|drive|dr\.?|boulevard|blvd\.?|court|ct\.?|highway|hwy\.?|parkway|pkwy\.?|square|sq\.?|floor|suite|unit)\b/i.test(precedingUsLocality);
     const hasUaeEmirate = UAE_EMIRATES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
     const hasUaeCity = UAE_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const hasSouthAfricanProvince = SOUTH_AFRICAN_PROVINCES.some(name =>
+      new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(address || "")
+    );
+    const southAfricanCityProvince = SOUTH_AFRICAN_CITY_PROVINCES.find(entry =>
+      entry.cities.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(address || ""))
+    );
+    const hasAustrianState = AUSTRIAN_STATES.some(name =>
+      new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(address || "")
+    );
+    const austrianCityState = AUSTRIAN_CITY_STATES.find(entry =>
+      entry.cities.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(address || ""))
+    );
+    const austrianStateCapital = AUSTRIAN_STATE_CAPITALS.some(name =>
+      new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(address || "")
+    );
+    const hasAustrianPostalAddress = /\b[1-9]\d{3}\s+[\p{L}][\p{L}.'’ -]*\b/iu.test(address || "") &&
+      (/^(?:austria|österreich)$/i.test(String(countryHint || "").trim()) || /\bA-\s*[1-9]\d{3}\b/i.test(address || ""));
     const hasSwedenCounty = SWEDEN_COUNTY_REGEX.test(address || "");
     const hasSwedenMunicipality = SWEDEN_MUNICIPALITY_REGEX.test(address || "");
     const hasNewZealandCity = NEW_ZEALAND_CITIES.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
@@ -2941,9 +3005,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .map(match => Number(match[1]))
         .find(code => AUSTRALIAN_POSTCODE_STATE_RANGES.some(range => code >= range.min && code <= range.max))
       : null;
+    const hasAustralianStateCapital = AUSTRALIAN_STATE_CAPITALS.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const hasMalaysiaStateCapital = MALAYSIAN_STATE_CAPITALS.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
+    const hasSouthAfricanProvincialCapital = SOUTH_AFRICAN_PROVINCIAL_CAPITALS.some(name => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(addrLower));
 
     // State indicators in address
-    if (state === "N" && (hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasMalaysiaState || hasUkCountyOrNation || hasUaeEmirate || hasSwedenCounty || hasSwedenMunicipality || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
+    if (state === "N" && (hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasMalaysiaState || hasUkCountyOrNation || hasUaeEmirate || hasSwedenCounty || hasSwedenMunicipality || hasSouthAfricanProvince || southAfricanCityProvince || hasAustrianState || austrianStateCapital || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
         POSTAL_REGION_US_CODES_REGEX.test(address || "") ||
         /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower))) {
       state = "Y";
@@ -2959,6 +3026,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
     if (hasNewZealandCity) city = "Y";
     if (hasUaeCity) city = "Y";
+    if (hasMalaysiaCity || hasUkCity) {
+      state = "Y";
+      city = "Y";
+    }
+    if (hasAustrianState || austrianStateCapital) state = "Y";
+    if (austrianCityState || hasAustrianPostalAddress) city = "Y";
+    if (isSingapore) {
+      state = "Y";
+      city = "Y";
+    }
+    if (hasSouthAfricanProvince) state = "Y";
+    if (southAfricanCityProvince) {
+      state = "Y";
+      city = "Y";
+    }
     if (hasUsCityBeforeState) city = "Y";
 
     if (hasChinaMunicipality || hasChinaCity) city = "Y";
@@ -2991,7 +3073,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // City indicators in address
     if (city === "N" && (/(?:town|district|municipality|city|-si\b|-gu\b|troy|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|nof hagalil|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei|ballinderry|four mile house)/i.test(addrLower) ||
-        CITY_STATE_COUNTRY_MAP.some(m => m.regex.test(cityEvidenceAddress)))) {
+        CITY_STATE_COUNTRY_MAP.some(m => !["South Africa", "Austria"].includes(m.country) && m.regex.test(cityEvidenceAddress)) || southAfricanCityProvince || austrianCityState)) {
       city = "Y";
     }
 
@@ -3010,13 +3092,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // Completeness validation (Rule 18): If address has fewer than 2 segments, State is likely invalid
     const parts = (address || "").split(",").map(p => p.trim()).filter(Boolean);
-    const hasExplicitStateEvidence = hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasUaeEmirate || hasSwedenCounty || hasSwedenMunicipality ||
-      hasIndianState || hasMalaysiaState || hasUkCountyOrNation || australianCityState || hasAustralianStateCode ||
-      (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
-      POSTAL_REGION_US_CODES_REGEX.test(address || "");
-    if (parts.length < 2 && state === "Y" && !hasExplicitStateEvidence) {
-      state = "N";
-    }
+    const hasNamedStateRegion = /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower);
+    const hasExplicitStateEvidence = hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasUaeEmirate || hasSwedenCounty || hasSouthAfricanProvince || hasAustrianState || austrianStateCapital ||
+      hasIndianState || hasMalaysiaState || hasUkCounty || isSingapore || hasAustralianStateCode ||
+      hasAustralianStateCapital || hasMalaysiaStateCapital || hasSouthAfricanProvincialCapital || hasNamedStateRegion ||
+      POSTAL_REGION_NAMES_REGEX.test(addrLower) || POSTAL_REGION_US_CODES_REGEX.test(address || "");
+    if (!hasExplicitStateEvidence) state = "N";
 
     return { state, city };
   }
@@ -3476,10 +3557,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     companyName = formatCompanyName(companyNameRaw, countryName);
 
     // 7. Extract State & City (Rule 7 & 8) — check ONLY verified cleaned address (fallback to raw)
-    let { state, city } = detectStateAndCity(companyAddress || rawAddress);
-    if (companyAddress && /^(?:england|scotland|wales|northern ireland)$/i.test(countryName)) {
-      state = "Y";
-    }
+    let { state, city } = detectStateAndCity([companyAddress, rawAddress].filter(Boolean).join(", "), countryName);
 
     // 7. Business Type (Rule 2)
     const businessType = detectBusinessType(text);
