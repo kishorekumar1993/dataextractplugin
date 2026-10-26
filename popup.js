@@ -166,7 +166,20 @@ function waitForTabComplete(tabId, timeoutMs = 25000) {
       if (error) reject(error);
       else resolve();
     };
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => ({
+            readyState: document.readyState,
+            hasContent: Boolean(document.body && (document.body.innerText || "").trim().length > 30)
+          })
+        });
+        if (result && (result.readyState === "interactive" || result.readyState === "complete" || result.hasContent)) {
+          finish();
+          return;
+        }
+      } catch {}
       finish(new Error("Website load timed out."));
     }, timeoutMs);
 

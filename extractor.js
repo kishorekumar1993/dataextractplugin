@@ -22,17 +22,136 @@
 var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Extractor : (() => {
 
   // Forbidden Categories (Rule: Even if these appear anywhere, DO NOT work on that site!)
+  // Forbidden Categories (Rule: Even if these appear anywhere, DO NOT work on that site!)
+  // Refined to eliminate false positives on common words (e.g. putty knife, we ship worldwide, chemical resistant, PET plastic)
   const FORBIDDEN_CATEGORIES = [
-    { name: "Porn / Adult", regex: /\b(porn|pornography|xxx|adult|erotic|sex|prostitut(?:e|ion)|explicit content|escort\s+(?:services?|agenc(?:y|ies)|companies|company|directory|girls?)|(?:independent|female|male)\s+escorts?)\b/i },
-    { name: "Medicine / Medical / Hospital", regex: /\b(medicines?|medical|hospital|pharmacy|pharmaceuticals?|clinic|surgical|physicians?|prescriptions?|therapeutics?|healthcare|health care)\b/i },
-    { name: "Food", regex: /\b(food|foods|restaurant|bakery|catering|snacks?|confectionery|edible|beverages?|drinks?|groceries|fruit|vegetables?|meat|seafood|dairy|tea|coffee|foodstuff)\b/i },
-    { name: "Weapons (Knife)", regex: /\b(weapons?|knives|knife|blades?|firearms?|ammunition|guns?|swords?)\b/i },
-    { name: "Defence", regex: /\b(defen[cs]e|military|warfare|missiles?|tactical weapons?|munitions?)\b/i },
-    { name: "Aircraft / Aerospace", regex: /\b(aircraft|aerospace|aviation|airplanes?|helicopters?|spacecraft|drones?)\b/i },
-    { name: "Marine / Ship", regex: /\b(marine|ships?|shipbuilding|shipyards?|yachts?|naval|boats?|sea freight|ocean freight|freight forwarders?|freight forwarding|vessels?|(?:maritime|ocean|sea)\s+shipping|shipping\s+(?:companies?|lines?|fleets?|vessels?|industry|services|agents?))\b/i },
-    { name: "Chemical", regex: /\b(chemicals?|chemical|petrochemicals?|reagents?|solvents?|pesticides?)\b/i },
-    { name: "Alcohol", regex: /\b(alcohol|alcoholic|brew(?:ery|ing)|distiller(?:y|ies)|wineries?|liquor|beer|wine|vodka|whiskey|whisky|spirits)\b/i },
-    { name: "Animals", regex: /\b(animals?|livestock|poultry|pets?|cattle|veterinary|vet(?:erinary)?|slaughterhouses?|dogs?|cats?|horses?)\b/i }
+    {
+      name: "Porn / Adult",
+      regex: /\b(porn|pornography|xxx|adult\s+(?:entertainment|content|movies?|videos?|films?|magazines?|club|clubs|toys?)|erotic|sex(?:ual)?\s+(?:content|services?|explicit|toys?)|prostitut(?:e|ion)|explicit content|escort\s+(?:services?|agenc(?:y|ies)|companies|company|directory|girls?)|(?:independent|female|male)\s+escorts?)\b/i,
+      isExempt: (matchText, snippet) => {
+        return /\b(?:escort\s+ta|adult\s+(?:education|training|learning|size|sizes|courses?))\b/i.test(snippet);
+      }
+    },
+    {
+      name: "Medicine / Medical / Hospital",
+      regex: /\b(medicines?|medical|hospital|pharmacy|pharmaceuticals?|clinic|surgical|physicians?|prescriptions?|therapeutics?|healthcare|health care)\b/i,
+      isExempt: (matchText, snippet) => {
+        return /\b(?:medical[- ]grade|hospital[- ]grade|surgical[- ]precision|cleanroom[- ]grade)\b/i.test(snippet);
+      }
+    },
+    {
+      name: "Food",
+      regex: /\b(food|foods|restaurant|bakery|catering|snacks?|confectionery|edible|beverages?|drinks?|groceries|fruit|vegetables?|meat|seafood|dairy|tea|coffee|foodstuff)\b/i,
+      isExempt: (matchText, snippet) => {
+        return /\b(?:food[- ]grade|food[- ]safe|food[- ]contact|food[- ]approved|food[- ]machinery|food[- ]processing[- ]machinery|food[- ]packaging[- ]machinery)\b/i.test(snippet);
+      }
+    },
+    {
+      name: "Weapons (Knife)",
+      regex: /\b(weapons?|firearms?|ammunition|munitions?|armaments?|swords?|daggers?|bayonets?|switchblades?|machetes?|dirks?|stilettos?|handguns?|pistols?|revolvers?|rifles?|shotguns?|machine\s*guns?|submachine\s*guns?|assault\s*rifles?|airsoft(?:\s*guns?)?|bb\s*guns?|stun\s*guns?|tasers?|(?:weapon|sword|combat|tactical|hunting|survival|dagger|bayonet)\s+blades?|knives|knife|guns?)\b/i,
+      isExempt: (matchText, snippet) => {
+        if (/knives|knife/i.test(matchText)) {
+          // Non-weapon hand tools & construction tools (putty knife, taping knife, joint knife, utility knife, etc.)
+          if (/\b(?:putty|taping|joint|spackle|scraper|scraping|drywall|plastering|plaster|palette|painting|paint|utility|craft|hobby|box|box[- ]cutter|linoleum|carpet|insulation|lead|glass|microtome|air|doctor|slitter|shear|shearing|rotary|granulator|planer|jointer|chipper|guillotine|machine|industrial|circular|saw|wiper|fan|turbine|rotor|cutter|cutting|slitting|mower|lawnmower|razor|shaving|trimmer|dozer|plow|snowplow|mixer|agitator|diamond|carbide|server)[\s\-_/]+(?:knives|knife)\b/i.test(snippet)) {
+            return true;
+          }
+          // Industrial valves, switches, accessories
+          if (/\b(?:knives|knife)[\s\-_/]+(?:gate[\s\-_/]+valves?|valves?|slide[\s\-_/]+valves?|switches?|holders?|blocks?|edges?|inserts?)\b/i.test(snippet)) {
+            return true;
+          }
+          // Tableware, cutlery & kitchen tools
+          if (/\b(?:butter|table|dinner|steak|cheese|bread|paring|chef|chefs|chef's|kitchen|carving|boning|fillet|filleting|santoku|cleaver|oyster|cutlery)[\s\-_/]+(?:knives|knife)\b/i.test(snippet)) {
+            return true;
+          }
+        }
+        if (/guns?/i.test(matchText)) {
+          // Non-weapon tools & industrial equipment
+          if (/\b(?:glue|hot[\s\-_/]+glue|heat|spray|paint|grease|caulk|caulking|nail|nailer|staple|stapler|rivet|riveter|blow|stud|screw|dispensing|foam|soldering|tie|wash|washing|water|massage|radar|thermometer|temperature|barcode|scanner|price|tagging|electron|ion|plasma)[\s\-_/]+guns?\b/i.test(snippet)) {
+            return true;
+          }
+        }
+        return false;
+      }
+    },
+    {
+      name: "Defence",
+      regex: /\b(defen[cs]e|military|warfare|missiles?|tactical weapons?|munitions?)\b/i,
+      isExempt: (matchText, snippet) => {
+        return /\bdefen[cs]e[\s\-_/]+against[\s\-_/]+(?:corrosion|rust|wear|uv|weather|insects?|bacteria|elements?)\b|\b(?:corrosion|uv|rust)[\s\-_/]+defen[cs]e\b/i.test(snippet);
+      }
+    },
+    {
+      name: "Aircraft / Aerospace",
+      regex: /\b(aircraft|aerospace|aviation|airplanes?|helicopters?|spacecraft|drones?)\b/i,
+      isExempt: null
+    },
+    {
+      name: "Marine / Ship",
+      regex: /\b(marine|ships?|shipbuilding|shipyards?|yachts?|naval|boats?|sea freight|ocean freight|freight forwarders?|freight forwarding|vessels?|(?:maritime|ocean|sea)\s+shipping|shipping\s+(?:companies?|lines?|fleets?|vessels?|industry|services|agents?))\b/i,
+      isExempt: (matchText, snippet) => {
+        // Exclude common e-commerce & commercial delivery / dispatch terminology
+        if (/ships?|shipping/i.test(matchText)) {
+          if (/\b(?:we|company|our[\s\-_/]+company|i)[\s\-_/]+ships?\b|\bships?[\s\-_/]+(?:worldwide|globally|domestically|daily|fast|to|from|within|in|via|across|direct|directly)\b|\b(?:ready|free|fast|same[- ]day|next[- ]day|flat[- ]rate|express|standard|drop|direct|domestic|international)[\s\-_/]+ships?\b/i.test(snippet)) {
+            return true;
+          }
+          if (/\bshipping[\s\-_/]+(?:policy|cost|costs|fee|fees|rates?|time|times|options?|info|information|details?|calculator|address|method|methods|and[\s\-_/]+handling|and[\s\-_/]+returns?|tracking|status|updates?)\b/i.test(snippet)) {
+            return true;
+          }
+          if (/\b(?:free|drop|express|standard|freight|ground|air|parcel|package|flat[- ]rate|fast|worldwide|international|domestic)[\s\-_/]+shipping\b/i.test(snippet)) {
+            if (!/\b(?:ocean|sea|maritime)[\s\-_/]+shipping\b/i.test(snippet)) {
+              return true;
+            }
+          }
+          if (/\bto[\s\-_/]+ship\b|\bwill[\s\-_/]+ship\b|\bcan[\s\-_/]+ship\b|\bship[\s\-_/]+out\b|\bhow[\s\-_/]+we[\s\-_/]+ship\b/i.test(snippet)) {
+            return true;
+          }
+        }
+        return false;
+      }
+    },
+    {
+      name: "Chemical",
+      regex: /\b(chemicals?|petrochemicals?|reagents?|solvents?|pesticides?)\b/i,
+      isExempt: (matchText, snippet) => {
+        // Exclude material durability & resistance descriptions
+        return /\b(?:chemical[- ]resistant|chemical[- ]resistance|chemical[- ]proof|chemical[- ]inert(?:ness)?|chemical[- ]compatibility|resistant[\s\-_/]+to[\s\-_/]+(?:all[\s\-_/]+|harsh[\s\-_/]+|aggressive[\s\-_/]+|various[\s\-_/]+)?chemicals?|resistance[\s\-_/]+to[\s\-_/]+(?:all[\s\-_/]+|harsh[\s\-_/]+|aggressive[\s\-_/]+|various[\s\-_/]+)?chemicals?)\b/i.test(snippet);
+      }
+    },
+    {
+      name: "Alcohol",
+      regex: /\b(alcohol|alcoholic|brew(?:ery|ing)|distiller(?:y|ies)|wineries?|liquor|beer|wine|vodka|whiskey|whisky|spirits)\b/i,
+      isExempt: (matchText, snippet) => {
+        // Exclude cleaning solvents and idioms
+        return /\b(?:isopropyl[\s\-_/]+alcohol|rubbing[\s\-_/]+alcohol|alcohol[- ]free|alcohol[- ]wipes?|alcohol[- ]cleaning|team[\s\-_/]+spirits?|high[\s\-_/]+spirits?|in[\s\-_/]+good[\s\-_/]+spirits?)\b/i.test(snippet);
+      }
+    },
+    {
+      name: "Animals",
+      regex: /\b(animals?|livestock|poultry|pets?|cattle|veterinary|vet(?:erinary)?|slaughterhouses?|dogs?|cats?|horses?)\b/i,
+      isExempt: (matchText, snippet) => {
+        // Exclude PET (polyethylene terephthalate) plastics/packaging
+        if (/pets?/i.test(matchText)) {
+          if (/\b(?:pet|rpet|apet|cpet)[\s\-_/]+(?:bottles?|preforms?|films?|sheets?|resins?|plastics?|materials?|straps?|strapping|packaging|recycling|containers?|jars?|flakes?|pellets?|polymers?|pelletizing|extru(?:sion|ders?)|clamshells?)\b/i.test(snippet)) {
+            return true;
+          }
+          if (/\b(?:recycled|clear|transparent|virgin)[\s\-_/]+pets?\b/i.test(snippet)) {
+            return true;
+          }
+        }
+        // Exclude Ethernet/network cable standards ("Cat 5", "Cat 6", "Cat 7", "Cat5e", "Cat6a") or tools ("saw horse")
+        if (/cats?/i.test(matchText)) {
+          if (/\bcat[- ]?[345678][a-z]?\b/i.test(snippet) || /\b(?:ethernet|network|lan|patch)[\s\-_/]+cats?\b/i.test(snippet)) {
+            return true;
+          }
+        }
+        if (/horses?/i.test(matchText)) {
+          if (/\b(?:saw[- ]?horse|work[- ]?horse)\b/i.test(snippet)) {
+            return true;
+          }
+        }
+        return false;
+      }
+    }
   ];
 
   // World Capitals (If capital is in address, both City & State are Considered Available!)
@@ -752,12 +871,22 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const fullPageContext = pageContext.join(" ").toLowerCase();
 
     for (const cat of FORBIDDEN_CATEGORIES) {
-      const match = fullPageContext.match(cat.regex);
-      if (match) {
+      const regex = new RegExp(cat.regex.source, "gi");
+      let match;
+      while ((match = regex.exec(fullPageContext)) !== null) {
+        const matchText = match[0];
+        if (typeof cat.isExempt === "function") {
+          const start = Math.max(0, match.index - 60);
+          const end = Math.min(fullPageContext.length, match.index + matchText.length + 60);
+          const snippet = fullPageContext.slice(start, end);
+          if (cat.isExempt(matchText, snippet)) {
+            continue;
+          }
+        }
         return {
           isForbidden: true,
           category: cat.name,
-          matchedText: match[0],
+          matchedText: matchText,
           message: `⛔ FORBIDDEN CATEGORY DETECTED: [${cat.name}]. Rule: Do not work on this site!`
         };
       }

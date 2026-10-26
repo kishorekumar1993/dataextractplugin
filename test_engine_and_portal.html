@@ -1360,6 +1360,33 @@
       pass: passSvgText
     };
 
+    const puttyKnifeCheck = Extractor.checkForbiddenCategories("We manufacture stainless steel putty knife and drywall taping hand tools.", null);
+    const combatKnifeCheck = Extractor.checkForbiddenCategories("We manufacture tactical combat knives and survival gear.", null);
+    const passPuttyKnife = puttyKnifeCheck.isForbidden === false && combatKnifeCheck.isForbidden === true && combatKnifeCheck.category === "Weapons (Knife)";
+    qcIssuesChecks["Issue 9d: Putty knife / hand tools are not classified as Weapons"] = {
+      puttyKnife: puttyKnifeCheck,
+      combatKnife: combatKnifeCheck,
+      pass: passPuttyKnife
+    };
+
+    const chemResistCheck = Extractor.checkForbiddenCategories("EPDM rubber gaskets with excellent chemical resistance.", null);
+    const rawChemCheck = Extractor.checkForbiddenCategories("Industrial chemical manufacturing and petrochemicals.", null);
+    const passChemResist = chemResistCheck.isForbidden === false && rawChemCheck.isForbidden === true && rawChemCheck.category === "Chemical";
+    qcIssuesChecks["Issue 9e: Chemical resistance is not classified as Chemical"] = {
+      chemResist: chemResistCheck,
+      rawChem: rawChemCheck,
+      pass: passChemResist
+    };
+
+    const petPlasticCheck = Extractor.checkForbiddenCategories("Manufacturer of recyclable PET bottles and PET preforms.", null);
+    const animalsCheck = Extractor.checkForbiddenCategories("Veterinary clinic providing care for livestock and pets.", null);
+    const passPetPlastic = petPlasticCheck.isForbidden === false && animalsCheck.isForbidden === true && animalsCheck.category === "Animals";
+    qcIssuesChecks["Issue 9f: PET plastic / packaging is not classified as Animals"] = {
+      petPlastic: petPlasticCheck,
+      animals: animalsCheck,
+      pass: passPetPlastic
+    };
+
     // 10: Business type Distributer and Industrial Services
     const bTypeDist = Extractor.detectBusinessType("Authorized industrial distributer of machine components");
     const passBType = bTypeDist === "Distributer";
@@ -1449,6 +1476,9 @@
       passShippingClassification &&
       passEscortClassification &&
       passSvgText &&
+      passPuttyKnife &&
+      passChemResist &&
+      passPetPlastic &&
       passBType &&
       passKorean
     );

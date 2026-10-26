@@ -79,7 +79,20 @@ function waitForTabComplete(tabId, timeoutMs) {
       if (error) reject(error);
       else resolve();
     };
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => ({
+            readyState: document.readyState,
+            hasContent: Boolean(document.body && (document.body.innerText || "").trim().length > 30)
+          })
+        });
+        if (result && (result.readyState === "interactive" || result.readyState === "complete" || result.hasContent)) {
+          finish();
+          return;
+        }
+      } catch {}
       finish(new Error("Website load timed out. Check if site is accessible."));
     }, timeoutMs);
     function listener(updatedTabId, info) {
@@ -205,7 +218,7 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
 }
 
 // Perform reliable crawling inside a background tab
-async function crawlInTab(targetUrl, timeoutMs = 15000) {
+async function crawlInTab(targetUrl, timeoutMs = 25000) {
   const normUrl = normalizeUrl(targetUrl);
   if (!normUrl) {
     return { success: false, error: "Please enter a valid website URL." };
