@@ -3267,6 +3267,24 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const finalStateZipPattern = new RegExp(`\\b(${finalUsStateCodes.join("|")})\\s*\\d{5}(?:-\\d{4})?\\b`, "gi");
     addr = addr.replace(finalStateZipPattern, (_match, stateCode) => stateCode.toUpperCase());
 
+    // Final pass after all regional formatting: country names belong in the
+    // dedicated country field. Remove the trailing country or alias uniformly
+    // (including "Taiwan, R.O.C.") so later normalization cannot leave it in
+    // the address value.
+    const trailingCountryTerms = [...new Set(COUNTRIES.flatMap(country => [
+      country.name,
+      ...(country.aliases || [])
+    ]).filter(Boolean))]
+      .sort((left, right) => right.length - left.length)
+      .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    if (trailingCountryTerms.length) {
+      const trailingCountryPattern = new RegExp(
+        `(?:,\\s*|\\s+)\\b(?:${trailingCountryTerms.join("|")})\\b(?:\\s*,?\\s*(?:r\\s*\\.?\\s*o\\s*\\.?\\s*c\\.?|republic\\s+of\\s+china))?[.,;]*$`,
+        "i"
+      );
+      addr = addr.replace(trailingCountryPattern, "").trim();
+    }
+
     return addr;
   }
 
@@ -3653,10 +3671,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 1. Scan phone lines
     const phoneCandidates = [];
     let tollFreeFallback = "";
-    const phoneRegex = /(?:Tel|Telephone|Phone|Mob(?:ile)?|Cell|Fax|T|P|M|F)\.?\s*[:：.-]?\s*([+]?[0-9\s()./-]{7,25})/gi;
+    const phoneRegex = /(?:Tel(?:ephone)?|Phone|Call\s+Us|Mob(?:ile)?|Cell)\.?\s*[:：.-]?\s*([+]?[0-9\s()./-]{7,25})/gi;
     let m;
     while ((m = phoneRegex.exec(text)) !== null) {
-      const raw = m[1].split(/[\/~,\n]/)[0].trim();
+      const raw = m[1]
+        .split(/[\/~,\n]/)[0]
+        .split(/\s+(?=\+\d{1,3}[\s.-])/)[0]
+        .trim();
       phoneCandidates.push(raw);
     }
 
@@ -3694,7 +3715,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       // Remove special characters and leading zeros
       let cleanDigits = s.replace(/\D/g, "").replace(/^0+/, "");
-      if (country?.dialCode && cleanDigits.startsWith(country.dialCode)) {
+      if (country?.dialCode && cleanDigits.startsWith(country.dialCode) && cleanDigits.length > 10) {
         cleanDigits = cleanDigits.slice(country.dialCode.length).replace(/^0+/, "");
       }
 
@@ -3913,7 +3934,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           const contactRaw = fallbackAddress.address || (contactEl.matches?.("address, footer p, #footer p, .footer p") ? getElementText(contactEl) : "");
           if (contactRaw) {
             const recovered = cleanAddressString(contactRaw, countryName, companyName);
-            if (recovered && recovered.length >= 10 && (!companyAddress || recovered.split(",").length > companyAddress.split(",").length)) {
+            if (recovered && recovered.length >= 10 && !companyAddress) {
               companyAddress = recovered;
               addressSource = fallbackAddress.source ||
                 (contactEl.closest?.("footer, #footer, .footer, [class*='footer'], [id*='footer']")
@@ -3949,7 +3970,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
       // Prefer the country explicitly named by the cleaned physical address
       // over conflicting schema metadata (for example, Taiwan vs. China).
-      if (matchesCountryTerm(companyAddress, "Taiwan") || /\brepublic\s+of\s+china\b|\br\s*\.?\s*o\s*\.?\s*c\.?\b/i.test(companyAddress)) {
+      const verifiedTaiwanAddress = `${rawAddress || ""} ${companyAddress || ""}`;
+      if (matchesCountryTerm(verifiedTaiwanAddress, "Taiwan") || /\brepublic\s+of\s+china\b|\br\s*\.?\s*o\s*\.?\s*c\.?\b/i.test(verifiedTaiwanAddress)) {
         countryName = "Taiwan";
         countryObj = COUNTRIES.find(c => c.name === countryName);
       }
