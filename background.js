@@ -25,13 +25,17 @@ function normalizeUrl(raw) {
 
 function contactAddressSourcePriority(source) {
   const value = String(source || "").toLowerCase();
-  if (value.includes("schema")) return 6;
-  if (value.includes("labelled")) return 5;
-  if (value.includes("element")) return 4;
-  if (value.includes("semantic")) return 3;
-  if (value.includes("inline")) return 2;
-  if (value.includes("fallback") || value.includes("fulltext")) return 1;
-  return 0;
+  let priority = 0;
+  if (value.includes("schema")) priority = 6;
+  else if (value.includes("labelled")) priority = 5;
+  else if (value.includes("element")) priority = 4;
+  else if (value.includes("semantic")) priority = 3;
+  else if (value.includes("inline")) priority = 2;
+  else if (value.includes("fallback") || value.includes("fulltext")) priority = 1;
+  // A dedicated contact-page address is more reliable than a similarly
+  // shaped address found in homepage copy, a project caption, or the footer.
+  if (value.startsWith("contact-detail-")) priority += 10;
+  return priority;
 }
 
 function annotateEmailCandidates(data, sourcePage, fallbackRole = "other") {
@@ -248,7 +252,7 @@ async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs) {
 
 async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 1800);
+  const timer = setTimeout(() => controller.abort(), 1500);
   let response;
   let html = "";
 
@@ -295,11 +299,11 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
   let renderedTab;
   try {
     renderedTab = await chrome.tabs.create({ url: response?.url || pageUrl, active: false });
-    await waitForTabComplete(renderedTab.id, 2000);
+    await waitForTabComplete(renderedTab.id, 1800);
     renderedTab = await recoverFromBrowserError(
       renderedTab.id,
       response?.url || pageUrl,
-      2000
+      1800
     );
 
     const [{ result: extractorLoaded }] = await chrome.scripting.executeScript({
@@ -372,14 +376,14 @@ async function crawlInTab(targetUrl, timeoutMs = 15000) {
   }
 
   let tab = null;
-  const crawlDeadline = Date.now() + 14000;
+  const crawlDeadline = Date.now() + 11000;
   try {
     // 1. Create hidden background tab
     tab = await chrome.tabs.create({ url: normUrl, active: false });
 
     // 2. Wait for page load
-    await waitForTabComplete(tab.id, Math.min(timeoutMs, 8000));
-    tab = await recoverFromBrowserError(tab.id, normUrl, Math.min(timeoutMs, 4000));
+    await waitForTabComplete(tab.id, Math.min(timeoutMs, 6000));
+    tab = await recoverFromBrowserError(tab.id, normUrl, Math.min(timeoutMs, 3000));
 
     // Small delay to ensure client-side JS renders
     await new Promise(r => setTimeout(r, 150));
@@ -485,7 +489,7 @@ async function crawlInTab(targetUrl, timeoutMs = 15000) {
     } catch {}
 
     for (const candidateEnUrl of enCandidates) {
-      if (Date.now() > crawlDeadline - 2000) break;
+      if (Date.now() > crawlDeadline - 1800) break;
       try {
         const enData = await extractFetchedPage(tab.id, candidateEnUrl);
 
@@ -532,21 +536,15 @@ async function crawlInTab(targetUrl, timeoutMs = 15000) {
           u.hostname.replace(/^www\./i, "").toLowerCase();
         const samePath = candidateUrl.pathname.replace(/\/+$/, "") === u.pathname.replace(/\/+$/, "");
         return !(sameHost && samePath && candidateUrl.search === u.search);
-      }).slice(0, 3);
+      }).slice(0, 2);
     } catch {}
-
-    // Avoid a slow secondary crawl when the main/English page already has the
-    // essential contact details used by the form.
-    if (mainData.companyAddress && mainData.emailId && mainData.phoneNumber) {
-      contactCandidates = [];
-    }
 
     let footerAddressTakenFromContactPage = false;
     let bestContactAddressPriority = -1;
     const visitedContactUrls = new Set(contactCandidates);
-    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 2; contactIndex++) {
+    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 1; contactIndex++) {
       // Keep optional subpage crawling from making the user wait indefinitely.
-      if (Date.now() > crawlDeadline - 3000) break;
+      if (Date.now() > crawlDeadline - 3500) break;
       const contactUrl = contactCandidates[contactIndex];
       try {
         const contactData = await extractFetchedPage(tab.id, contactUrl, true);

@@ -374,6 +374,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { name: "Finland", iso: "FI", aliases: ["finland", "suomi"], tlds: [".fi"], dialCode: "358" },
     { name: "Ireland", iso: "IE", aliases: ["ireland"], tlds: [".ie"], dialCode: "353" },
     { name: "New Zealand", iso: "NZ", aliases: ["new zealand"], tlds: [".nz", ".co.nz"], dialCode: "64" },
+    { name: "Fiji", iso: "FJ", aliases: ["fiji", "fiji islands", "republic of fiji"], tlds: [".fj"], dialCode: "679" },
     { name: "South Africa", iso: "ZA", aliases: ["south africa"], tlds: [".za", ".co.za"], dialCode: "27" },
     { name: "Egypt", iso: "EG", aliases: ["egypt", "arab republic of egypt", "مصر"], tlds: [".eg"], dialCode: "20" },
     { name: "Israel", iso: "IL", aliases: ["israel"], tlds: [".il"], dialCode: "972" },
@@ -821,21 +822,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return w;
     }).join(" ");
 
-    // 6. Lowercase short connector words (of, and, the, etc.) for proper title case
-    const SMALL_WORDS = /\b(?:of|and|the|for|to|in|on|at|by|as|a|an)\b/gi;
-    const nameLength = name.length;
-    name = name.replace(SMALL_WORDS, (m, offset) => {
-      // Keep first and last words capitalized
-      if (offset === 0 || offset + m.length === nameLength) {
-        return m.charAt(0).toUpperCase() + m.slice(1).toLowerCase();
-      }
-      return m.toLowerCase();
-    });
+    // Keep connector words title-cased too, matching the requested company
+    // name format (for example, "TCF Council Of Fiji").
 
-    // 7. Section 5.3: Expand all international legal suffixes to full form
+    // 6. Section 5.3: Expand all international legal suffixes to full form
     name = expandLegalSuffixes(name, countryName);
 
-    // 8. Clean duplicate punctuation, extra spaces, trailing/leading commas or dots
+    // 7. Clean duplicate punctuation, extra spaces, trailing/leading commas or dots
     name = clean(name.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, ""));
 
     return name;
@@ -1148,6 +1141,17 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return sanitizeCandidate(candidate) || candidate;
     }
 
+    // Product catalog labels can be copied from navigation or schema markup.
+    // Require both a product type and multiple generic product descriptors so
+    // company names such as "Hunt Electronic" remain valid.
+    function isCatalogProductName(value) {
+      const candidate = String(value || "").trim();
+      if (!candidate) return false;
+      const hasProductType = /\b(?:monitor|camera|lens|recorder|video\s+encoder|power\s+supply|processor|transceiver|switch|intercom|card\s+reader|mount|bracket)\b/i.test(candidate);
+      const descriptors = candidate.match(/\b(?:standard|entry\s+level|lcd|pc|security|surveillance|digital|wireless|ip|cctv|video|color|colour|black|white|hd|4k|megapixel)\b/gi) || [];
+      return hasProductType && descriptors.length >= 2;
+    }
+
     function companyNameAfterRightsNotice(value) {
       const match = String(value || "").match(
         /\ball rights reserved\b\s*(?:(?:©\s*)?\d{2,4}(?:\s*[-–]\s*\d{2,4})?\s*)?(?:©\s*)?(.{2,80})$/i
@@ -1234,7 +1238,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           if (candidate && hasCorpSuffix(candidate)) {
             legalName = candidate;
             break;
-          } else if (candidate && !brandName) {
+          } else if (candidate) {
+            // A visible copyright identity is more authoritative than a
+            // generic schema brand or a marketing phrase in the page title.
             brandName = candidate;
           }
         }
@@ -1268,7 +1274,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           if (cand && hasCorpSuffix(cand)) {
             legalName = cand;
             break;
-          } else if (cand && !brandName) {
+          } else if (cand) {
             brandName = cand;
           }
         }
@@ -1302,14 +1308,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         const isMarketingDescription = str => {
           if (!str) return false;
           const s = str.trim();
+          if (isCatalogProductName(s)) return true;
           if (s.split(/\s+/).length > 6) return true;
-          return /\b(?:leading|world leader|specializing in|professional|trusted|quality|manufacturer of|supplier of|solutions for|distributor of|tools manufacturer|flame detectors|fasteners|precision|machining|automation|since \d{4}|from [A-Za-z]+|official (?:website|site)|home|welcome|contact|about|products|services|store)\b/i.test(s);
+          return /\b(?:leading|world leader|specializing in|professional|trusted|quality|manufacturer of|supplier of|solutions for|distributor of|tools manufacturer|flame detectors|fasteners|precision|machining|automation|advanced security|security systems|surveillance|cctv solutions|cutting-edge|empowering|since \d{4}|from [A-Za-z]+|official (?:website|site)|home|welcome|contact|about|products|services|store)\b/i.test(s);
         };
         const titleBrandName = titleParts
           .map(part => cleanBrandDescriptor(part))
           .find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part) && !isMarketingDescription(part)) ||
-          titleParts.map(part => cleanBrandDescriptor(part)).find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part)) || "";
-        if (titleBrandName && !brandName) {
+          titleParts.map(part => cleanBrandDescriptor(part)).find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part) && !/^\d{4,}$/.test(part)) || "";
+        if (titleBrandName && (!brandName || isCatalogProductName(brandName))) {
           brandName = titleBrandName;
         }
       }
@@ -1327,6 +1334,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // If a full legal name with suffix was found in Phase 1, use it!
     if (legalName) {
       return finishName(legalName);
+    }
+
+    // Discard a product/category label that may have been exposed as an
+    // Organization name in structured data, then use the site identity.
+    if (isCatalogProductName(brandName)) {
+      brandName = "";
     }
 
     // --- PHASE 2: EXTRACT BRAND NAME CANDIDATE ---
@@ -1408,8 +1421,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (germanGmbhCoMatch?.[1]) {
         return finishName(germanGmbhCoMatch[1]);
       }
+      const legalNameQualifiers = "(?:USA|U\\.?S\\.?A?\\.?|US|America|International|Global|Worldwide|Group|Holding|Holdings|Enterprises|Enterprise|Trading|Industries|Industry|Technologies|Technology)";
       const suffixSearchRegex = new RegExp(
-        `\\b(${baseClean}\\s+(?:${corpSuffix.source}))\\b`,
+        `\\b(${baseClean}(?:[,\\s]+${legalNameQualifiers})*[,\\s]+(?:${corpSuffix.source}))\\b`,
         "i"
       );
       const match = text.match(suffixSearchRegex);
@@ -1489,8 +1503,22 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // Full body scanning causes false positives (e.g., Korean site mentions 'London' in news links)
     const combinedFull = `${addressText || ""}`.toLowerCase();
 
-    // 1. RULE 5 SPECIAL CASE: United Kingdom localities (address-only scan to avoid false positives)
-    // "If 'England' and 'United Kingdom' both are mentioned, you must take England as the country name."
+    // Prefer the explicit sovereign country over an inferred UK locality.
+    // Preserve a named constituent country (England, Scotland, Wales, NI) when
+    // the address explicitly includes it, while cities/postcodes alone should
+    // not override "United Kingdom" or "Great Britain" from the address.
+    const explicitUkCountry = /\b(?:united kingdom|great britain)\b/i.test(addressText || "") ||
+      /(?:^|[,;\r\n])\s*u\.?k\.?\s*(?:$|[,;\r\n])/i.test(addressText || "");
+    if (explicitUkCountry) {
+      const explicitTerritory = String(addressText || "").match(/\b(England|Scotland|Wales|Northern Ireland)\b/i)?.[1];
+      if (explicitTerritory) {
+        const territory = UK_LOCALITIES.find(item => item.name.toLowerCase() === explicitTerritory.toLowerCase());
+        return territory?.name || explicitTerritory;
+      }
+      return "United Kingdom";
+    }
+
+    // 1. Infer UK locality when the address does not name the sovereign country.
     for (const uk of UK_LOCALITIES) {
       if (uk.regex.test(combinedAddr)) {
         return uk.name;
@@ -1585,9 +1613,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 6. Match Phone Number Dial Code (e.g. +82 -> South Korea, +49 -> Germany, +91 -> India, +44 -> England, 66(0) -> Thailand)
     const phoneToTest = `${phoneRaw || ""} ${fullText || ""}`;
-    const dialCodeMatches = phoneToTest.match(/(?:\b(?:Tel(?:ephone)?|Phone|Mob(?:ile)?|Cell|Fax)\b[:：.-]?|\b[TPMF][:：.-])\s*(?:\+([0-9]{1,4})|([0-9]{2,4})\s*(?:\(0\)|0))/gi) || [];
+    const dialCodeMatches = phoneToTest.match(/(?:\b(?:Tel(?:ephone)?|Phone|Mob(?:ile)?|Cell|Fax)\b[:：.-]?|\b[TPMF][:：.-])\s*[\s(]*(?:\+([0-9]{1,4})|([0-9]{2,4})\s*(?:\(0\)|0))/gi) || [];
     for (const d of dialCodeMatches) {
-      const codeMatch = d.match(/(?:\b(?:Tel(?:ephone)?|Phone|Mob(?:ile)?|Cell|Fax)\b[:：.-]?|\b[TPMF][:：.-])\s*(?:\+([0-9]{1,4})|([0-9]{2,4})\s*(?:\(0\)|0))/i);
+      const codeMatch = d.match(/(?:\b(?:Tel(?:ephone)?|Phone|Mob(?:ile)?|Cell|Fax)\b[:：.-]?|\b[TPMF][:：.-])\s*[\s(]*(?:\+([0-9]{1,4})|([0-9]{2,4})\s*(?:\(0\)|0))/i);
       const code = codeMatch?.[1] || codeMatch?.[2];
       if (code) {
         if (code === "44") {
@@ -2123,8 +2151,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (stopLinePattern.test(s) || /@|https?:\/\/|www\.|all rights reserved/i.test(s)) return false;
       const hasNumber = /\d/.test(s);
       const hasStreetMarker = /\b(?:straße|strasse|p\.?\s*o\.?\s*box|post\s+office\s+box|street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|gu\b|si\b|do\b|ro\b|dong\b|gun\b|min\b|city\b|province\b|county\b)/i.test(s);
+      const hasCommonUkStreetMarker = /\b\d+\s+.{1,45}\b(?:hill|close|mews|gardens?|grove|row|parade)\b/i.test(s);
       const commaSegments = s.split(",").map(p => p.trim()).filter(Boolean);
-      return (hasNumber && (commaSegments.length >= 2 || hasStreetMarker)) ||
+      return (hasNumber && (commaSegments.length >= 2 || hasStreetMarker || hasCommonUkStreetMarker)) ||
         (hasStreetMarker && commaSegments.length >= 2);
     };
 
@@ -2171,7 +2200,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           addCandidate(
             officeAddress,
             isContactPage ? "contact-detail-labelled" : (isFooterElement(ancestor) ? "footer-labelled" : "page-labelled"),
-            300
+            500
           );
           foundOfficeAddress = true;
           break;
@@ -2233,7 +2262,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
           for (
             let j = i + 1;
-            j < Math.min(lines.length, i + 6);
+            j < Math.min(lines.length, i + 10);
             j++
           ) {
             const line = lines[j];
@@ -2282,12 +2311,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           if (
             labelPattern.test(line) ||
             stopLinePattern.test(line) ||
-            /@|https?:\/\/|www\.|all rights reserved/i.test(line)
+            /@|https?:\/\/|www\.|all rights reserved/i.test(line) ||
+            /^(?:talk to an expert|use this form|first name|last name|company name|email address|enquiry|submit)\b/i.test(line)
           ) {
             break;
           }
           if (!line || line.length > 120) break;
-          if (looksLikeAddressLine(line) || line.includes(",") || /\d/.test(line)) {
+          if (looksLikeAddressLine(line) || line.includes(",") || /\d/.test(line) ||
+              /^[\p{L}\p{M}'’.-]+(?:\s+[\p{L}\p{M}'’.-]+){0,3}$/u.test(line)) {
             collected.push(line);
           } else {
             break;
@@ -2318,7 +2349,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         const labelMatch = ftLines[i].match(labelPattern);
         if (labelMatch) {
           const collected = [ftLines[i].replace(labelPattern, "").trim()].filter(Boolean);
-          for (let j = i + 1; j < Math.min(ftLines.length, i + 5); j++) {
+          for (let j = i + 1; j < Math.min(ftLines.length, i + 10); j++) {
             const nextL = ftLines[j];
             if (
               labelPattern.test(nextL) ||
@@ -3028,6 +3059,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
+    // Postal contact blocks sometimes put the organization name immediately
+    // before its PO Box. Keep the mailing address and remove that name even
+    // when the extracted trading name differs from the organization label.
+    const entityBeforePoBox = addr.match(
+      /^\s*([^,;]{2,100}?)\s*,?\s*(?=(?:p\.?\s*o\.?\s*box|post\s+office\s+box)\b)/i
+    );
+    if (
+      entityBeforePoBox &&
+      !/\d/.test(entityBeforePoBox[1]) &&
+      /\b(?:council|company|corporation|association|foundation|chamber|committee|organisation|organization|authority|trust|institute)\b/i.test(entityBeforePoBox[1]) &&
+      !/\b(?:street|road|avenue|lane|drive|boulevard|highway|way)\b/i.test(entityBeforePoBox[1])
+    ) {
+      addr = addr.slice(entityBeforePoBox[0].length).replace(/^[,;\s]+/, "");
+    }
+
     // If the address repeats the legal entity name with an abbreviated
     // jurisdiction suffix, remove it even when companyName is expanded.
     addr = addr.replace(
@@ -3147,8 +3193,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       /^\d{5}(?:-\d{4})?$/,                       // US ZIP / ZIP+4
       /^\d{6}$/,                                  // Six-digit postal code
       /^[A-Z]\d[A-Z]\s*\d[A-Z]\d$/i,            // Canadian postal code
+      /^(?:GIR\s*0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})$/i, // UK postcode
       /^(?:D|F|I|E|NL|B|CH|AT|PL)-\d{4,5}$/i     // Selected international formats
     ];
+
+    // UK postcodes are frequently attached to the county/locality rather
+    // than separated into their own comma-delimited field.
+    addr = addr.replace(/\b(?:GIR\s*0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/gi, " ");
 
     addr = addr
       .split(",")
