@@ -12,9 +12,9 @@
  * 9. Email ID (First corporate email)
  * 10. Secondary Email ID (Secondary if given, else empty)
  * 11. Phone Number (Country code removed, spaces/special chars removed, NO toll-free, NO leading zero)
- * 12. Number of Products (1 or 3; never 0)
- * 13. Product Images (1 or 3; never 0)
- * 14. Number of Product Descriptions (1 or 3; never 0)
+ * 12. Number of Products (evidence-based; capped to the portal's 1/2/3 values)
+ * 13. Product Images (evidence-based; capped to the portal's 1/2/3 values)
+ * 14. Number of Product Descriptions (evidence-based; capped to the portal's 1/2/3 values)
  * Forbidden Categories Filter (Porn, Medicine/Medical, Food, Weapons/Knife, Defence, Aircraft, Marine, Chemical, Alcohol, Animals)
  * Social Media Sources (Facebook, LinkedIn)
  */
@@ -2686,58 +2686,227 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return "";
   }
 
-  // Rules 12, 13, 14: Products, Images, Descriptions
-  // Dropdown mapping: If 1 -> "1", if 2 -> "2", if >= 3 -> "3"; never 0
-  function extractProductCounts(doc, text) {
-    // Product element count — look for semantic product cards/items
-    let rawCount = 0;
+  // Rules 12, 13, 14: count identifiable products, their images, and descriptions.
+  // The portal stores these counts as 1/2/3, with 3 representing three or more.
+  function extractProductCounts(doc, pageUrl = "") {
+    const products = [];
+    const byAlias = new Map();
+    const seenObjects = new WeakSet();
+
+    const fieldValues = value => {
+      if (Array.isArray(value)) return value.flatMap(fieldValues);
+      if (value && typeof value === "object") {
+        return fieldValues(value.url || value.contentUrl || value["@id"] || "");
+      }
+      return typeof value === "string" ? [value] : [];
+    };
+    const resolveProductUrl = rawUrl => {
+      if (!rawUrl) return "";
+      try {
+        const resolved = new URL(rawUrl, pageUrl || doc?.baseURI || "https://example.invalid/");
+        if (!["http:", "https:"].includes(resolved.protocol)) return "";
+        resolved.hash = "";
+        return resolved.href.replace(/\/$/, "");
+      } catch {
+        return "";
+      }
+    };
+    const addProduct = ({ id = "", name = "", url = "", images = [], description = "" } = {}) => {
+      const cleanName = String(name).replace(/\s+/g, " ").trim();
+      const productUrl = resolveProductUrl(url);
+      const idKey = String(id).trim() ? `id:${String(id).trim()}` : "";
+      const nameKey = cleanName ? `name:${cleanName.toLowerCase()}` : "";
+      const aliases = [productUrl, idKey, nameKey].filter(Boolean);
+      if (!aliases.length) return;
+
+      let product = [productUrl, idKey].filter(Boolean)
+        .map(alias => byAlias.get(alias))
+        .find(Boolean);
+      if (!product && nameKey) {
+        const nameMatch = byAlias.get(nameKey);
+        if (!nameMatch || !nameMatch.url || !productUrl || nameMatch.url === productUrl) {
+          product = nameMatch;
+        }
+      }
+      if (!product) {
+        product = { key: productUrl || idKey || nameKey, name: cleanName, url: productUrl, images: new Set(), hasDescription: false };
+        products.push(product);
+      } else {
+        if (!product.name && cleanName) product.name = cleanName;
+        if (!product.url && productUrl) product.url = productUrl;
+      }
+      for (const alias of aliases) byAlias.set(alias, product);
+      for (const image of images) {
+        const resolvedImage = resolveProductUrl(image);
+        if (resolvedImage) product.images.add(resolvedImage);
+      }
+      if (String(description || "").replace(/\s+/g, " ").trim().length >= 20) {
+        product.hasDescription = true;
+      }
+    };
+    const readStructuredProducts = value => {
+      if (!value || typeof value !== "object" || seenObjects.has(value)) return;
+      seenObjects.add(value);
+      if (Array.isArray(value)) {
+        for (const item of value) readStructuredProducts(item);
+        return;
+      }
+      const types = Array.isArray(value["@type"]) ? value["@type"] : [value["@type"]];
+      if (types.some(type => /^Product$/i.test(String(type || "").split("/").pop()))) {
+        addProduct({
+          id: value.sku || value.productID || "",
+          name: value.name || "",
+          url: value.url || value["@id"] || "",
+          images: fieldValues(value.image),
+          description: value.description || ""
+        });
+      }
+      for (const child of Object.values(value)) {
+        if (child && typeof child === "object") readStructuredProducts(child);
+      }
+    };
+
     if (doc) {
-      const proEls = doc.querySelectorAll([
-        "[class*=\"product\"]",
-        "[class*=\"goods\"]",
-        "[class*=\"item-card\"]",
-        "[class*=\"pro-item\"]",
-        "[class*=\"gallery-item\"]",
-        ".bxslider li",
-        ".slider_bot li",
-        "[id*=\"product\"]"
-      ].join(", "));
-      rawCount = proEls.length;
+      for (const script of doc.querySelectorAll('script[type="application/ld+json"]')) {
+        try {
+          readStructuredProducts(JSON.parse(script.textContent || ""));
+        } catch {
+          // Ignore malformed JSON-LD and continue with the rendered page.
+        }
+      }
+
+      const cardSelector = [
+        '[itemtype*="Product"]',
+        '[class~="product"]',
+        '[class*="product-card"]',
+        '[class*="product-item"]',
+        '[class*="product-entry"]',
+        '[class*="product-box"]',
+        '[class*="goods-card"]',
+        '[class*="goods-item"]',
+        '[class*="pro-item"]',
+        '[data-product-id]',
+        '[data-product]'
+      ].join(", ");
+      const cards = new Set(doc.querySelectorAll(cardSelector));
+
+      for (const card of cards) {
+        const classes = typeof card.className === "string" ? card.className : "";
+        if (/\b(?:product|goods)[-_ ]?(?:list|grid|catalog|section|wrapper|container|related|recommend|carousel|slider)\b/i.test(classes) ||
+            /\b(?:products?|goods|pro)[-_ ]+(?:cards|items|entries|boxes|grid|list|catalog|section|wrapper|container|related|recommend|carousel|slider|gallery|card[-_](?:grid|list|wrapper|container)|item[-_](?:grid|list|wrapper|container))\b/i.test(classes)) {
+          continue;
+        }
+        const nameElement = card.querySelector('[itemprop="name"], h2, h3, h4, [class*="product-name"], [class*="product-title"]');
+        const link = card.querySelector('a[href]');
+        const imageElements = [...card.querySelectorAll("img")];
+        const images = imageElements
+          .map(image => image.getAttribute("src") || image.getAttribute("data-src") ||
+            image.getAttribute("data-lazy") || image.getAttribute("data-original") || "")
+          .filter(Boolean);
+        const descriptionElement = card.querySelector(
+          '[itemprop="description"], [class*="description"], [class*="summary"], p'
+        );
+        const name = nameElement?.textContent || imageElements[0]?.getAttribute("alt") ||
+          link?.textContent || card.getAttribute("data-product-name") || "";
+        addProduct({
+          id: card.getAttribute("data-product-id") || "",
+          name,
+          url: link?.getAttribute("href") || card.getAttribute("data-product-url") || "",
+          images,
+          description: descriptionElement?.textContent || ""
+        });
+      }
+
+      const openGraphType = doc.querySelector('meta[property="og:type"]')?.content || "";
+      if (!products.length && /\bproduct\b/i.test(openGraphType)) {
+        addProduct({
+          name: doc.querySelector('meta[property="og:title"]')?.content || doc.title || "",
+          url: doc.querySelector('link[rel="canonical"]')?.href || pageUrl,
+          images: [doc.querySelector('meta[property="og:image"]')?.content || ""],
+          description: doc.querySelector('meta[property="og:description"]')?.content || ""
+        });
+      }
     }
 
-    // Image count — DON'T use img.width (DOMParser gives 0); use src/alt heuristics instead
-    let imgCount = 0;
-    if (doc) {
-      const imgs = [...(doc.images || doc.querySelectorAll("img"))].filter(img => {
-        const src = (img.getAttribute("src") || img.getAttribute("data-src") || img.getAttribute("data-lazy") || "").toLowerCase();
-        const alt = (img.getAttribute("alt") || "").toLowerCase();
-        const parentClass = (img.parentElement?.className || "").toLowerCase();
-        // Exclude decorative / UI images
-        if (/logo|icon|avatar|flag|btn|arrow|banner|bg-|background|separator|sprite|pattern/i.test(src + " " + alt)) return false;
-        // Include if URL contains product-like keywords
-        if (/product|goods|item|thumb|gallery|catalog|pro[_-]/i.test(src)) return true;
-        // Include if inside a product-like container
-        if (/product|goods|item|gallery|catalog/i.test(parentClass)) return true;
-        // Include if alt text has meaningful content (not empty, not just numbers)
-        if (alt.length > 3 && !/^\d+$/.test(alt.trim())) return true;
-        // Include all <img> with non-empty src that aren't tiny data-URIs or 1px tracking pixels
-        if (src.startsWith("data:") || src.includes("1x1") || src.includes("pixel")) return false;
-        // Include remaining images with an actual file extension
-        return /\.(jpg|jpeg|png|webp|gif|bmp|svg)(\?|$)/i.test(src);
-      });
-      imgCount = imgs.length;
+    return mergeProductCounts(products.map(product => ({
+      key: product.key || product.url || product.name.toLowerCase(),
+      images: [...product.images],
+      hasDescription: product.hasDescription
+    })));
+  }
+
+  function mergeProductCounts(...evidenceGroups) {
+    const products = new Map();
+    for (const evidence of evidenceGroups.flat()) {
+      if (!evidence?.key) continue;
+      let product = products.get(evidence.key);
+      if (!product) {
+        product = { key: evidence.key, images: new Set(), hasDescription: false };
+        products.set(evidence.key, product);
+      }
+      for (const image of evidence.images || []) {
+        if (image) product.images.add(image);
+      }
+      product.hasDescription ||= Boolean(evidence.hasDescription);
     }
 
-    // Clamp: 0 -> 3 (rule: never 0), max -> 3
-    const clamp = n => n <= 0 ? "3" : n === 1 ? "1" : n === 2 ? "2" : "3";
-
-    const maxItems = Math.max(rawCount, imgCount);
+    const allImages = new Set([...products.values()].flatMap(product => [...product.images]));
+    const descriptionCount = [...products.values()].filter(product => product.hasDescription).length;
+    const bucket = count => count === 0 ? "" : String(Math.min(count, 3));
 
     return {
-      numberOfProduct: clamp(maxItems),
-      imageProduct: clamp(imgCount),
-      noOfProductDescription: clamp(maxItems)
+      numberOfProduct: bucket(products.size),
+      imageProduct: bucket(allImages.size),
+      noOfProductDescription: bucket(descriptionCount),
+      productEvidence: [...products.values()].map(product => ({
+        key: product.key,
+        images: [...product.images],
+        hasDescription: product.hasDescription
+      }))
     };
+  }
+
+  function findProductSubpages(doc, baseUrl) {
+    if (!doc || !baseUrl) return [];
+    const candidates = new Map();
+    const productPath = /\/(?:products?|product[-_](?:category|list|detail)|catalog(?:ue)?|collections?|shop|goods)(?:[-_/]|$)/i;
+    const productText = /\b(?:products?|product catalog(?:ue)?|our products|product range|catalog(?:ue)?|shop|goods)\b|제품|商品/i;
+
+    try {
+      const base = new URL(baseUrl);
+      const baseHost = base.hostname.replace(/^www\./i, "").toLowerCase();
+      for (const link of doc.querySelectorAll("a[href]")) {
+        const href = (link.getAttribute("href") || "").trim();
+        if (!href || href.startsWith("#") || /^(?:mailto|tel|javascript):/i.test(href)) continue;
+        try {
+          const target = new URL(href, baseUrl);
+          const targetHost = target.hostname.replace(/^www\./i, "").toLowerCase();
+          if (!["http:", "https:"].includes(target.protocol) || targetHost !== baseHost) continue;
+          if (target.pathname.replace(/\/+$/, "") === base.pathname.replace(/\/+$/, "")) continue;
+
+          const label = clean(link.textContent || link.getAttribute("aria-label") || "");
+          const pathMatch = productPath.test(target.pathname);
+          const textMatch = productText.test(label);
+          if (!pathMatch && !textMatch) continue;
+
+          target.hash = "";
+          const score = (pathMatch ? 50 : 0) + (textMatch ? 40 : 0) +
+            (/\/products?(?:\/|$)/i.test(target.pathname) ? 10 : 0);
+          const resolved = target.href;
+          if (resolved === base.href) continue;
+          candidates.set(resolved, Math.max(score, candidates.get(resolved) || 0));
+        } catch {
+          // Skip malformed links and continue discovering other product pages.
+        }
+      }
+    } catch {
+      return [];
+    }
+
+    return [...candidates.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([url]) => url);
   }
 
   // Social Media Link Detection (Facebook, LinkedIn)
@@ -2960,7 +3129,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       extractPhoneNumber(text, countryObj);
 
     // 11. Products, Images, Descriptions (Rules 12, 13, 14)
-    const counts = extractProductCounts(doc, text);
+    const counts = extractProductCounts(doc, url);
 
     // 12. Social Media (Facebook, LinkedIn)
     const social = extractSocialMedia(doc, text);
@@ -2969,6 +3138,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const enUrl = findEnglishSubpage(doc, url);
     const contactUrls = findContactSubpages(doc, url);
     const contactUrl = contactUrls[0] || null;
+    const productUrls = findProductSubpages(doc, url);
 
     return {
       websiteName: url,
@@ -2988,12 +3158,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       numberOfProduct: counts.numberOfProduct,
       imageProduct: counts.imageProduct,
       noOfProductDescription: counts.noOfProductDescription,
+      productEvidence: counts.productEvidence,
       forbidden,
       urlRules,
       social,
       enUrl,
       contactUrl,
-      contactUrls
+      contactUrls,
+      productUrls
     };
   }
 
@@ -3023,10 +3195,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     isValidEmail,
     mergeContactEmails,
     extractPhoneNumber,
+    extractProductCounts,
     findRawAddress,
     findEnglishSubpage,
     findContactSubpages,
     findContactSubpage,
+    findProductSubpages,
+    mergeProductCounts,
     CITY_STATE_COUNTRY_MAP,
     COUNTRIES
   };

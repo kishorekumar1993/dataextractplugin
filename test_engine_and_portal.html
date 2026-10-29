@@ -1790,6 +1790,97 @@
       rollerdoorsPass: passRollerdoors
     });
 
+    const productEvidenceDoc = new DOMParser().parseFromString(`
+      <html>
+        <head>
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@graph": [{
+                "@type": "Product",
+                "name": "Widget A",
+                "url": "/products/widget-a",
+                "image": "/images/widget-a.jpg",
+                "description": "A detailed description of industrial widget A."
+              }]
+            }
+          <\/script>
+        </head>
+        <body>
+          <nav><img src="/images/company-logo.png" alt="Company logo"></nav>
+          <section class="products-grid product-cards">
+            <article class="product-card">
+              <a href="/products/widget-a">
+                <h2>Widget A</h2>
+                <img src="/images/widget-a.jpg" alt="Widget A">
+                <p>A detailed description of industrial widget A.</p>
+              </a>
+            </article>
+            <article class="product-card">
+              <a href="/products/widget-b">
+                <h2>Widget B</h2>
+                <img src="/images/widget-b.jpg" alt="Widget B">
+              </a>
+            </article>
+          </section>
+          <img src="/images/homepage-banner.jpg" alt="Company homepage banner">
+        </body>
+      </html>`,
+      "text/html"
+    );
+    const productEvidence = Extractor.extractProductCounts(
+      productEvidenceDoc,
+      "https://example.com/"
+    );
+    const noProductDoc = new DOMParser().parseFromString(`
+      <html><body>
+        <img src="/images/logo.png" alt="Company logo">
+        <img src="/images/banner.jpg" alt="Company banner">
+      </body></html>`,
+      "text/html"
+    );
+    const noProductEvidence = Extractor.extractProductCounts(
+      noProductDoc,
+      "https://example.com/"
+    );
+    const productNavDoc = new DOMParser().parseFromString(`
+      <html><body>
+        <a href="/products">Products</a>
+        <a href="/company/contact">Contact</a>
+        <a href="https://other.example.net/products">External catalog</a>
+      </body></html>`,
+      "text/html"
+    );
+    const discoveredProductUrls = Extractor.findProductSubpages(
+      productNavDoc,
+      "https://example.com/"
+    );
+    const mergedProductEvidence = Extractor.mergeProductCounts(
+      productEvidence.productEvidence,
+      [
+        { key: "https://example.com/products/widget-a", images: ["https://example.com/images/widget-a.jpg"], hasDescription: true },
+        { key: "https://example.com/products/widget-c", images: ["https://example.com/images/widget-c.jpg"], hasDescription: true }
+      ]
+    );
+    const productCountChecks =
+      productEvidence.numberOfProduct === "2" &&
+      productEvidence.imageProduct === "2" &&
+      productEvidence.noOfProductDescription === "1" &&
+      noProductEvidence.numberOfProduct === "" &&
+      noProductEvidence.imageProduct === "" &&
+      noProductEvidence.noOfProductDescription === "" &&
+      discoveredProductUrls.length === 1 &&
+      discoveredProductUrls[0] === "https://example.com/products" &&
+      mergedProductEvidence.numberOfProduct === "3" &&
+      mergedProductEvidence.imageProduct === "3" &&
+      mergedProductEvidence.noOfProductDescription === "2";
+    renderTest("Test 13: Product Counts Require Product Evidence", productCountChecks, {
+      productEvidence,
+      noProductEvidence,
+      discoveredProductUrls,
+      mergedProductEvidence
+    });
+
     window.__TEST_RESULTS__ = {
       passKorea,
       passGermany,
@@ -1803,7 +1894,8 @@
       passTest10,
       passTest11,
       passTest12,
-      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && allAddressPassed && passPortal && allQcIssuesPassed && passTest10 && passTest11 && passTest12
+      productCountChecks,
+      allPassed: passKorea && passGermany && passUK && passUSA && passAccurite && allSuffixPassed && allAddressPassed && passPortal && allQcIssuesPassed && passTest10 && passTest11 && passTest12 && productCountChecks
     };
   </script>
 </body>

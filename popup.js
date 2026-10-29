@@ -316,6 +316,8 @@ async function crawlAndExtractDirect(targetUrl) {
       throw new Error(mainData?.error || "Could not extract details from page.");
     }
 
+    const productCandidates = [...(mainData.productUrls || [])];
+
     // Step 4: English subpage fallback (Issue 16: Retry candidates when English subpage fails)
     let enCandidates = [];
     try {
@@ -337,6 +339,7 @@ async function crawlAndExtractDirect(targetUrl) {
         const enData = await extractFetchedPage(tab.id, testUrl);
 
         if (enData && !enData.error) {
+          productCandidates.push(...(enData.productUrls || []));
           // Prefer Latin-alphabet company name from English subpage
           if (enData.companyName && /[a-zA-Z]{3,}/.test(enData.companyName) &&
               (!mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName))) {
@@ -368,6 +371,24 @@ async function crawlAndExtractDirect(targetUrl) {
         }
       } catch (e) {
         console.log("English subpage check note:", e);
+      }
+    }
+
+    // Product catalogs are often separate from the homepage. Crawl only a few
+    // same-site product links discovered in page navigation.
+    for (const productUrl of [...new Set(productCandidates)].slice(0, 3)) {
+      try {
+        setStatus("Checking discovered product catalog...", "info");
+        const productData = await extractFetchedPage(tab.id, productUrl);
+        if (productData?.productEvidence?.length) {
+          const mergedProducts = Extractor.mergeProductCounts(
+            mainData.productEvidence || [],
+            productData.productEvidence
+          );
+          Object.assign(mainData, mergedProducts);
+        }
+      } catch (err) {
+        console.log("Product catalog check note:", err);
       }
     }
 
@@ -653,8 +674,10 @@ function renderQcChecklist(data) {
     },
     {
       name: "Rules 12-14: Products & Images",
-      ok: data.numberOfProduct !== "0",
-      msg: `Products: ${data.numberOfProduct}, Images: ${data.imageProduct}, Descs: ${data.noOfProductDescription}`
+      ok: Boolean(data.numberOfProduct && data.imageProduct && data.noOfProductDescription),
+      msg: data.numberOfProduct || data.imageProduct || data.noOfProductDescription
+        ? `Products: ${data.numberOfProduct || "Not detected"}, Images: ${data.imageProduct || "Not detected"}, Descs: ${data.noOfProductDescription || "Not detected"}`
+        : "No product catalog evidence found"
     }
   ];
 

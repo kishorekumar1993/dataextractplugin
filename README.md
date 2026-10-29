@@ -1,6 +1,8 @@
 # ⚡ Website Scraping & QC Helper (v2.0)
 
-A high-performance Chrome extension designed for **Data Entry & QC (Quality Check) Operators**. It crawls any target website from a given URL, accurately extracts all corporate & contact details, and automatically populates all 15 fields in your portal form with a single click.
+A Chrome extension designed for **Data Entry & QC (Quality Check) Operators**. It reads rendered page content and structured metadata, checks discovered contact pages, and can populate the 15 fields in your portal form.
+
+Extraction is best-effort, not a guarantee that every website or field can be read. Sites may block automated access, require sign-in, render data only after user interaction, or publish incomplete/incorrect information. Review the extracted values before submitting them.
 
 ---
 
@@ -20,9 +22,11 @@ A high-performance Chrome extension designed for **Data Entry & QC (Quality Chec
 | 10 | **Email Id** | Email Input | Primary corporate email (`sales@`, `info@`, etc.) | `sales@rezontech.com` |
 | 11 | **Secondary Email Id** | Email Input | Alternate / local email (`yacht@`, `insa@`, etc.) | `yacht@rezontech.com` |
 | 12 | **Phone Number** | Number Input | Country code stripped, clean digits | `313484246` |
-| 13 | **Number of Product** | Dropdown | Counts product catalog items (set to target `3`) | `3` |
-| 14 | **Image Product** | Dropdown | Counts product photos (set to target `3`) | `3` |
-| 15 | **No. of Product Description** | Dropdown | Counts product description items (set to target `3`) | `3` |
+| 13 | **Number of Product** | Dropdown | Counts structured products and identifiable product cards; `3` means 3 or more | `1`, `2`, or `3` |
+| 14 | **Image Product** | Dropdown | Counts distinct images linked to identified products; `3` means 3 or more | `1`, `2`, or `3` |
+| 15 | **No. of Product Description** | Dropdown | Counts identified products with a description; `3` means 3 or more | `1`, `2`, or `3` |
+
+Product values are left blank when the page provides no reliable product evidence; the extension no longer substitutes a guessed count. The product fields use the portal's 1/2/3 scale, so counts above 3 are capped at 3. The crawler also checks up to three same-site product/catalog links discovered from the homepage or English page. Product data loaded only on other pages or after interaction may not be included.
 
 ---
 

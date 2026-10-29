@@ -225,6 +225,8 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
       throw new Error("Could not extract details from rendered page.");
     }
 
+    const productCandidates = [...(mainData.productUrls || [])];
+
     // 5. English Subpage Crawling (for international companies with /en)
     let enCandidates = [];
     try {
@@ -245,6 +247,7 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
         const enData = await extractFetchedPage(tab.id, candidateEnUrl);
 
         if (enData && !enData.error) {
+          productCandidates.push(...(enData.productUrls || []));
           // Only override if original company name lacks Latin letters (Issue 13)
           if (enData.companyName && /[a-zA-Z]{3,}/.test(enData.companyName) &&
               (!mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName))) {
@@ -282,6 +285,23 @@ async function crawlInTab(targetUrl, timeoutMs = 30000) {
         }
       } catch (err) {
         console.log("English subpage candidate note:", err);
+      }
+    }
+
+    // Product catalogs are often separate from the homepage. Crawl only a few
+    // same-site product links discovered in page navigation.
+    for (const productUrl of [...new Set(productCandidates)].slice(0, 3)) {
+      try {
+        const productData = await extractFetchedPage(tab.id, productUrl);
+        if (productData?.productEvidence?.length) {
+          const mergedProducts = Extractor.mergeProductCounts(
+            mainData.productEvidence || [],
+            productData.productEvidence
+          );
+          Object.assign(mainData, mergedProducts);
+        }
+      } catch (err) {
+        console.log("Product catalog check note:", err);
       }
     }
 
