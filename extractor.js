@@ -1105,7 +1105,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         // Some sites render the introductory statement in nested builder
         // elements rather than <p> tags. Preserve only the short fragment
         // around a strong, explicit manufacturer/maker claim from page text.
-        const makerClaim = /\b(?:manufacturer|manufacturers|manufacturing company|(?:custom\s+)?furniture makers?|makers? of)\b/i;
+        const makerClaim = /\b(?:manufacturers?|manufacturing company|(?:custom\s+)?furniture makers?|makers? of)\b/i;
         const makerMatch = String(text || "").match(new RegExp(`.{0,180}${makerClaim.source}.{0,180}`, "i"));
         if (makerMatch) addProfilePart(makerMatch[0]);
       }
@@ -1133,7 +1133,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (!profileParts.length) return "";
 
     const profileText = profileParts.join(" ").toLowerCase();
-    if (/\b(manufacturer|manufacturing|manufacture[rs]?|we produce|producer|factory|oem|odm|assembly line|(?:custom\s+)?furniture makers?)\b/i.test(profileText)) {
+    if (/\b(manufacturers?|manufacturing|manufacture[rs]?|we produce|producer|factory|oem|odm|assembly line|(?:custom\s+)?furniture makers?)\b/i.test(profileText)) {
       return "Manufacturer";
     }
     if (/\b(wholesale|wholesaler|bulk supply|bulk order)\b/i.test(profileText)) {
