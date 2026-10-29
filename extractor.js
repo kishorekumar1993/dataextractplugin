@@ -794,9 +794,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return w;
     }).join(" ");
 
-    // 6. Capitalize short connector words (of, and, the, etc.)
-    const SMALL_WORDS = /\b(of|and|the|for|to|in|on|at|by|as|a|an)\b/gi;
-    name = name.replace(SMALL_WORDS, m => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase());
+    // 6. Lowercase short connector words (of, and, the, etc.) for proper title case
+    const SMALL_WORDS = /\b(?:of|and|the|for|to|in|on|at|by|as|a|an)\b/gi;
+    const nameLength = name.length;
+    name = name.replace(SMALL_WORDS, (m, offset) => {
+      // Keep first and last words capitalized
+      if (offset === 0 || offset + m.length === nameLength) {
+        return m.charAt(0).toUpperCase() + m.slice(1).toLowerCase();
+      }
+      return m.toLowerCase();
+    });
 
     // 7. Section 5.3: Expand all international legal suffixes to full form
     name = expandLegalSuffixes(name, countryName);
@@ -1452,7 +1459,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
 
     // An explicit Taiwan/ROC address is more reliable than stale schema metadata.
-    if (matchesCountryTerm(addressText || "", "Taiwan") || /\brepublic\s+of\s+china\b|\br\s*\.?\s*o\s*\.?\s*c\.?\b/i.test(addressText || "")) return "Taiwan";
+    if (matchesCountryTerm(addressText || "", "Taiwan") || /(?<!people'?s?\s)republic\s+of\s+china\b|\br\s*\.?\s*o\s*\.?\s*c\.?\b/i.test(addressText || "")) return "Taiwan";
 
     // 2. Schema.org JSON-LD addressCountry
     if (doc) {
@@ -2480,7 +2487,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         /\b(?:WA|SA|NT)\s+\d{4}\b/.test(address || "")) {
       return "Australia";
     }
-    if (/\b(?:United States|United States Of America|USA|U\.S\.A?\.?)\b/i.test(context) ||
+    if (/\b(?:United States|United States Of America|USA)\b|\bU\.S\.A?\.?(?=\s|[,;]|$)/i.test(context) ||
         /(?:^|[,;\s])\d{5}(?:-\d{4})?(?=$|[,;\s])/i.test(address || "")) {
       return "United States Of America";
     }
@@ -2744,11 +2751,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/\bFwy\b\.?/gi, "Freeway");
     addr = addr.replace(/\b(?:Tpke|Tpk)\b\.?/gi, "Turnpike");
     addr = addr.replace(/\bByp\b\.?/gi, "Bypass");
-    addr = addr.replace(/\bPath\b\.?/gi, "Pathway");
-    addr = addr.replace(/\bAlley\b/gi, "Alleyway");
     addr = addr.replace(/\bAly\b\.?/gi, "Alleyway");
     addr = addr.replace(/\bWy\b\.?/gi, "Way");
-    addr = addr.replace(/\bWalk\b\.?/gi, "Walkway");
     addr = addr.replace(/\bOpp\b\.?/gi, "Opposite");
 
     // Road: Rd. or Rd (after name or number)
@@ -3377,7 +3381,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // State indicators in address
     if (state === "N" && (hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasIndianState || hasMalaysiaState || hasUkCountyOrNation || hasUaeEmirate || hasSwedenCounty || hasSwedenMunicipality || hasSouthAfricanProvince || southAfricanCityProvince || hasAustrianState || austrianStateCapital || australianCityState || hasAustralianStateCode || (australianPostcode !== null && australianPostcode !== undefined) || POSTAL_REGION_NAMES_REGEX.test(addrLower) ||
         POSTAL_REGION_US_CODES_REGEX.test(address || "") ||
-        /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower))) {
+        /(?:\bcounty\b|\bco\.|\bco\s+[a-z]+|\bprovince\b|\bprefecture\b|\bstate\b|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|new south wales|victoria|queensland|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower))) {
       state = "Y";
     }
 
@@ -3445,7 +3449,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     );
 
     // City indicators in address
-    if (city === "N" && (/(?:town|district|municipality|city|-si\b|-gu\b|troy|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|nof hagalil|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei|ballinderry|four mile house)/i.test(addrLower) ||
+    if (city === "N" && (/(?:\btown\b|\bdistrict\b|\bmunicipality\b|\bcity\b|-si\b|-gu\b|\btroy\b|west palm beach|palm beach|tampa|orlando|jacksonville|fort lauderdale|boca raton|nof hagalil|anyang|suwon|seongnam|cheongju|bucheon|incheon|busan|daegu|daejeon|gwangju|ulsan|san jose|los angeles|san francisco|san diego|sacramento|fresno|new york|chicago|houston|phoenix|philadelphia|san antonio|dallas|austin|seattle|denver|boston|detroit|las vegas|miami|atlanta|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|edinburgh|glasgow|berlin|hamburg|munich|münchen|cologne|köln|frankfurt|stuttgart|düsseldorf|paris|marseille|lyon|toulouse|nice|rome|milan|naples|turin|florence|venice|tokyo|osaka|yokohama|nagoya|sapporo|kobe|kyoto|fukuoka|beijing|shanghai|guangzhou|shenzhen|chengdu|wuhan|tianjin|hangzhou|mumbai|delhi|new delhi|bangalore|bengaluru|hyderabad|ahmedabad|chennai|kolkata|surat|pune|jaipur|toronto|montreal|vancouver|calgary|edmonton|ottawa|sydney|melbourne|brisbane|perth|taipei|ballinderry|four mile house)/i.test(addrLower) ||
         CITY_STATE_COUNTRY_MAP.some(m => !["South Africa", "Austria"].includes(m.country) && m.regex.test(cityEvidenceAddress)) || southAfricanCityProvince || austrianCityState)) {
       city = "Y";
     }
@@ -3465,7 +3469,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // Completeness validation (Rule 18): If address has fewer than 2 segments, State is likely invalid
     const parts = (address || "").split(",").map(p => p.trim()).filter(Boolean);
-    const hasNamedStateRegion = /(?:county|\bco\.|\bco\s+[a-z]+|province|prefecture|state|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower);
+    const hasNamedStateRegion = /(?:\bcounty\b|\bco\.|\bco\s+[a-z]+|\bprovince\b|\bprefecture\b|\bstate\b|-do\b|gyeonggi|gangwon|chungcheong|jeolla|gyeongsang|california|texas|florida|\bfl\b|new york|pennsylvania|illinois|ohio|georgia|north carolina|michigan|new jersey|virginia|washington|arizona|massachusetts|tennessee|indiana|missouri|maryland|wisconsin|colorado|minnesota|south carolina|alabama|louisiana|kentucky|oregon|oklahoma|connecticut|utah|iowa|nevada|arkansas|mississippi|kansas|new mexico|nebraska|idaho|hawaii|guangdong|zhejiang|jiangsu|shandong|fujian|bavaria|bayern|baden-württemberg|hessen|nordrhein-westfalen|saxony|ontario|quebec|british columbia|alberta|manitoba|roscommon|kildare|wicklow|meath|louth|mayo|donegal|kerry|tipperary|clare|cavan|monaghan|leitrim|longford|westmeath|offaly|laois|galway|waterford|limerick|cork|dublin|chonburi|samut prakan|nonthaburi|pathum thani|chiang mai|phuket|rayong|ayutthaya|songkhla|surat thani|khon kaen|nakhon ratchasima)/i.test(addrLower);
     const hasExplicitStateEvidence = hasTaiwanCounty || hasChinaProvince || hasChinaMunicipality || hasStateLevelMunicipality || hasGenericStateLevel || hasUaeEmirate || hasSwedenCounty || hasSouthAfricanProvince || hasAustrianState || austrianStateCapital || germanCityState ||
       hasIndianState || hasMalaysiaState || hasUkCounty || (hasUkCity && /^(?:england|wales|scotland|northern ireland)$/i.test(String(countryHint || "").trim())) || isSingapore || hasAustralianStateCode ||
       hasAustralianStateCapital || hasMalaysiaStateCapital || hasSouthAfricanProvincialCapital || hasNamedStateRegion ||
@@ -4046,7 +4050,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       // Prefer the country explicitly named by the cleaned physical address
       // over conflicting schema metadata (for example, Taiwan vs. China).
       const verifiedTaiwanAddress = `${rawAddress || ""} ${companyAddress || ""}`;
-      if (matchesCountryTerm(verifiedTaiwanAddress, "Taiwan") || /\brepublic\s+of\s+china\b|\br\s*\.?\s*o\s*\.?\s*c\.?\b/i.test(verifiedTaiwanAddress)) {
+      if (matchesCountryTerm(verifiedTaiwanAddress, "Taiwan") || /(?<!people'?s?\s)republic\s+of\s+china\b|\br\s*\.?\s*o\s*\.?\s*c\.?\b/i.test(verifiedTaiwanAddress)) {
         countryName = "Taiwan";
         countryObj = COUNTRIES.find(c => c.name === countryName);
       }
