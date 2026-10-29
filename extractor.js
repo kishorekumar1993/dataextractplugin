@@ -3960,7 +3960,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       // 1. Check <link rel="alternate" hreflang="...">
       for (const link of doc.querySelectorAll('link[rel="alternate"][hreflang]')) {
         const hreflang = (link.getAttribute("hreflang") || "").trim().toLowerCase();
-        if (/^(?:en|en-[a-z]{2}|x-default)$/i.test(hreflang)) {
+        if (/^en(?:-[a-z]{2})?$/i.test(hreflang)) {
           addCandidate(link.getAttribute("href"));
         }
       }

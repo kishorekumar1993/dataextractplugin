@@ -58,6 +58,29 @@ function emailPageRoleForUrl(pageUrl) {
   } catch { return "other"; }
 }
 
+function pageLanguageFromUrl(pageUrl) {
+  try {
+    const url = new URL(pageUrl);
+    const subdomain = url.hostname.split(".")[0].toLowerCase();
+    const queryLanguage = url.searchParams.get("lang") || url.searchParams.get("language");
+    const pathLanguage = url.pathname.match(/^\/([a-z]{2}(?:-[a-z]{2})?)(?:\/|$)/i)?.[1];
+    const value = queryLanguage || (subdomain !== "www" ? subdomain : "") || pathLanguage || "";
+    return value.toLowerCase();
+  } catch { return ""; }
+}
+
+function isEnglishPage(data, pageUrl) {
+  const declared = String(data?.pageLanguage || "").trim().toLowerCase().replace(/_/g, "-");
+  if (declared) return declared === "en" || declared.startsWith("en-");
+  const inferred = pageLanguageFromUrl(pageUrl);
+  return inferred === "en" || inferred.startsWith("en-");
+}
+
+function hasNonEnglishLocale(pageUrl) {
+  const locale = pageLanguageFromUrl(pageUrl).split("-")[0];
+  return new Set(["ar", "bg", "ca", "cs", "da", "de", "el", "es", "et", "fa", "fi", "fr", "he", "hi", "hr", "hu", "id", "it", "ja", "ko", "lt", "lv", "ms", "nl", "no", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "th", "tr", "uk", "vi", "zh"]).has(locale);
+}
+
 function rankEmailCandidates(candidates, rootUrl) {
   let host = "";
   try { host = new URL(rootUrl).hostname.replace(/^www\./i, "").toLowerCase(); } catch {}
@@ -113,6 +136,8 @@ function mergeFrameExtractionResults(results) {
     .reduce((score, key) => score + (data[key] ? 1 : 0), 0);
   records.sort((a, b) => completeness(b) - completeness(a));
   const merged = { ...records[0] };
+  const topFrameLanguage = results?.find(item => item?.frameId === 0)?.result?.pageLanguage;
+  if (topFrameLanguage) merged.pageLanguage = topFrameLanguage;
   for (const data of records.slice(1)) {
     for (const key of ["companyName", "countryName", "emailId", "secondaryEmailId", "phoneNumber", "enUrl", "contactUrl"]) {
       if (!merged[key] && data[key]) merged[key] = data[key];
@@ -223,7 +248,7 @@ async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs) {
 
 async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4500);
+  const timer = setTimeout(() => controller.abort(), 2500);
   let response;
   let html = "";
 
@@ -248,7 +273,9 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
         func: (markup, url) => {
           if (typeof Extractor === "undefined") throw new Error("Extractor engine unavailable in target tab.");
           const doc = new DOMParser().parseFromString(markup, "text/html");
-          return Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
+          const data = Extractor.extractFromDocument(doc, Extractor.getElementText(doc.body), url);
+          data.pageLanguage = (doc.documentElement?.getAttribute("lang") || "").trim().toLowerCase();
+          return data;
         },
         args: [html, response?.url || pageUrl]
       });
@@ -268,11 +295,11 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
   let renderedTab;
   try {
     renderedTab = await chrome.tabs.create({ url: response?.url || pageUrl, active: false });
-    await waitForTabComplete(renderedTab.id, 6500);
+    await waitForTabComplete(renderedTab.id, 3000);
     renderedTab = await recoverFromBrowserError(
       renderedTab.id,
       response?.url || pageUrl,
-      6500
+      3000
     );
 
     const [{ result: extractorLoaded }] = await chrome.scripting.executeScript({
@@ -289,13 +316,17 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
     const [{ result: renderedResult }] = await chrome.scripting.executeScript({
       target: { tabId: renderedTab.id },
       func: async (url) => {
-        const extract = () => Extractor.extractFromDocument(
-          document,
-          Extractor.getElementText(document.body || document.documentElement),
-          window.location.href || url
-        );
+        const extract = () => {
+          const data = Extractor.extractFromDocument(
+            document,
+            Extractor.getElementText(document.body || document.documentElement),
+            window.location.href || url
+          );
+          data.pageLanguage = (document.documentElement?.getAttribute("lang") || "").trim().toLowerCase();
+          return data;
+        };
         let data = extract();
-        const deadline = Date.now() + 1200;
+        const deadline = Date.now() + 900;
         while ((!data.companyAddress || !data.emailId || !data.secondaryEmailId) && Date.now() < deadline) {
           await new Promise(resolve => setTimeout(resolve, 300));
           data = extract();
@@ -309,7 +340,7 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
       renderedResult?.secondaryEmailId, result?.secondaryEmailId
     ].map(email => String(email || "").trim()).filter(Boolean))];
     const combined = { ...(result || {}) };
-    for (const key of ["companyName", "companyNameRaw", "companyAddress", "countryName", "state", "city", "phoneNumber", "businessType", "companyProfile", "numberOfProduct", "imageProduct", "noOfProductDescription", "addressSource", "forbidden", "onlinePurchase", "urlRules", "social", "enUrl"]) {
+    for (const key of ["companyName", "companyNameRaw", "companyAddress", "countryName", "state", "city", "phoneNumber", "businessType", "companyProfile", "numberOfProduct", "imageProduct", "noOfProductDescription", "addressSource", "forbidden", "onlinePurchase", "urlRules", "social", "enUrl", "pageLanguage"]) {
       const value = renderedResult?.[key];
       if (value && value !== "Not Available") combined[key] = value;
     }
@@ -334,13 +365,14 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
 }
 
 // Perform reliable crawling inside a background tab
-async function crawlInTab(targetUrl, timeoutMs = 25000) {
+async function crawlInTab(targetUrl, timeoutMs = 15000) {
   const normUrl = normalizeUrl(targetUrl);
   if (!normUrl) {
     return { success: false, error: "Please enter a valid website URL." };
   }
 
   let tab = null;
+  const crawlDeadline = Date.now() + 22000;
   try {
     // 1. Create hidden background tab
     tab = await chrome.tabs.create({ url: normUrl, active: false });
@@ -377,13 +409,17 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
         } catch {}
         try {
           if (typeof Extractor === "undefined") return null;
-          const extract = () => Extractor.extractFromDocument(
-            document,
-            document.body?.innerText || Extractor.getElementText(document.body),
-            window.location.href || pageUrl
-          );
+          const extract = () => {
+            const data = Extractor.extractFromDocument(
+              document,
+              document.body?.innerText || Extractor.getElementText(document.body),
+              window.location.href || pageUrl
+            );
+            data.pageLanguage = (document.documentElement?.getAttribute("lang") || "").trim().toLowerCase();
+            return data;
+          };
           let data = extract();
-          const deadline = Date.now() + 1200;
+          const deadline = Date.now() + 900;
           while (!data.companyAddress && Date.now() < deadline) {
             await new Promise(resolve => setTimeout(resolve, 300));
             data = extract();
@@ -410,7 +446,9 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
             }
             try {
               const text = document.body?.innerText || Extractor.getElementText(document.body || document.documentElement);
-              return Extractor.extractFromDocument(document, text, window.location.href || pageUrl);
+              const data = Extractor.extractFromDocument(document, text, window.location.href || pageUrl);
+              data.pageLanguage = (document.documentElement?.getAttribute("lang") || "").trim().toLowerCase();
+              return data;
             } catch (error) {
               return { error: String(error?.message || error || "Unknown extraction error") };
             }
@@ -430,64 +468,38 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
         ? `Could not extract details from rendered page: ${frameError}`
         : "Could not extract details from rendered page. The page returned no usable frame content.");
     }
-    const rootPageUrl = tab.url || normUrl;
-    const allEmailCandidates = annotateEmailCandidates(mainData, rootPageUrl, emailPageRoleForUrl(rootPageUrl));
+    let rootPageUrl = tab.url || normUrl;
+    let allEmailCandidates = annotateEmailCandidates(mainData, rootPageUrl, emailPageRoleForUrl(rootPageUrl));
 
     // 5. English Subpage Crawling (for international companies with /en)
     let enCandidates = [];
     try {
       const u = new URL(normUrl);
-      const needsEnglishFallback = !mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName) ||
-        !mainData.companyAddress || !/[a-zA-Z]{5,}/.test(mainData.companyAddress);
-      const hostCandidates = needsEnglishFallback
-        ? [mainData.enUrl || `${u.origin}/en`]
-        : [];
-      enCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(c => c !== normUrl);
+      const declaredLanguage = String(mainData.pageLanguage || "").trim().toLowerCase();
+      const sourceHasNonEnglishLocale = (declaredLanguage && !isEnglishPage(mainData, rootPageUrl)) ||
+        hasNonEnglishLocale(rootPageUrl);
+      const hostCandidates = isEnglishPage(mainData, rootPageUrl)
+        ? []
+        : [...(mainData.enUrls || []), mainData.enUrl, ...(sourceHasNonEnglishLocale ? [`${u.origin}/en`] : [])];
+      enCandidates = [...new Set(hostCandidates.filter(Boolean))].filter(c => c !== rootPageUrl).slice(0, 3);
     } catch {}
 
     for (const candidateEnUrl of enCandidates) {
+      if (Date.now() > crawlDeadline - 5000) break;
       try {
         const enData = await extractFetchedPage(tab.id, candidateEnUrl);
 
         if (enData && !enData.error) {
-          allEmailCandidates.push(...annotateEmailCandidates(enData, candidateEnUrl, "other"));
-          if (enData.forbidden?.isForbidden) mainData.forbidden = enData.forbidden;
-          if (enData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = enData.onlinePurchase;
-          if (mainData.forbidden?.isForbidden || mainData.onlinePurchase?.isOnlineStore) mainData.websiteStatus = "Not Working";
-          // Only override if original company name lacks Latin letters (Issue 13)
-          if (enData.companyName && /[a-zA-Z]{3,}/.test(enData.companyName) &&
-              (!mainData.companyName || !/[a-zA-Z]{3,}/.test(mainData.companyName))) {
-            mainData.companyName = enData.companyName;
-            mainData.companyNameRaw = enData.companyNameRaw || enData.companyName;
+          const declaredLanguage = String(enData.pageLanguage || "").trim().toLowerCase();
+          if (!declaredLanguage || isEnglishPage(enData, enData.websiteName || candidateEnUrl)) {
+            // When the entry page is localized, use the English page as the
+            // sole source of extracted fields and links to crawl next.
+            mainData = enData;
+            rootPageUrl = enData.websiteName || candidateEnUrl;
+            allEmailCandidates = annotateEmailCandidates(mainData, rootPageUrl, emailPageRoleForUrl(rootPageUrl));
+            break;
           }
-          // If English address has Latin letters, prefer it
-          if (enData.companyAddress && /[a-zA-Z]{5,}/.test(enData.companyAddress) &&
-              !String(mainData.addressSource || "").startsWith("contact-detail-")) {
-            mainData.companyAddress = enData.companyAddress;
-            mainData.addressSource = enData.addressSource;
-          }
-          // Email priorities
-          const englishEmails = Extractor.mergeContactEmails(
-            mainData.emailId,
-            enData.emailId || enData.secondaryEmailId,
-            "",
-            mainData.secondaryEmailId
-          );
-          mainData.emailId = englishEmails.emailId;
-          mainData.secondaryEmailId = englishEmails.secondaryEmailId;
-          if (enData.countryName && !mainData.countryName) {
-            mainData.countryName = enData.countryName;
-          }
-          if (["Y", "Available"].includes(enData.state) && !["Y", "Available"].includes(mainData.state)) {
-            mainData.state = enData.state;
-          }
-          if (["Y", "Available"].includes(enData.city) && !["Y", "Available"].includes(mainData.city)) {
-            mainData.city = enData.city;
-          }
-          if (enData.phoneNumber && !mainData.phoneNumber) {
-            mainData.phoneNumber = enData.phoneNumber;
-          }
-          break; // successfully merged from first responding candidate
+          continue;
         }
       } catch (err) {
         console.log("English subpage candidate note:", err);
@@ -497,13 +509,14 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
     // Crawl only contact URLs discovered in the page, not guessed routes.
     let contactCandidates = [];
     try {
-      const u = new URL(tab.url || normUrl);
+      const u = new URL(rootPageUrl);
       // Always check discovered contact pages so their email can take primary
       // priority, even when the homepage already has two email addresses.
       const hostCandidates = [...(mainData.contactUrls || []), mainData.contactUrl];
       contactCandidates = [...new Set(hostCandidates.filter(Boolean).map(candidate => {
         try {
           const candidateUrl = new URL(candidate, u);
+          if (hasNonEnglishLocale(candidateUrl.href)) return null;
           const sameHost = candidateUrl.hostname.replace(/^www\./i, "").toLowerCase() ===
             u.hostname.replace(/^www\./i, "").toLowerCase();
           if (sameHost && u.protocol === "https:" && candidateUrl.protocol === "http:") {
@@ -519,27 +532,30 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
           u.hostname.replace(/^www\./i, "").toLowerCase();
         const samePath = candidateUrl.pathname.replace(/\/+$/, "") === u.pathname.replace(/\/+$/, "");
         return !(sameHost && samePath && candidateUrl.search === u.search);
-      }).slice(0, 20);
+      }).slice(0, 5);
     } catch {}
 
     let footerAddressTakenFromContactPage = false;
     let bestContactAddressPriority = -1;
     const visitedContactUrls = new Set(contactCandidates);
-    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 20; contactIndex++) {
+    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 3; contactIndex++) {
+      // Keep optional subpage crawling from making the user wait indefinitely.
+      if (Date.now() > crawlDeadline - 4000) break;
       const contactUrl = contactCandidates[contactIndex];
       try {
         const contactData = await extractFetchedPage(tab.id, contactUrl, true);
 
         if (contactData && !contactData.error) {
+          if (contactData.pageLanguage && !isEnglishPage(contactData, contactUrl)) continue;
           // Relevant pages can link to additional pages containing company
           // contact details. Follow a bounded set of discovered same-site links.
           for (const discoveredUrl of [...(contactData.contactUrls || []), contactData.contactUrl].filter(Boolean)) {
             try {
               const nextUrl = new URL(discoveredUrl, contactUrl);
-              const rootUrl = new URL(tab.url || normUrl);
+              const rootUrl = new URL(rootPageUrl);
               if (nextUrl.hostname.replace(/^www\./i, "").toLowerCase() !== rootUrl.hostname.replace(/^www\./i, "").toLowerCase()) continue;
               nextUrl.hash = "";
-              if (!visitedContactUrls.has(nextUrl.href) && contactCandidates.length < 20) {
+              if (!visitedContactUrls.has(nextUrl.href) && contactCandidates.length < 5) {
                 visitedContactUrls.add(nextUrl.href);
                 contactCandidates.push(nextUrl.href);
               }
