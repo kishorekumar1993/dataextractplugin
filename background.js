@@ -26,11 +26,13 @@ function normalizeUrl(raw) {
 function contactAddressSourcePriority(source) {
   const value = String(source || "").toLowerCase();
   let priority = 0;
-  if (value.includes("schema")) priority = 6;
-  else if (value.includes("labelled")) priority = 5;
-  else if (value.includes("element")) priority = 4;
-  else if (value.includes("semantic")) priority = 3;
-  else if (value.includes("inline")) priority = 2;
+  // A complete address visibly labeled on the contact page should win over
+  // partial JSON-LD that often omits village/county details.
+  if (value.includes("labelled")) priority = 7;
+  else if (value.includes("inline")) priority = 6;
+  else if (value.includes("element")) priority = 5;
+  else if (value.includes("semantic")) priority = 4;
+  else if (value.includes("schema")) priority = 3;
   else if (value.includes("fallback") || value.includes("fulltext")) priority = 1;
   // A dedicated contact-page address is more reliable than a similarly
   // shaped address found in homepage copy, a project caption, or the footer.

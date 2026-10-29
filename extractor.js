@@ -3183,8 +3183,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         ].filter(Boolean));
 
         for (const variant of variants) {
+          // Company names often use a hyphen on the contact page but a space
+          // in the site title/schema (for example, Clark-Drain vs Clark Drain).
+          // Treat either separator as equivalent when removing the name prefix.
+          const flexibleCompanyName = escapeRegex(variant).replace(/[\s-]+/g, "[\\s-]+");
           const companyRegex = new RegExp(
-            "^\\s*" + escapeRegex(variant) +
+            "^\\s*" + flexibleCompanyName +
             "(?:\\s+(?:Co\\.,?\\s*Ltd\\.?|Pvt\\.,?\\s*Ltd\\.?|Pty\\.,?\\s*Ltd\\.?|Co\\.?|Ltd\\.?|Inc\\.?|LLC|Corp\\.?|Corporation|Limited|GmbH|B\\.V\\.|S\\.A\\.|S\\.R\\.L\\.))?" +
             "\\s*[,;:|\\-]?\\s*",
             "i"
@@ -3525,6 +3529,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       country.name.toLowerCase() === String(countryName || "").trim().toLowerCase() ||
       country.aliases.some(alias => alias.toLowerCase() === String(countryName || "").trim().toLowerCase())
     );
+    if (/^(?:england|scotland|wales|northern ireland)$/i.test(String(countryName || "").trim())) {
+      addr = addr.replace(/(?:,\s*|\s+)GB[.,;]*$/i, "").trim();
+    }
     if (countryByName?.iso) {
       addr = addr.replace(new RegExp(`(?:,\\s*|\\s+)${escapeRegExp(countryByName.iso)}[.,;]*$`, "i"), "").trim();
     }
