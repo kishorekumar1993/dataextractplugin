@@ -325,7 +325,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   // UK Localities (Rule 5: If England and United Kingdom both mentioned, must take England!)
   const UK_LOCALITIES = [
-    { name: "England", regex: /\b(england|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|nottingham|leicester|coventry|wolverhampton|stoke[- ]on[- ]trent|derby|southampton|portsmouth|oxford|cambridge|york|bath|newcastle(?: upon tyne)?|brighton(?:\s*(?:&|and)\s*hove)?|plymouth|exeter|norwich|milton keynes|reading|luton|blackpool|middlesbrough|sunderland|wakefield|worcester|chester|canterbury|aldridge|walsall|sutton coldfield|bloxwich|brownhills|lichfield|tamworth|west bromwich|dudley|bradford|carlisle|chelmsford|chichester|colchester|doncaster|durham|ely|gloucester|hereford|kingston[- ]upon[- ]hull|hull|lancaster|lincoln|peterborough|preston|ripon|salford|salisbury|southend[- ]on[- ]sea|st albans|truro|wells|westminster|winchester)\b/i },
+    { name: "England", regex: /\b(england|london|birmingham|manchester|liverpool|leeds|sheffield|bristol|nottingham|leicester|coventry|wolverhampton|stoke[- ]on[- ]trent|derby|southampton|portsmouth|oxford|cambridge|york|bath|newcastle(?: upon tyne)?|brighton(?:\s*(?:&|and)\s*hove)?|plymouth|exeter|norwich|milton keynes|reading|luton|blackpool|middlesbrough|sunderland|wakefield|worcester|chester|canterbury|aldridge|walsall|sutton coldfield|bloxwich|brownhills|lichfield|tamworth|west bromwich|dudley|bradford|carlisle|chelmsford|chichester|colchester|doncaster|durham|ely|gloucester|hereford|kingston[- ]upon[- ]hull|hull|lancaster|lincoln|peterborough|preston|ripon|salford|salisbury|southend[- ]on[- ]sea|st albans|truro|wells|westminster|winchester|royston|hertfordshire)\b/i },
     { name: "Scotland", regex: /\b(scotland|edinburgh|glasgow|aberdeen|dundee)\b/i },
     { name: "Wales", regex: /\b(wales|cardiff|swansea|newport)\b/i },
     { name: "Northern Ireland", regex: /\b(northern ireland|belfast|derry)\b/i }
@@ -1441,6 +1441,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
+    // A valid UK postcode is strong address-local evidence, even when the
+    // postal address omits "UK" and the page schema has stale country data.
+    if (/\b(?:GIR\s?0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i.test(addressText || "")) {
+      return "England";
+    }
+
     // An explicit Taiwan/ROC address is more reliable than stale schema metadata.
     if (matchesCountryTerm(addressText || "", "Taiwan") || /\brepublic\s+of\s+china\b|\br\s*\.?\s*o\s*\.?\s*c\.?\b/i.test(addressText || "")) return "Taiwan";
 
@@ -2293,7 +2299,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         /\b(GIR\s?0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i;
       if (
         ukPostcodePattern.test(address) &&
-        /\b(?:United Kingdom|UK|England|Scotland|Wales|Northern Ireland|Birmingham)\b/i.test(address)
+        /\b(?:United Kingdom|UK|England|Scotland|Wales|Northern Ireland|Birmingham|Hertfordshire|Royston|Melbourn)\b/i.test(address)
       ) {
         score += 25;
       }
@@ -3671,7 +3677,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 1. Scan phone lines
     const phoneCandidates = [];
     let tollFreeFallback = "";
-    const phoneRegex = /(?:Tel(?:ephone)?|Phone|Call\s+Us|Mob(?:ile)?|Cell)\.?\s*[:：.-]?\s*([+]?[0-9\s()./-]{7,25})/gi;
+    // Capture call-to-action labels such as "CALL US ON 01763 245245"; without "ON",
+    // this explicit number is missed and the generic scanner may return a fragment.
+    const phoneRegex = /(?:Tel(?:ephone)?|Phone|Call\s+Us(?:\s+On)?|Mob(?:ile)?|Cell)\.?\s*[:：.-]?\s*([+]?[0-9\s()./-]{7,25})/gi;
     let m;
     while ((m = phoneRegex.exec(text)) !== null) {
       const raw = m[1]
@@ -3703,22 +3711,44 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         continue;
       }
 
-      // Clean country code FIRST
-      let s = raw;
-      if (country?.dialCode) {
-        s = s.replace(new RegExp(`^\\+?${country.dialCode}[\\s.-]*(?:\\(0\\)|0)?[\\s.-]*`), "");
-      } else {
-        const allDialCodes = COUNTRIES.map(c => c.dialCode).filter(Boolean).sort((a, b) => b.length - a.length);
-        const dialRegex = new RegExp(`^\\+(?:${allDialCodes.join("|")})[\\s.-]*|^(?:${allDialCodes.join("|")})[\\s.-]*(?:\\(0\\)|0)[\\s.-]*`);
-        s = s.replace(dialRegex, "");
+      // Normalize using the detected country's numbering plan. Strip a
+      // dial code only for explicit international numbers (+/00), or when
+      // the number length proves a country code was included without a prefix.
+      let cleanDigits = rawDigits;
+      const phoneCountry = country && (typeof country === "string"
+        ? COUNTRIES.find(item => item.name.toLowerCase() === country.toLowerCase() || item.iso.toLowerCase() === country.toLowerCase() || (item.iso === "GB" && /^england$/i.test(country)))
+        : country);
+      const dialCode = phoneCountry?.dialCode || "";
+      const iso = String(phoneCountry?.iso || (dialCode === "1" ? "US" : COUNTRIES.find(item => item.dialCode === dialCode)?.iso) || "").toUpperCase();
+      const internationalPrefix = /^\s*(?:\+|00)/.test(raw);
+      if (internationalPrefix) {
+        cleanDigits = cleanDigits.replace(/^00/, "");
+        if (dialCode && cleanDigits.startsWith(dialCode)) cleanDigits = cleanDigits.slice(dialCode.length);
+        else if (!dialCode) {
+          const allDialCodes = COUNTRIES.map(item => item.dialCode).filter(Boolean).sort((a, b) => b.length - a.length);
+          const match = allDialCodes.find(code => cleanDigits.startsWith(code));
+          if (match) cleanDigits = cleanDigits.slice(match.length);
+        }
       }
 
-      // Remove special characters and leading zeros
-      let cleanDigits = s.replace(/\D/g, "").replace(/^0+/, "");
-      if (country?.dialCode && cleanDigits.startsWith(country.dialCode) && cleanDigits.length > 10) {
-        cleanDigits = cleanDigits.slice(country.dialCode.length).replace(/^0+/, "");
+      const nationalLengths = {
+        US: [10, 10], CA: [10, 10], GB: [9, 10], IN: [10, 10], AU: [9, 9],
+        NZ: [8, 10], DE: [7, 12], FR: [9, 9], IT: [6, 11], ES: [9, 9],
+        NL: [9, 9], BE: [8, 9], CH: [9, 9], SE: [7, 10], NO: [8, 8],
+        DK: [8, 8], FI: [7, 12], IE: [7, 10], AE: [8, 9], SA: [9, 9],
+        TH: [8, 9], SG: [8, 8], HK: [8, 8], TW: [8, 10], KR: [8, 11],
+        JP: [9, 10], CN: [10, 12], MY: [7, 10], ID: [8, 12], PH: [10, 10],
+        BR: [10, 11], MX: [10, 10], RU: [10, 10], PL: [9, 9], ZA: [9, 9],
+        EG: [9, 10], IL: [8, 9], PK: [10, 10], BD: [10, 10], TR: [10, 10]
+      };
+      const [minLength, maxLength] = nationalLengths[iso] || [7, 12];
+      if (!internationalPrefix && dialCode && cleanDigits.startsWith(dialCode) &&
+          cleanDigits.length > maxLength && cleanDigits.length - dialCode.length >= minLength &&
+          cleanDigits.length - dialCode.length <= maxLength) {
+        cleanDigits = cleanDigits.slice(dialCode.length);
       }
-
+      // Drop trunk zeroes; preserve NANP's leading 1 and Italy's significant 0.
+      if (internationalPrefix || !["US", "CA", "IT"].includes(iso)) cleanDigits = cleanDigits.replace(/^0+/, "");
       // Filter out dummy/placeholder numbers, sequential digits, or repeating digits
       if (/^(?:0123456789|1234567890|12345678910|2345678910|123456789|12345678|1234567|9876543210|987654321|(\d)\1{6,})$/.test(cleanDigits)) {
         continue;
@@ -3732,8 +3762,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         continue;
       }
 
-      // Validate length: 7 to 12 digits
-      if (cleanDigits.length >= 7 && cleanDigits.length <= 12) {
+      // Reject values outside the selected country's national number length.
+      if (cleanDigits.length >= minLength && cleanDigits.length <= maxLength) {
         return cleanDigits;
       }
     }
@@ -3841,8 +3871,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const base = new URL(baseUrl);
       const baseHostNorm = base.hostname.replace(/^www\./i, "").toLowerCase();
 
-      const contactHrefRegex = /(?:contact|contact-us|contact_us|contactus|contacts|location|locations|our-location|our-locations|reach-us|reach_us|find-us|visit-us|get-in-touch|getintouch|enquiry|enquiries|inquiry|inquiries|send-enquiry|request-information|support|customer-service|customer-support|help|sales\/contact|contact-sales|company\/contact|corporate\/contact|our-company\/contact|company-profile\/contact|about\/contact|about-us\/contact|aboutus\/contact|who-we-are\/contact|오시는길|고객센터|연락처|회사위치|お問い合わせ|アクセス|联系我们|kontakt|contacto|contatti)/i;
-      const contactTextRegex = /\b(contact|contact us|get in touch|location|locations|our location|our locations|reach us|find us|visit us|our office|our offices|headquarters|where to find us|office location|enquiry|enquiries|inquiry|inquiries|support|customer service|customer support|help|contact sales|sales contact|오시는길|고객센터|연락처|회사위치|お問い合わせ|お問合せ|アクセス|联系我们|聯繫我們|kontakt|contacto|contáctenos|contatti)\b/i;
+      const contactHrefRegex = /(?:contact|contact-us|contact_us|contactus|contacts|location|locations|our-location|our-locations|reach-us|reach_us|find-us|visit-us|get-in-touch|getintouch|enquiry|enquiries|inquiry|inquiries|send-enquiry|request-information|support|customer-service|customer-support|help|sales\/contact|contact-sales|company\/contact|corporate\/contact|our-company\/contact|company-profile\/contact|about\/contact|about-us\/contact|aboutus\/contact|who-we-are\/contact|careers?|jobs?|employment|join-our-team|work-with-us|opportunities|sales-representative|delivery-driver|오시는길|고객센터|연락처|회사위치|お問い合わせ|アクセス|联系我们|kontakt|contacto|contatti)/i;
+      const contactTextRegex = /\b(contact|contact us|get in touch|location|locations|our location|our locations|reach us|find us|visit us|our office|our offices|headquarters|where to find us|office location|enquiry|enquiries|inquiry|inquiries|support|customer service|customer support|help|contact sales|sales contact|career|careers|job|jobs|employment|join our team|work with us|opportunities|오시는길|고객센터|연락처|회사위치|お問い合わせ|お問合せ|アクセス|联系我们|聯繫我們|kontakt|contacto|contáctenos|contatti)\b/i;
 
       for (const a of doc.querySelectorAll("a[href]")) {
         const href = (a.getAttribute("href") || "").trim();
@@ -4023,8 +4053,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         if (headOfficeText) break;
       }
     }
-    const phoneNumber = (headOfficeText && extractPhoneNumber(headOfficeText, countryObj)) ||
-      extractPhoneNumber(text, countryObj);
+    const telLinkText = doc
+      ? [...doc.querySelectorAll('a[href^="tel:"]')]
+          .map(link => `Phone: ${(link.getAttribute("href") || "").replace(/^tel:/i, "")}`)
+          .join("\n")
+      : "";
+    const phoneContext = countryObj || countryName;
+    const phoneNumber = (headOfficeText && extractPhoneNumber(headOfficeText, phoneContext)) ||
+      (telLinkText && extractPhoneNumber(telLinkText, phoneContext)) ||
+      extractPhoneNumber(text, phoneContext);
 
     // 11. Products, Images, Descriptions (Rules 12, 13, 14)
     const counts = extractProductCounts(doc, text);

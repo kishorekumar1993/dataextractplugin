@@ -155,8 +155,10 @@ async function detectPortalUrl() {
 function waitForTabComplete(tabId, timeoutMs = 25000) {
   return new Promise((resolve, reject) => {
     let settled = false;
+    let probeTimer;
     const cleanup = () => {
       clearTimeout(timer);
+      clearInterval(probeTimer);
       chrome.tabs.onUpdated.removeListener(listener);
     };
     const finish = error => {
@@ -182,6 +184,22 @@ function waitForTabComplete(tabId, timeoutMs = 25000) {
       } catch {}
       finish(new Error("Website load timed out."));
     }, timeoutMs);
+
+    // Begin as soon as usable content is available; waiting for slow images,
+    // ads, or analytics scripts can add many seconds without helping extraction.
+    probeTimer = setInterval(async () => {
+      if (settled) return;
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => ({
+            readyState: document.readyState,
+            hasContent: Boolean(document.body && (document.body.innerText || "").trim().length > 30)
+          })
+        });
+        if (result && (result.readyState === "interactive" || result.readyState === "complete") && result.hasContent) finish();
+      } catch {}
+    }, 250);
 
     function listener(id, info) {
       if (id === tabId && info.status === "complete") {
@@ -212,7 +230,7 @@ async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs = 25000) {
 
 async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6000);
+  const timer = setTimeout(() => controller.abort(), 4500);
   let response;
   let html = "";
 
@@ -248,18 +266,20 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
   }
 
   // Force a rendered tab fallback if ANY critical field is missing OR if fetch failed
-  if ((result?.companyAddress && result?.countryName && result?.emailId && !["N", "Not Available"].includes(result?.state)) || !renderIfAddressMissing) {
+  // Render a second tab only when the fetch missed the address. Missing email
+  // or state alone does not justify another navigation and a long wait.
+  if (result?.companyAddress || !renderIfAddressMissing) {
     return result;
   }
 
   let renderedTab;
   try {
     renderedTab = await chrome.tabs.create({ url: response?.url || pageUrl, active: false });
-    await waitForTabComplete(renderedTab.id, 10000);
+    await waitForTabComplete(renderedTab.id, 6500);
     renderedTab = await recoverFromBrowserError(
       renderedTab.id,
       response?.url || pageUrl,
-      10000
+      6500
     );
 
     const [{ result: extractorLoaded }] = await chrome.scripting.executeScript({
@@ -282,7 +302,7 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
           window.location.href || url
         );
         let data = extract();
-        const deadline = Date.now() + 2500;
+        const deadline = Date.now() + 900;
         while (!data.companyAddress && Date.now() < deadline) {
           await new Promise(resolve => setTimeout(resolve, 300));
           data = extract();
@@ -319,11 +339,11 @@ async function crawlAndExtractDirect(targetUrl) {
     // Step 1: Create background tab and navigate to URL
     tab = await chrome.tabs.create({ url: normUrl, active: false });
     setStatus("Waiting for page to load...", "info");
-    await waitForTabComplete(tab.id, 15000);
-    tab = await recoverFromBrowserError(tab.id, normUrl, 15000);
+    await waitForTabComplete(tab.id, 12000);
+    tab = await recoverFromBrowserError(tab.id, normUrl, 12000);
 
     // Extra wait for JS-rendered SPAs (React/Vue/Angular)
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 150));
 
     // Step 2: Inject extractor.js if not already present
     const [{ result: alreadyLoaded }] = await chrome.scripting.executeScript({
@@ -356,7 +376,7 @@ async function crawlAndExtractDirect(targetUrl) {
             window.location.href || pageUrl
           );
           let data = extract();
-          const deadline = Date.now() + 3000;
+          const deadline = Date.now() + 700;
           while (!data.companyAddress && Date.now() < deadline) {
             await new Promise(resolve => setTimeout(resolve, 300));
             data = extract();
@@ -443,6 +463,8 @@ async function crawlAndExtractDirect(targetUrl) {
     let contactCandidates = [];
     try {
       const u = new URL(tab.url || normUrl);
+      // Always check discovered contact pages so their email can take primary
+      // priority, even when the homepage already has two email addresses.
       const hostCandidates = [...(mainData.contactUrls || []), mainData.contactUrl];
       contactCandidates = [...new Set(hostCandidates.filter(Boolean).map(candidate => {
         try {
@@ -462,14 +484,19 @@ async function crawlAndExtractDirect(targetUrl) {
           u.hostname.replace(/^www\./i, "").toLowerCase();
         const samePath = candidateUrl.pathname.replace(/\/+$/, "") === u.pathname.replace(/\/+$/, "");
         return !(sameHost && samePath && candidateUrl.search === u.search);
-      }).slice(0, 2);
+      }).slice(0, 5);
     } catch {}
 
     let footerAddressTakenFromContactPage = false;
     let bestContactAddressPriority = -1;
-    let contactEmailPrioritySet = false;
+    const homepageEmails = [mainData.emailId, mainData.secondaryEmailId].filter(Boolean);
+    const contactPageEmails = [];
+    const otherPageEmails = [];
+    let primaryContactPageEmail = "";
 
-    for (const contactUrl of contactCandidates) {
+    const visitedContactUrls = new Set(contactCandidates);
+    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 10; contactIndex++) {
+      const contactUrl = contactCandidates[contactIndex];
       try {
         setStatus("Checking Contact page for official address...", "info");
         const isDiscoveredContactUrl = contactUrl === mainData.contactUrl ||
@@ -479,6 +506,23 @@ async function crawlAndExtractDirect(targetUrl) {
         const contactData = await extractFetchedPage(tab.id, contactUrl, isDiscoveredContactUrl);
 
         if (contactData && !contactData.error) {
+          // Relevant pages can link to the actual job/contact detail page.
+          // Follow a small number of discovered same-site links while the
+          // secondary email is still missing.
+          if (!mainData.secondaryEmailId) {
+            for (const discoveredUrl of [...(contactData.contactUrls || []), contactData.contactUrl].filter(Boolean)) {
+              try {
+                const nextUrl = new URL(discoveredUrl, contactUrl);
+                const rootUrl = new URL(tab.url || normUrl);
+                if (nextUrl.hostname.replace(/^www\./i, "").toLowerCase() !== rootUrl.hostname.replace(/^www\./i, "").toLowerCase()) continue;
+                nextUrl.hash = "";
+                if (!visitedContactUrls.has(nextUrl.href) && contactCandidates.length < 10) {
+                  visitedContactUrls.add(nextUrl.href);
+                  contactCandidates.push(nextUrl.href);
+                }
+              } catch {}
+            }
+          }
           if (contactData.forbidden?.isForbidden) mainData.forbidden = contactData.forbidden;
           if (contactData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = contactData.onlinePurchase;
           if (mainData.forbidden?.isForbidden || mainData.onlinePurchase?.isOnlineStore) mainData.websiteStatus = "Not Working";
@@ -523,23 +567,16 @@ async function crawlAndExtractDirect(targetUrl) {
             }
           }
 
-          // Merge Email ID & Secondary Email ID
-          const contactEmails = contactEmailPrioritySet
-            ? Extractor.mergeContactEmails(
-                mainData.emailId,
-                mainData.secondaryEmailId,
-                "",
-                contactData.emailId || contactData.secondaryEmailId
-              )
-            : Extractor.mergeContactEmails(
-                mainData.emailId,
-                mainData.secondaryEmailId,
-                contactData.emailId,
-                contactData.secondaryEmailId
-              );
-          if (!contactEmailPrioritySet && contactData.emailId) contactEmailPrioritySet = true;
-          mainData.emailId = contactEmails.emailId;
-          mainData.secondaryEmailId = contactEmails.secondaryEmailId;
+          // Prefer emails explicitly listed on a Contact/Connect page. Emails
+          // from other discovered pages remain candidates for the secondary field.
+          const isContactInfoPage = /(?:contact|connect|location|inquir|enquir|reach|support)/i.test(new URL(contactUrl).pathname);
+          const pageEmails = [contactData.emailId, contactData.secondaryEmailId].filter(Boolean);
+          if (isContactInfoPage) {
+            contactPageEmails.push(...pageEmails);
+            primaryContactPageEmail ||= pageEmails[0] || "";
+          } else {
+            otherPageEmails.push(...pageEmails);
+          }
 
           // Merge Country, State, City, Profile, Phone
           if (contactData.countryName && (!mainData.countryName || mainData.countryName === "Not Available" || mainData.countryName === "United States Of America")) {
@@ -568,7 +605,7 @@ async function crawlAndExtractDirect(targetUrl) {
           }
 
           // A contact-detail address must not be replaced by a later page's footer.
-          if (bestContactAddressPriority >= 150 && mainData.countryName && mainData.emailId && mainData.phoneNumber) {
+          if (isContactInfoPage && bestContactAddressPriority >= 150 && mainData.countryName && mainData.emailId && mainData.phoneNumber && mainData.secondaryEmailId) {
             break;
           }
         }
@@ -576,6 +613,15 @@ async function crawlAndExtractDirect(targetUrl) {
         console.log("Contact page check note:", e);
       }
     }
+
+    const orderedEmails = [...new Set([
+      primaryContactPageEmail,
+      ...contactPageEmails,
+      ...homepageEmails,
+      ...otherPageEmails
+    ].map(email => String(email || "").trim()).filter(Boolean))];
+    mainData.emailId = orderedEmails[0] || "";
+    mainData.secondaryEmailId = orderedEmails[1] || "";
 
     return mainData;
 

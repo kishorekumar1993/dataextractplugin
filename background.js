@@ -68,8 +68,10 @@ function mergeFrameExtractionResults(results) {
 function waitForTabComplete(tabId, timeoutMs) {
   return new Promise((resolve, reject) => {
     let settled = false;
+    let probeTimer;
     const cleanup = () => {
       clearTimeout(timer);
+      clearInterval(probeTimer);
       chrome.tabs.onUpdated.removeListener(listener);
     };
     const finish = error => {
@@ -95,6 +97,24 @@ function waitForTabComplete(tabId, timeoutMs) {
       } catch {}
       finish(new Error("Website load timed out. Check if site is accessible."));
     }, timeoutMs);
+    // Many sites have useful server-rendered content well before every image,
+    // analytics script, and ad has finished loading. Start extraction as soon
+    // as the document is interactive and has meaningful body text.
+    probeTimer = setInterval(async () => {
+      if (settled) return;
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => ({
+            readyState: document.readyState,
+            hasContent: Boolean(document.body && (document.body.innerText || "").trim().length > 30)
+          })
+        });
+        if (result && (result.readyState === "interactive" || result.readyState === "complete") && result.hasContent) {
+          finish();
+        }
+      } catch {}
+    }, 250);
     function listener(updatedTabId, info) {
       if (updatedTabId === tabId && info.status === "complete") finish();
     }
@@ -122,7 +142,7 @@ async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs) {
 
 async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6000);
+  const timer = setTimeout(() => controller.abort(), 4500);
   let response;
   let html = "";
 
@@ -158,18 +178,20 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
   }
 
   // Force a rendered tab fallback if ANY critical field is missing OR if fetch failed
-  if ((result?.companyAddress && result?.countryName && result?.emailId && !["N", "Not Available"].includes(result?.state)) || !renderIfAddressMissing) {
+  // Render a second tab only when the fetch missed the address. Missing email
+  // or state alone does not justify another navigation and a long wait.
+  if (result?.companyAddress || !renderIfAddressMissing) {
     return result;
   }
 
   let renderedTab;
   try {
     renderedTab = await chrome.tabs.create({ url: response?.url || pageUrl, active: false });
-    await waitForTabComplete(renderedTab.id, 10000);
+    await waitForTabComplete(renderedTab.id, 6500);
     renderedTab = await recoverFromBrowserError(
       renderedTab.id,
       response?.url || pageUrl,
-      10000
+      6500
     );
 
     const [{ result: extractorLoaded }] = await chrome.scripting.executeScript({
@@ -192,7 +214,7 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
           window.location.href || url
         );
         let data = extract();
-        const deadline = Date.now() + 2500;
+        const deadline = Date.now() + 900;
         while (!data.companyAddress && Date.now() < deadline) {
           await new Promise(resolve => setTimeout(resolve, 300));
           data = extract();
@@ -231,7 +253,7 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
     tab = await recoverFromBrowserError(tab.id, normUrl, timeoutMs);
 
     // Small delay to ensure client-side JS renders
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 150));
 
     // 3. Inject extractor.js into the tab only if not already loaded
     const [{ result: alreadyLoaded }] = await chrome.scripting.executeScript({
@@ -264,7 +286,7 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
             window.location.href || pageUrl
           );
           let data = extract();
-          const deadline = Date.now() + 3000;
+          const deadline = Date.now() + 1200;
           while (!data.companyAddress && Date.now() < deadline) {
             await new Promise(resolve => setTimeout(resolve, 300));
             data = extract();
@@ -346,6 +368,8 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
     let contactCandidates = [];
     try {
       const u = new URL(tab.url || normUrl);
+      // Always check discovered contact pages so their email can take primary
+      // priority, even when the homepage already has two email addresses.
       const hostCandidates = [...(mainData.contactUrls || []), mainData.contactUrl];
       contactCandidates = [...new Set(hostCandidates.filter(Boolean).map(candidate => {
         try {
@@ -365,14 +389,19 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
           u.hostname.replace(/^www\./i, "").toLowerCase();
         const samePath = candidateUrl.pathname.replace(/\/+$/, "") === u.pathname.replace(/\/+$/, "");
         return !(sameHost && samePath && candidateUrl.search === u.search);
-      }).slice(0, 2);
+      }).slice(0, 5);
     } catch {}
 
     let footerAddressTakenFromContactPage = false;
     let bestContactAddressPriority = -1;
-    let contactEmailPrioritySet = false;
+    const homepageEmails = [mainData.emailId, mainData.secondaryEmailId].filter(Boolean);
+    const contactPageEmails = [];
+    const otherPageEmails = [];
+    let primaryContactPageEmail = "";
 
-    for (const contactUrl of contactCandidates) {
+    const visitedContactUrls = new Set(contactCandidates);
+    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 10; contactIndex++) {
+      const contactUrl = contactCandidates[contactIndex];
       try {
         const isDiscoveredContactUrl = contactUrl === mainData.contactUrl ||
           (mainData.contactUrls || []).includes(contactUrl) ||
@@ -381,6 +410,23 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
         const contactData = await extractFetchedPage(tab.id, contactUrl, isDiscoveredContactUrl);
 
         if (contactData && !contactData.error) {
+          // Relevant pages can link to the actual job/contact detail page.
+          // Follow a small number of discovered same-site links while the
+          // secondary email is still missing.
+          if (!mainData.secondaryEmailId) {
+            for (const discoveredUrl of [...(contactData.contactUrls || []), contactData.contactUrl].filter(Boolean)) {
+              try {
+                const nextUrl = new URL(discoveredUrl, contactUrl);
+                const rootUrl = new URL(tab.url || normUrl);
+                if (nextUrl.hostname.replace(/^www\./i, "").toLowerCase() !== rootUrl.hostname.replace(/^www\./i, "").toLowerCase()) continue;
+                nextUrl.hash = "";
+                if (!visitedContactUrls.has(nextUrl.href) && contactCandidates.length < 10) {
+                  visitedContactUrls.add(nextUrl.href);
+                  contactCandidates.push(nextUrl.href);
+                }
+              } catch {}
+            }
+          }
           if (contactData.forbidden?.isForbidden) mainData.forbidden = contactData.forbidden;
           if (contactData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = contactData.onlinePurchase;
           if (mainData.forbidden?.isForbidden || mainData.onlinePurchase?.isOnlineStore) mainData.websiteStatus = "Not Working";
@@ -425,23 +471,16 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
             }
           }
 
-          // Merge Email ID & Secondary Email ID
-          const contactEmails = contactEmailPrioritySet
-            ? Extractor.mergeContactEmails(
-                mainData.emailId,
-                mainData.secondaryEmailId,
-                "",
-                contactData.emailId || contactData.secondaryEmailId
-              )
-            : Extractor.mergeContactEmails(
-                mainData.emailId,
-                mainData.secondaryEmailId,
-                contactData.emailId,
-                contactData.secondaryEmailId
-              );
-          if (!contactEmailPrioritySet && contactData.emailId) contactEmailPrioritySet = true;
-          mainData.emailId = contactEmails.emailId;
-          mainData.secondaryEmailId = contactEmails.secondaryEmailId;
+          // Prefer emails explicitly listed on a Contact/Connect page. Emails
+          // from other discovered pages remain candidates for the secondary field.
+          const isContactInfoPage = /(?:contact|connect|location|inquir|enquir|reach|support)/i.test(new URL(contactUrl).pathname);
+          const pageEmails = [contactData.emailId, contactData.secondaryEmailId].filter(Boolean);
+          if (isContactInfoPage) {
+            contactPageEmails.push(...pageEmails);
+            primaryContactPageEmail ||= pageEmails[0] || "";
+          } else {
+            otherPageEmails.push(...pageEmails);
+          }
 
           // Merge Country, State, City, Profile, Phone
           if (contactData.countryName && (!mainData.countryName || mainData.countryName === "Not Available" || mainData.countryName === "United States Of America")) {
@@ -478,7 +517,7 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
           }
 
           // A contact-detail address must not be replaced by a later page's footer.
-          if (bestContactAddressPriority >= 150 && mainData.countryName && mainData.emailId && mainData.phoneNumber) {
+          if (isContactInfoPage && bestContactAddressPriority >= 150 && mainData.countryName && mainData.emailId && mainData.phoneNumber && mainData.secondaryEmailId) {
             break;
           }
         }
@@ -486,6 +525,15 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
         console.log("Contact subpage candidate note:", err);
       }
     }
+
+    const orderedEmails = [...new Set([
+      primaryContactPageEmail,
+      ...contactPageEmails,
+      ...homepageEmails,
+      ...otherPageEmails
+    ].map(email => String(email || "").trim()).filter(Boolean))];
+    mainData.emailId = orderedEmails[0] || "";
+    mainData.secondaryEmailId = orderedEmails[1] || "";
 
     // Keep a country-code domain from being overwritten by ambiguous locality
     // names such as "Victoria", which exists in both Canada and Australia.
