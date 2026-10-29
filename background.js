@@ -30,6 +30,72 @@ function contactAddressSourcePriority(source) {
   return 0;
 }
 
+function annotateEmailCandidates(data, sourcePage, fallbackRole = "other") {
+  const raw = Array.isArray(data?.emailCandidates) && data.emailCandidates.length
+    ? data.emailCandidates
+    : [data?.emailId, data?.secondaryEmailId].filter(Boolean).map(email => ({ email }));
+  const pageRole = fallbackRole === "contact" || data?.emailPageRole === "contact" || data?.contactPageScore >= 4
+    ? "contact"
+    : fallbackRole === "homepage" || data?.emailPageRole === "homepage" ? "homepage" : "other";
+  return raw.map(candidate => typeof candidate === "string" ? { email: candidate } : candidate)
+    .filter(candidate => candidate?.email)
+    .map(candidate => ({
+      ...candidate,
+      email: String(candidate.email).trim().toLowerCase(),
+      sourcePage: candidate.sourcePage || sourcePage,
+      pageRole: pageRole || fallbackRole,
+      evidence: Array.isArray(candidate.evidence) ? candidate.evidence : []
+    }));
+}
+
+function rankEmailCandidates(candidates, rootUrl) {
+  let host = "";
+  try { host = new URL(rootUrl).hostname.replace(/^www\./i, "").toLowerCase(); } catch {}
+  const roleRank = { contact: 0, homepage: 1, other: 2 };
+  const mailboxScore = email => {
+    const local = String(email || "").split("@")[0].toLowerCase();
+    const priorities = ["sales", "info", "contact", "office", "export", "support", "service", "enquiries", "inquiries", "admin", "general"];
+    const index = priorities.indexOf(local);
+    return index < 0 ? 0 : priorities.length - index;
+  };
+  const merged = new Map();
+  for (const candidate of candidates || []) {
+    const email = String(candidate?.email || "").trim().toLowerCase();
+    if (!email) continue;
+    const emailDomain = (email.split("@")[1] || "").replace(/^www\./i, "").toLowerCase();
+    const domainMatch = Boolean(host && (emailDomain === host || emailDomain.endsWith(`.${host}`) || host.endsWith(`.${emailDomain}`)));
+    const current = merged.get(email) || {
+      email,
+      domainMatch,
+      pageRole: candidate.pageRole || "other",
+      pageRank: roleRank[candidate.pageRole] ?? roleRank.other,
+      mailboxScore: Number(candidate.mailboxScore) || mailboxScore(email),
+      confidence: 0,
+      sourcePages: [],
+      evidence: []
+    };
+    const rank = roleRank[candidate.pageRole] ?? roleRank.other;
+    if (rank < current.pageRank) {
+      current.pageRank = rank;
+      current.pageRole = candidate.pageRole || "other";
+    }
+    current.domainMatch ||= domainMatch;
+    current.mailboxScore = Math.max(current.mailboxScore, Number(candidate.mailboxScore) || mailboxScore(email));
+    const evidence = Array.isArray(candidate.evidence) ? candidate.evidence : [];
+    const confidence = evidence.includes("mailto") ? 3 : evidence.includes("json-ld") ? 2 : evidence.includes("email-element") ? 1 : 0;
+    current.confidence = Math.max(current.confidence, confidence);
+    if (candidate.sourcePage && !current.sourcePages.includes(candidate.sourcePage)) current.sourcePages.push(candidate.sourcePage);
+    current.evidence = [...new Set([...current.evidence, ...evidence])];
+    merged.set(email, current);
+  }
+  return [...merged.values()].sort((a, b) =>
+    Number(b.domainMatch) - Number(a.domainMatch) ||
+    a.pageRank - b.pageRank ||
+    b.mailboxScore - a.mailboxScore ||
+    b.confidence - a.confidence
+  );
+}
+
 function mergeFrameExtractionResults(results) {
   const records = (results || []).map(item => item?.result).filter(data => data && !data.error);
   if (!records.length) return null;
@@ -59,6 +125,11 @@ function mergeFrameExtractionResults(results) {
     if (data.forbidden?.isForbidden) merged.forbidden = data.forbidden;
     if (data.onlinePurchase?.isOnlineStore) merged.onlinePurchase = data.onlinePurchase;
   }
+  merged.emailCandidates = [...new Map(records.flatMap(data => data.emailCandidates || [])
+    .filter(candidate => candidate?.email)
+    .map(candidate => [`${candidate.email.toLowerCase()}|${candidate.sourcePage || ""}`, candidate])).values()];
+  merged.contactPageScore = Math.max(...records.map(data => Number(data.contactPageScore) || 0));
+  if (merged.contactPageScore >= 4) merged.emailPageRole = "contact";
   if (merged.forbidden?.isForbidden || merged.onlinePurchase?.isOnlineStore || merged.urlRules?.isSubdomain) {
     merged.websiteStatus = "Not Working";
   }
@@ -140,7 +211,7 @@ async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs) {
   return tab;
 }
 
-async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false) {
+async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4500);
   let response;
@@ -177,10 +248,10 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
     }
   }
 
-  // Force a rendered tab fallback if ANY critical field is missing OR if fetch failed
-  // Render a second tab only when the fetch missed the address. Missing email
-  // or state alone does not justify another navigation and a long wait.
-  if (result?.companyAddress || !renderIfAddressMissing) {
+  // Retry in a rendered page when the static response missed its address or
+  // emails; contact details are often inserted by JavaScript.
+  const missingRenderedData = !result?.companyAddress || !result?.emailId || !result?.secondaryEmailId;
+  if (!renderIfDataMissing || !missingRenderedData) {
     return result;
   }
 
@@ -214,8 +285,8 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
           window.location.href || url
         );
         let data = extract();
-        const deadline = Date.now() + 900;
-        while (!data.companyAddress && Date.now() < deadline) {
+        const deadline = Date.now() + 1200;
+        while ((!data.companyAddress || !data.emailId || !data.secondaryEmailId) && Date.now() < deadline) {
           await new Promise(resolve => setTimeout(resolve, 300));
           data = extract();
         }
@@ -223,7 +294,23 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
       },
       args: [response?.url || pageUrl]
     });
-    return renderedResult || result;
+    const emails = [...new Set([
+      renderedResult?.emailId, result?.emailId,
+      renderedResult?.secondaryEmailId, result?.secondaryEmailId
+    ].map(email => String(email || "").trim()).filter(Boolean))];
+    const combined = { ...(result || {}) };
+    for (const key of ["companyName", "companyNameRaw", "companyAddress", "countryName", "state", "city", "phoneNumber", "businessType", "companyProfile", "numberOfProduct", "imageProduct", "noOfProductDescription", "addressSource", "forbidden", "onlinePurchase", "urlRules", "social", "enUrl"]) {
+      const value = renderedResult?.[key];
+      if (value && value !== "Not Available") combined[key] = value;
+    }
+    combined.emailId = emails[0] || "";
+    combined.secondaryEmailId = emails[1] || "";
+    combined.emailCandidates = [...(result?.emailCandidates || []), ...(renderedResult?.emailCandidates || [])];
+    combined.emailPageRole = renderedResult?.emailPageRole || result?.emailPageRole || "other";
+    combined.contactPageScore = Math.max(Number(result?.contactPageScore) || 0, Number(renderedResult?.contactPageScore) || 0);
+    combined.contactUrl = renderedResult?.contactUrl || result?.contactUrl;
+    combined.contactUrls = [...new Set([...(result?.contactUrls || []), ...(renderedResult?.contactUrls || [])])];
+    return combined;
   } catch (err) {
     console.log("Rendered tab fallback note:", err);
     return result;
@@ -303,6 +390,7 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
     if (!mainData) {
       throw new Error("Could not extract details from rendered page.");
     }
+    const allEmailCandidates = annotateEmailCandidates(mainData, tab.url || normUrl, "homepage");
 
     // 5. English Subpage Crawling (for international companies with /en)
     let enCandidates = [];
@@ -321,6 +409,7 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
         const enData = await extractFetchedPage(tab.id, candidateEnUrl);
 
         if (enData && !enData.error) {
+          allEmailCandidates.push(...annotateEmailCandidates(enData, candidateEnUrl, "other"));
           if (enData.forbidden?.isForbidden) mainData.forbidden = enData.forbidden;
           if (enData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = enData.onlinePurchase;
           if (mainData.forbidden?.isForbidden || mainData.onlinePurchase?.isOnlineStore) mainData.websiteStatus = "Not Working";
@@ -389,43 +478,31 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
           u.hostname.replace(/^www\./i, "").toLowerCase();
         const samePath = candidateUrl.pathname.replace(/\/+$/, "") === u.pathname.replace(/\/+$/, "");
         return !(sameHost && samePath && candidateUrl.search === u.search);
-      }).slice(0, 10);
+      }).slice(0, 20);
     } catch {}
 
     let footerAddressTakenFromContactPage = false;
     let bestContactAddressPriority = -1;
-    const homepageEmails = [mainData.emailId, mainData.secondaryEmailId].filter(Boolean);
-    const contactPageEmails = [];
-    const otherPageEmails = [];
-    let primaryContactPageEmail = "";
-
     const visitedContactUrls = new Set(contactCandidates);
-    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 10; contactIndex++) {
+    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 20; contactIndex++) {
       const contactUrl = contactCandidates[contactIndex];
       try {
-        const isDiscoveredContactUrl = contactUrl === mainData.contactUrl ||
-          (mainData.contactUrls || []).includes(contactUrl) ||
-          contactUrl.includes("?p=contact") ||
-          contactUrl.includes("contact");
-        const contactData = await extractFetchedPage(tab.id, contactUrl, isDiscoveredContactUrl);
+        const contactData = await extractFetchedPage(tab.id, contactUrl, true);
 
         if (contactData && !contactData.error) {
-          // Relevant pages can link to the actual job/contact detail page.
-          // Follow a small number of discovered same-site links while the
-          // secondary email is still missing.
-          if (!mainData.secondaryEmailId) {
-            for (const discoveredUrl of [...(contactData.contactUrls || []), contactData.contactUrl].filter(Boolean)) {
-              try {
-                const nextUrl = new URL(discoveredUrl, contactUrl);
-                const rootUrl = new URL(tab.url || normUrl);
-                if (nextUrl.hostname.replace(/^www\./i, "").toLowerCase() !== rootUrl.hostname.replace(/^www\./i, "").toLowerCase()) continue;
-                nextUrl.hash = "";
-                if (!visitedContactUrls.has(nextUrl.href) && contactCandidates.length < 20) {
-                  visitedContactUrls.add(nextUrl.href);
-                  contactCandidates.push(nextUrl.href);
-                }
-              } catch {}
-            }
+          // Relevant pages can link to additional pages containing company
+          // contact details. Follow a bounded set of discovered same-site links.
+          for (const discoveredUrl of [...(contactData.contactUrls || []), contactData.contactUrl].filter(Boolean)) {
+            try {
+              const nextUrl = new URL(discoveredUrl, contactUrl);
+              const rootUrl = new URL(tab.url || normUrl);
+              if (nextUrl.hostname.replace(/^www\./i, "").toLowerCase() !== rootUrl.hostname.replace(/^www\./i, "").toLowerCase()) continue;
+              nextUrl.hash = "";
+              if (!visitedContactUrls.has(nextUrl.href) && contactCandidates.length < 20) {
+                visitedContactUrls.add(nextUrl.href);
+                contactCandidates.push(nextUrl.href);
+              }
+            } catch {}
           }
           if (contactData.forbidden?.isForbidden) mainData.forbidden = contactData.forbidden;
           if (contactData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = contactData.onlinePurchase;
@@ -471,16 +548,9 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
             }
           }
 
-          // Prefer emails explicitly listed on a Contact/Connect page. Emails
-          // from other discovered pages remain candidates for the secondary field.
-          const isContactInfoPage = /(?:contact|connect|location|inquir|enquir|reach|support)/i.test(new URL(contactUrl).pathname);
-          const pageEmails = [contactData.emailId, contactData.secondaryEmailId].filter(Boolean);
-          if (isContactInfoPage) {
-            contactPageEmails.push(...pageEmails);
-            primaryContactPageEmail ||= pageEmails[0] || "";
-          } else {
-            otherPageEmails.push(...pageEmails);
-          }
+          const pathLooksLikeContact = /(?:contact|connect|location|inquir|enquir|reach|support)/i.test(new URL(contactUrl).pathname);
+          const isContactInfoPage = contactData.emailPageRole === "contact" || contactData.contactPageScore >= 4 || pathLooksLikeContact;
+          allEmailCandidates.push(...annotateEmailCandidates(contactData, contactUrl, isContactInfoPage ? "contact" : "other"));
 
           // Merge Country, State, City, Profile, Phone
           if (contactData.countryName && (!mainData.countryName || mainData.countryName === "Not Available" || mainData.countryName === "United States Of America")) {
@@ -517,23 +587,16 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
           }
 
           // A contact-detail address must not be replaced by a later page's footer.
-          if (isContactInfoPage && bestContactAddressPriority >= 150 && mainData.countryName && mainData.emailId && mainData.phoneNumber && mainData.secondaryEmailId) {
-            break;
-          }
         }
       } catch (err) {
         console.log("Contact subpage candidate note:", err);
       }
     }
 
-    const orderedEmails = [...new Set([
-      primaryContactPageEmail,
-      ...homepageEmails,
-      ...contactPageEmails,
-      ...otherPageEmails
-    ].map(email => String(email || "").trim()).filter(Boolean))];
-    mainData.emailId = orderedEmails[0] || "";
-    mainData.secondaryEmailId = orderedEmails[1] || "";
+    const rankedEmails = rankEmailCandidates(allEmailCandidates, tab.url || normUrl);
+    mainData.emailCandidates = rankedEmails;
+    mainData.emailId = rankedEmails[0]?.email || "";
+    mainData.secondaryEmailId = rankedEmails[1]?.email || "";
 
     // Keep a country-code domain from being overwritten by ambiguous locality
     // names such as "Victoria", which exists in both Canada and Australia.

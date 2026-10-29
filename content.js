@@ -532,6 +532,11 @@
         data.urlRules?.warning ||
         "Website marked for review.";
       showToast(`${warning} Website Status left blank. Prefilled ${filledCount}/${PORTAL_FIELD_COUNT} available fields; review before submitting.`);
+    } else {
+      const unfilled = results.filter(result => result.status !== "filled").map(result => result.field);
+      if (unfilled.length) {
+        showToast(`Filled ${filledCount}/${PORTAL_FIELD_COUNT}. Not filled: ${unfilled.join(", ")}. Review before submitting.`);
+      }
     }
     return { filled: filledCount, total: PORTAL_FIELD_COUNT, details: results };
   }

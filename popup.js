@@ -61,6 +61,72 @@ function contactAddressSourcePriority(source) {
   return 0;
 }
 
+function annotateEmailCandidates(data, sourcePage, fallbackRole = "other") {
+  const raw = Array.isArray(data?.emailCandidates) && data.emailCandidates.length
+    ? data.emailCandidates
+    : [data?.emailId, data?.secondaryEmailId].filter(Boolean).map(email => ({ email }));
+  const pageRole = fallbackRole === "contact" || data?.emailPageRole === "contact" || data?.contactPageScore >= 4
+    ? "contact"
+    : fallbackRole === "homepage" || data?.emailPageRole === "homepage" ? "homepage" : "other";
+  return raw.map(candidate => typeof candidate === "string" ? { email: candidate } : candidate)
+    .filter(candidate => candidate?.email)
+    .map(candidate => ({
+      ...candidate,
+      email: String(candidate.email).trim().toLowerCase(),
+      sourcePage: candidate.sourcePage || sourcePage,
+      pageRole: pageRole || fallbackRole,
+      evidence: Array.isArray(candidate.evidence) ? candidate.evidence : []
+    }));
+}
+
+function rankEmailCandidates(candidates, rootUrl) {
+  let host = "";
+  try { host = new URL(rootUrl).hostname.replace(/^www\./i, "").toLowerCase(); } catch {}
+  const roleRank = { contact: 0, homepage: 1, other: 2 };
+  const mailboxScore = email => {
+    const local = String(email || "").split("@")[0].toLowerCase();
+    const priorities = ["sales", "info", "contact", "office", "export", "support", "service", "enquiries", "inquiries", "admin", "general"];
+    const index = priorities.indexOf(local);
+    return index < 0 ? 0 : priorities.length - index;
+  };
+  const merged = new Map();
+  for (const candidate of candidates || []) {
+    const email = String(candidate?.email || "").trim().toLowerCase();
+    if (!email) continue;
+    const emailDomain = (email.split("@")[1] || "").replace(/^www\./i, "").toLowerCase();
+    const domainMatch = Boolean(host && (emailDomain === host || emailDomain.endsWith(`.${host}`) || host.endsWith(`.${emailDomain}`)));
+    const current = merged.get(email) || {
+      email,
+      domainMatch,
+      pageRole: candidate.pageRole || "other",
+      pageRank: roleRank[candidate.pageRole] ?? roleRank.other,
+      mailboxScore: Number(candidate.mailboxScore) || mailboxScore(email),
+      confidence: 0,
+      sourcePages: [],
+      evidence: []
+    };
+    const rank = roleRank[candidate.pageRole] ?? roleRank.other;
+    if (rank < current.pageRank) {
+      current.pageRank = rank;
+      current.pageRole = candidate.pageRole || "other";
+    }
+    current.domainMatch ||= domainMatch;
+    current.mailboxScore = Math.max(current.mailboxScore, Number(candidate.mailboxScore) || mailboxScore(email));
+    const evidence = Array.isArray(candidate.evidence) ? candidate.evidence : [];
+    const confidence = evidence.includes("mailto") ? 3 : evidence.includes("json-ld") ? 2 : evidence.includes("email-element") ? 1 : 0;
+    current.confidence = Math.max(current.confidence, confidence);
+    if (candidate.sourcePage && !current.sourcePages.includes(candidate.sourcePage)) current.sourcePages.push(candidate.sourcePage);
+    current.evidence = [...new Set([...current.evidence, ...evidence])];
+    merged.set(email, current);
+  }
+  return [...merged.values()].sort((a, b) =>
+    Number(b.domainMatch) - Number(a.domainMatch) ||
+    a.pageRank - b.pageRank ||
+    b.mailboxScore - a.mailboxScore ||
+    b.confidence - a.confidence
+  );
+}
+
 function mergeFrameExtractionResults(results) {
   const records = (results || []).map(item => item?.result).filter(data => data && !data.error);
   if (!records.length) {
@@ -97,6 +163,11 @@ function mergeFrameExtractionResults(results) {
     if (data.forbidden?.isForbidden) merged.forbidden = data.forbidden;
     if (data.onlinePurchase?.isOnlineStore) merged.onlinePurchase = data.onlinePurchase;
   }
+  merged.emailCandidates = [...new Map(records.flatMap(data => data.emailCandidates || [])
+    .filter(candidate => candidate?.email)
+    .map(candidate => [`${candidate.email.toLowerCase()}|${candidate.sourcePage || ""}`, candidate])).values()];
+  merged.contactPageScore = Math.max(...records.map(data => Number(data.contactPageScore) || 0));
+  if (merged.contactPageScore >= 4) merged.emailPageRole = "contact";
   if (merged.forbidden?.isForbidden || merged.onlinePurchase?.isOnlineStore || merged.urlRules?.isSubdomain) {
     merged.websiteStatus = "Not Working";
   }
@@ -228,7 +299,7 @@ async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs = 25000) {
   return tab;
 }
 
-async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false) {
+async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4500);
   let response;
@@ -265,10 +336,10 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
     }
   }
 
-  // Force a rendered tab fallback if ANY critical field is missing OR if fetch failed
-  // Render a second tab only when the fetch missed the address. Missing email
-  // or state alone does not justify another navigation and a long wait.
-  if (result?.companyAddress || !renderIfAddressMissing) {
+  // Retry in a rendered page when the static response missed its address or
+  // emails; contact details are often inserted by JavaScript.
+  const missingRenderedData = !result?.companyAddress || !result?.emailId || !result?.secondaryEmailId;
+  if (!renderIfDataMissing || !missingRenderedData) {
     return result;
   }
 
@@ -302,8 +373,8 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
           window.location.href || url
         );
         let data = extract();
-        const deadline = Date.now() + 900;
-        while (!data.companyAddress && Date.now() < deadline) {
+        const deadline = Date.now() + 1200;
+        while ((!data.companyAddress || !data.emailId || !data.secondaryEmailId) && Date.now() < deadline) {
           await new Promise(resolve => setTimeout(resolve, 300));
           data = extract();
         }
@@ -311,7 +382,23 @@ async function extractFetchedPage(tabId, pageUrl, renderIfAddressMissing = false
       },
       args: [response?.url || pageUrl]
     });
-    return renderedResult || result;
+    const emails = [...new Set([
+      renderedResult?.emailId, result?.emailId,
+      renderedResult?.secondaryEmailId, result?.secondaryEmailId
+    ].map(email => String(email || "").trim()).filter(Boolean))];
+    const combined = { ...(result || {}) };
+    for (const key of ["companyName", "companyNameRaw", "companyAddress", "countryName", "state", "city", "phoneNumber", "businessType", "companyProfile", "numberOfProduct", "imageProduct", "noOfProductDescription", "addressSource", "forbidden", "onlinePurchase", "urlRules", "social", "enUrl"]) {
+      const value = renderedResult?.[key];
+      if (value && value !== "Not Available") combined[key] = value;
+    }
+    combined.emailId = emails[0] || "";
+    combined.secondaryEmailId = emails[1] || "";
+    combined.emailCandidates = [...(result?.emailCandidates || []), ...(renderedResult?.emailCandidates || [])];
+    combined.emailPageRole = renderedResult?.emailPageRole || result?.emailPageRole || "other";
+    combined.contactPageScore = Math.max(Number(result?.contactPageScore) || 0, Number(renderedResult?.contactPageScore) || 0);
+    combined.contactUrl = renderedResult?.contactUrl || result?.contactUrl;
+    combined.contactUrls = [...new Set([...(result?.contactUrls || []), ...(renderedResult?.contactUrls || [])])];
+    return combined;
   } catch (err) {
     console.log("Rendered tab fallback note:", err);
     return result;
@@ -403,6 +490,7 @@ async function crawlAndExtractDirect(targetUrl) {
     if (!mainData || mainData.error) {
       throw new Error(mainData?.error || "Could not extract details from page.");
     }
+    const allEmailCandidates = annotateEmailCandidates(mainData, tab.url || normUrl, "homepage");
 
     // Step 4: English subpage fallback (Issue 16: Retry candidates when English subpage fails)
     let enCandidates = [];
@@ -422,6 +510,7 @@ async function crawlAndExtractDirect(targetUrl) {
         const enData = await extractFetchedPage(tab.id, testUrl);
 
         if (enData && !enData.error) {
+          allEmailCandidates.push(...annotateEmailCandidates(enData, testUrl, "other"));
           if (enData.forbidden?.isForbidden) mainData.forbidden = enData.forbidden;
           if (enData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = enData.onlinePurchase;
           if (mainData.forbidden?.isForbidden || mainData.onlinePurchase?.isOnlineStore) mainData.websiteStatus = "Not Working";
@@ -484,44 +573,32 @@ async function crawlAndExtractDirect(targetUrl) {
           u.hostname.replace(/^www\./i, "").toLowerCase();
         const samePath = candidateUrl.pathname.replace(/\/+$/, "") === u.pathname.replace(/\/+$/, "");
         return !(sameHost && samePath && candidateUrl.search === u.search);
-      }).slice(0, 10);
+      }).slice(0, 20);
     } catch {}
 
     let footerAddressTakenFromContactPage = false;
     let bestContactAddressPriority = -1;
-    const homepageEmails = [mainData.emailId, mainData.secondaryEmailId].filter(Boolean);
-    const contactPageEmails = [];
-    const otherPageEmails = [];
-    let primaryContactPageEmail = "";
-
     const visitedContactUrls = new Set(contactCandidates);
-    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 10; contactIndex++) {
+    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 20; contactIndex++) {
       const contactUrl = contactCandidates[contactIndex];
       try {
         setStatus("Checking Contact page for official address...", "info");
-        const isDiscoveredContactUrl = contactUrl === mainData.contactUrl ||
-          (mainData.contactUrls || []).includes(contactUrl) ||
-          contactUrl.includes("?p=contact") ||
-          contactUrl.includes("contact");
-        const contactData = await extractFetchedPage(tab.id, contactUrl, isDiscoveredContactUrl);
+        const contactData = await extractFetchedPage(tab.id, contactUrl, true);
 
         if (contactData && !contactData.error) {
-          // Relevant pages can link to the actual job/contact detail page.
-          // Follow a small number of discovered same-site links while the
-          // secondary email is still missing.
-          if (!mainData.secondaryEmailId) {
-            for (const discoveredUrl of [...(contactData.contactUrls || []), contactData.contactUrl].filter(Boolean)) {
-              try {
-                const nextUrl = new URL(discoveredUrl, contactUrl);
-                const rootUrl = new URL(tab.url || normUrl);
-                if (nextUrl.hostname.replace(/^www\./i, "").toLowerCase() !== rootUrl.hostname.replace(/^www\./i, "").toLowerCase()) continue;
-                nextUrl.hash = "";
-                if (!visitedContactUrls.has(nextUrl.href) && contactCandidates.length < 20) {
-                  visitedContactUrls.add(nextUrl.href);
-                  contactCandidates.push(nextUrl.href);
-                }
-              } catch {}
-            }
+          // Relevant pages can link to additional pages containing company
+          // contact details. Follow a bounded set of discovered same-site links.
+          for (const discoveredUrl of [...(contactData.contactUrls || []), contactData.contactUrl].filter(Boolean)) {
+            try {
+              const nextUrl = new URL(discoveredUrl, contactUrl);
+              const rootUrl = new URL(tab.url || normUrl);
+              if (nextUrl.hostname.replace(/^www\./i, "").toLowerCase() !== rootUrl.hostname.replace(/^www\./i, "").toLowerCase()) continue;
+              nextUrl.hash = "";
+              if (!visitedContactUrls.has(nextUrl.href) && contactCandidates.length < 20) {
+                visitedContactUrls.add(nextUrl.href);
+                contactCandidates.push(nextUrl.href);
+              }
+            } catch {}
           }
           if (contactData.forbidden?.isForbidden) mainData.forbidden = contactData.forbidden;
           if (contactData.onlinePurchase?.isOnlineStore) mainData.onlinePurchase = contactData.onlinePurchase;
@@ -567,16 +644,9 @@ async function crawlAndExtractDirect(targetUrl) {
             }
           }
 
-          // Prefer emails explicitly listed on a Contact/Connect page. Emails
-          // from other discovered pages remain candidates for the secondary field.
-          const isContactInfoPage = /(?:contact|connect|location|inquir|enquir|reach|support)/i.test(new URL(contactUrl).pathname);
-          const pageEmails = [contactData.emailId, contactData.secondaryEmailId].filter(Boolean);
-          if (isContactInfoPage) {
-            contactPageEmails.push(...pageEmails);
-            primaryContactPageEmail ||= pageEmails[0] || "";
-          } else {
-            otherPageEmails.push(...pageEmails);
-          }
+          const pathLooksLikeContact = /(?:contact|connect|location|inquir|enquir|reach|support)/i.test(new URL(contactUrl).pathname);
+          const isContactInfoPage = contactData.emailPageRole === "contact" || contactData.contactPageScore >= 4 || pathLooksLikeContact;
+          allEmailCandidates.push(...annotateEmailCandidates(contactData, contactUrl, isContactInfoPage ? "contact" : "other"));
 
           // Merge Country, State, City, Profile, Phone
           if (contactData.countryName && (!mainData.countryName || mainData.countryName === "Not Available" || mainData.countryName === "United States Of America")) {
@@ -605,23 +675,16 @@ async function crawlAndExtractDirect(targetUrl) {
           }
 
           // A contact-detail address must not be replaced by a later page's footer.
-          if (isContactInfoPage && bestContactAddressPriority >= 150 && mainData.countryName && mainData.emailId && mainData.phoneNumber && mainData.secondaryEmailId) {
-            break;
-          }
         }
       } catch (e) {
         console.log("Contact page check note:", e);
       }
     }
 
-    const orderedEmails = [...new Set([
-      primaryContactPageEmail,
-      ...homepageEmails,
-      ...contactPageEmails,
-      ...otherPageEmails
-    ].map(email => String(email || "").trim()).filter(Boolean))];
-    mainData.emailId = orderedEmails[0] || "";
-    mainData.secondaryEmailId = orderedEmails[1] || "";
+    const rankedEmails = rankEmailCandidates(allEmailCandidates, tab.url || normUrl);
+    mainData.emailCandidates = rankedEmails;
+    mainData.emailId = rankedEmails[0]?.email || "";
+    mainData.secondaryEmailId = rankedEmails[1]?.email || "";
 
     return mainData;
 
@@ -738,6 +801,15 @@ function readFieldsFromUi() {
 function renderQcChecklist(data) {
   const qcListEl = $("qc-checklist");
   qcListEl.innerHTML = "";
+  const emailProvenance = email => {
+    const candidate = (data.emailCandidates || []).find(item => String(item.email || "").toLowerCase() === String(email || "").toLowerCase());
+    if (!candidate) return "Source: not recorded";
+    const sourcePages = (candidate.sourcePages || [candidate.sourcePage]).filter(Boolean).slice(0, 2).map(source => {
+      try { return new URL(source).pathname || "/"; } catch { return String(source); }
+    });
+    const confidence = candidate.confidence >= 3 ? "mailto link" : candidate.confidence >= 2 ? "structured data" : candidate.confidence >= 1 ? "email element" : "page text";
+    return `Source: ${sourcePages.join(", ") || "unknown page"} (${confidence})`;
+  };
 
   const checks = [
     {
@@ -781,9 +853,17 @@ function renderQcChecklist(data) {
       msg: `State: ${data.state}, City: ${data.city}`
     },
     {
-      name: "Rule 9 & 10: Emails",
-      ok: Boolean(data.emailId),
-      msg: `Primary: ${data.emailId || "None"}, Secondary: ${data.secondaryEmailId || "Skipped"}`
+      name: "Rule 9: Primary Email",
+      ok: Boolean(data.emailId && Extractor.isValidEmail(data.emailId)),
+      msg: data.emailId ? `${data.emailId} — ${emailProvenance(data.emailId)}` : "No valid primary email found"
+    },
+    {
+      name: "Rule 10: Secondary Email",
+      ok: Boolean(data.secondaryEmailId && Extractor.isValidEmail(data.secondaryEmailId) &&
+          data.secondaryEmailId.toLowerCase() !== String(data.emailId || "").toLowerCase()),
+      msg: data.secondaryEmailId
+        ? `${data.secondaryEmailId} — ${emailProvenance(data.secondaryEmailId)}`
+        : "No distinct secondary email found on checked pages; verify manually"
     },
     {
       name: "Rule 11: Phone Number",
@@ -811,10 +891,14 @@ function renderQcChecklist(data) {
     if (c.ok) passCount++;
     const item = document.createElement("div");
     item.className = `qc-item ${c.ok ? "pass" : "warn"}`;
-    item.innerHTML = `
-      <span class="qc-badge">${c.ok ? "PASS" : "REVIEW"}</span>
-      <span><strong>${c.name}:</strong> ${c.msg}</span>
-    `;
+    const badge = document.createElement("span");
+    badge.className = "qc-badge";
+    badge.textContent = c.ok ? "PASS" : "REVIEW";
+    const detail = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = `${c.name}: `;
+    detail.append(name, document.createTextNode(c.msg));
+    item.append(badge, detail);
     qcListEl.appendChild(item);
   }
 
@@ -1224,13 +1308,21 @@ async function fillPortal(data) {
   });
 
   const totals = execResults?.map(r => r?.result).filter(Boolean) || [];
-  const totalFilled = totals.reduce((sum, result) => sum + result.filled, 0);
+  const fieldResults = totals.flatMap(result => result.details || []);
+  const filledFields = new Set(fieldResults.filter(detail => detail.status === "filled").map(detail => detail.field));
+  const knownFields = new Set(fieldResults.map(detail => detail.field));
+  const totalFilled = filledFields.size;
+  const unfilledFields = [...knownFields].filter(field => !filledFields.has(field));
   if (websiteNotWorking) {
     const warning = data.forbidden?.message ||
       (onlinePurchaseRejected ? "Online purchase detected; review this website." : "") ||
       data.urlRules?.warning ||
       "Website marked for review.";
     setStatus(`${warning} Website Status left blank. Prefilled ${totalFilled}/${PORTAL_FIELD_COUNT} available fields; review before submitting.`, "warn");
+    return;
+  }
+  if (!websiteNotWorking && unfilledFields.length) {
+    setStatus(`Filled ${totalFilled}/${PORTAL_FIELD_COUNT} fields. Not filled: ${unfilledFields.join(", ")}. Review before submitting.`, "warn");
     return;
   }
   setStatus(`✅ Filled ${totalFilled}/${PORTAL_FIELD_COUNT} fields in portal! Review and Submit.`, "ok");

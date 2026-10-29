@@ -3498,7 +3498,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   // Rule 9 & 10: Email ID & Secondary Email ID
   function extractEmails(doc, text, siteHostname) {
-    const emails = new Set();
+    const emailEvidence = new Map();
     const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,24}(?![a-zA-Z0-9_-]*@)/g;
 
     const decodeEmailText = value => {
@@ -3524,7 +3524,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         .trim();
     };
 
-    const addFrom = value => {
+    const addFrom = (value, sourceKind = "page-text") => {
       if (!value) return;
 
       const decoded = decodeEmailText(value);
@@ -3536,7 +3536,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           .replace(/[.,;:!?]+$/, "")
           .replace(/^(?:e-?mail)(?=(?:info|sales|contact|support|office|admin|enquir(?:y|ies)|inquir(?:y|ies)|export|marketing|accounts|billing|general)@)/i, "")
           .toLowerCase();
-        if (isValidEmail(email)) emails.add(email);
+        if (isValidEmail(email)) {
+          if (!emailEvidence.has(email)) emailEvidence.set(email, new Set());
+          emailEvidence.get(email).add(sourceKind);
+        }
       }
     };
 
@@ -3551,9 +3554,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           "href", "data-email", "data-mail", "data-contact-email", "content",
           "value", "aria-label", "title"
         ]) {
-          addFrom(el.getAttribute(attribute));
+          const value = el.getAttribute(attribute);
+          addFrom(value, attribute === "href" && /^mailto:/i.test(value || "") ? "mailto" : "email-element");
         }
-        addFrom(el.textContent || el.innerText || "");
+        addFrom(el.textContent || el.innerText || "", "email-element");
       }
 
       // 2. JSON-LD can nest email values in @graph and contact-point structures.
@@ -3563,7 +3567,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           value.forEach(visitJsonLd);
           return;
         }
-        if (Object.prototype.hasOwnProperty.call(value, "email")) addFrom(value.email);
+        if (Object.prototype.hasOwnProperty.call(value, "email")) addFrom(value.email, "json-ld");
         Object.entries(value).forEach(([key, child]) => {
           if (key !== "email") visitJsonLd(child);
         });
@@ -3578,10 +3582,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
 
     // 3. Scan visible or otherwise extracted page text.
-    addFrom(text || (doc?.body ? getElementText(doc.body) : ""));
+    addFrom(text || (doc?.body ? getElementText(doc.body) : ""), "page-text");
 
     // Filter out blacklisted / system emails
-    const list = [...emails].filter(e => !/^(noreply|no-reply|careers|jobs|hr|webmaster|postmaster|abuse|spam|privacy|legal)@/i.test(e));
+    const list = [...emailEvidence.keys()].filter(e => !/^(noreply|no-reply|webmaster|postmaster|abuse|spam|privacy|legal)@/i.test(e));
 
     const hostname = String(siteHostname || "")
       .replace(/^https?:\/\//i, "")
@@ -3590,7 +3594,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .split(":")[0]
       .toLowerCase();
 
-    // Prioritize corporate emails and match against site domain
+    const mailboxScore = email => {
+      const local = (email.split("@")[0] || "").toLowerCase();
+      const ranking = ["sales", "info", "contact", "office", "export", "support", "service", "enquiries", "inquiries", "admin", "general"];
+      const rank = ranking.indexOf(local);
+      return rank < 0 ? 0 : ranking.length - rank;
+    };
+
+    // Keep every valid candidate and retain source evidence for later ranking.
     const scored = list
       // Avoid treating navigation/footer text appended to a site email as part
       // of a second, fabricated domain (e.g. .com.auinformationterms).
@@ -3599,38 +3610,53 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         return !hostname || !domain.startsWith(hostname) || domain === hostname || domain.startsWith(`${hostname}.`);
       })
       .map(e => {
-      let score = 0;
-      if (/^sales@/i.test(e)) score += 10;
-      else if (/^info@/i.test(e)) score += 9;
-      else if (/^contact@/i.test(e)) score += 8;
-      else if (/^office@/i.test(e)) score += 7;
-      else if (/^export@/i.test(e)) score += 6;
-      else score += 1;
-
       const emailDomain = (e.split("@")[1] || "").toLowerCase();
-      if (hostname && (emailDomain === hostname || hostname.endsWith(`.${emailDomain}`))) {
-        score += 50;
-      }
-      return { email: e, score };
+      const normalizedEmailDomain = emailDomain.replace(/^www\./i, "");
+      const domainMatch = Boolean(hostname && (
+        normalizedEmailDomain === hostname ||
+        hostname.endsWith(`.${normalizedEmailDomain}`) ||
+        normalizedEmailDomain.endsWith(`.${hostname}`)
+      ));
+      const roleScore = mailboxScore(e);
+      return {
+        email: e,
+        score: (domainMatch ? 100 : 0) + roleScore,
+        domainMatch,
+        mailboxScore: roleScore,
+        sourcePage: String(siteHostname || ""),
+        evidence: [...(emailEvidence.get(e) || [])]
+      };
     });
 
-    scored.sort((a, b) => b.score - a.score);
+    scored.sort((a, b) => Number(b.domainMatch) - Number(a.domainMatch) || b.mailboxScore - a.mailboxScore);
 
     return {
       primaryEmail: scored[0]?.email || "",
       secondaryEmail: scored[1]?.email || "",
-      allEmails: scored.map(s => s.email)
+      allEmails: scored.map(s => s.email),
+      candidates: scored
     };
   }
 
   function isValidEmail(e) {
-    if (!e || typeof e !== "string" || e.length > 80) return false;
+    if (!e || typeof e !== "string" || e.length > 254) return false;
+    const at = e.indexOf("@");
+    if (at <= 0 || at !== e.lastIndexOf("@")) return false;
+    const local = e.slice(0, at);
+    const domain = e.slice(at + 1);
+    if (local.length > 64 || !domain || domain.length > 253) return false;
+    if (local.startsWith(".") || local.endsWith(".") || local.includes("..")) return false;
+    if (!/^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+$/.test(local)) return false;
     if (/[/\\]/.test(e)) return false;
     if (/\.(png|jpg|jpeg|gif|webp|svg|css|js|woff2?|ttf|eot|ico|map|min)$/i.test(e)) return false;
     if (/(?:jsdelivr|cdnjs|unpkg|googleapis|gstatic|w3\.org|schema\.org|sentry|recaptcha|wordpress|wp-content|github|polyfill|node_modules|bootstrap|jquery)/i.test(e)) return false;
-    if (/example\.com|domain\.com|yourdomain|email@/i.test(e)) return false;
-    if (/^(noreply|no-reply|careers|jobs|hr|webmaster|postmaster|abuse|spam|privacy|legal)@/i.test(e)) return false;
-    return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,24}$/.test(e);
+    if (/example\.com|domain\.com|yourdomain|email@|@(?:example|invalid|test)\./i.test(e)) return false;
+    if (/^(?:test|example|sample|placeholder|yourname|your-email|email)@/i.test(e)) return false;
+    if (/^(noreply|no-reply|webmaster|postmaster|abuse|spam|privacy|legal)@/i.test(e)) return false;
+    const labels = domain.split(".");
+    if (labels.length < 2 || labels.some(label => label.length > 63 || !/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label))) return false;
+    const tld = labels[labels.length - 1];
+    return tld.length >= 2 && tld.length <= 24 && /[a-zA-Z]/.test(tld);
   }
 
   function mergeContactEmails(primaryEmail, secondaryEmail, contactEmail, contactSecondaryEmail) {
@@ -3926,6 +3952,24 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return list.length > 0 ? list[0] : null;
   }
 
+  function scoreContactPage(doc, url) {
+    let score = 0;
+    let path = "";
+    try { path = new URL(url).pathname; } catch {}
+    if (/(?:contact|support|location|inquir|enquir|reach-us|get-in-touch|connect)/i.test(path)) score += 4;
+
+    const title = clean(doc?.title || "");
+    const headings = doc
+      ? [...doc.querySelectorAll("h1, h2, [role='heading']")].slice(0, 6).map(el => clean(el.textContent || ""))
+      : [];
+    const headingText = [title, ...headings].join(" ");
+    if (/\b(?:contact(?: us| details| information)?|get in touch|reach us|our locations?)\b/i.test(headingText)) score += 4;
+
+    const hasContactForm = Boolean(doc?.querySelector('form input[type="email"], form input[name*="email" i], form textarea[name*="message" i]'));
+    if (hasContactForm && /\b(?:contact|enquir|inquir|message)\b/i.test(headingText)) score += 2;
+    return score;
+  }
+
   // Primary Extractor
   function extractFromDocument(doc, textContent, url) {
     const text = clean(textContent || getElementText(doc?.body) || "");
@@ -4081,6 +4125,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const enUrl = findEnglishSubpage(doc, url);
     const contactUrls = findContactSubpages(doc, url);
     const contactUrl = contactUrls[0] || null;
+    const contactPageScore = scoreContactPage(doc, url);
+    const emailPageRole = contactPageScore >= 4
+      ? "contact"
+      : (() => {
+          try {
+            const pageUrl = new URL(url);
+            return pageUrl.pathname === "/" || pageUrl.pathname === "" ? "homepage" : "other";
+          } catch { return "other"; }
+        })();
 
     return {
       websiteName: url,
@@ -4096,6 +4149,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       city: city === "Y" ? "Available" : "Not Available",
       emailId: emails.primaryEmail,
       secondaryEmailId: emails.secondaryEmail,
+      emailCandidates: emails.candidates,
+      emailPageRole,
+      contactPageScore,
       phoneNumber,
       numberOfProduct: counts.numberOfProduct,
       imageProduct: counts.imageProduct,
