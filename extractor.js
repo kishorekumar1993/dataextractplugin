@@ -532,6 +532,33 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       { countries: ["denmark"], rules: [[/\ba\/s\b(?=[,.\s]|$)/gi, "Aktieselskab"]] },
       { countries: ["sweden"], rules: [[/\ba\.?b\.?(?=[,.\s]|$)/gi, "Aktiebolag"]] }
     ];
+    if (country === "italy") {
+      s = s.replace(/\bs\.?a\.?p\.?a\.?(?=\s*[,;:]?$)/gi, "Societa in accomandita per azioni");
+      s = s.replace(/\bs\.?a\.?s\.?(?=\s*[,;:]?$)/gi, "Societa in accomandita semplice");
+      s = s.replace(/\bs\.?p\.?a\.?(?=\s*[,;:]?$)/gi, "Societa per Azioni");
+    }
+    if (country === "spain") {
+      s = s.replace(/\bs\.?l\.?u\.?(?=\s*[,;:]?$)/gi, "Sociedad Limitada Unipersonal");
+      s = s.replace(/\bs\.?a\.?u\.?(?=\s*[,;:]?$)/gi, "Sociedad Anonima Unipersonal");
+    }
+    if (country === "portugal") {
+      s = s.replace(/\blda\.?(?=\s*[,;:]?$)/gi, "Sociedade por Quotas");
+    }
+    if (country === "romania") {
+      s = s.replace(/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Societate cu Raspundere Limitata");
+      s = s.replace(/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Societate pe Actiuni");
+    }
+    if (country === "greece") {
+      s = s.replace(/\bi\.?k\.?e\.?(?=\s*[,;:]?$)/gi, "Idiotiki Kefalaiouchiki Etaireia");
+      s = s.replace(/\be\.?p\.?e\.?(?=\s*[,;:]?$)/gi, "Etaireia Periorismenis Efthynis");
+      s = s.replace(/\ba\.?e\.?(?=\s*[,;:]?$)/gi, "Anonymi Etaireia");
+    }
+    if (country === "poland") {
+      s = s.replace(/\bsp\.?\s*z\s*o\.?\s*o\.?(?=\s*[,;:]?$)/gi, "Spolka z ograniczona odpowiedzialnoscia");
+    }
+    if (country === "chile") {
+      s = s.replace(/\bsp\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedad por Acciones");
+    }
     const countryRules = countryExpansions.find(entry =>
       entry.countries.some(value => value.replace(/[^a-z]/g, "") === country)
     );
@@ -564,6 +591,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       [/\b(?:soc\s+ltd\.?)(?=[,.\s]|$)/gi, "State-Owned Company Limited"],
       [/\b(?:co[.,\s]+ltd\.?|co[.,\s]+limited|company\s+ltd\.?)(?=[,.\s]|$)/gi, "Company Limited"],
       [/\b(?:limited\s+co\.?)(?=[,.\s]|$)/gi, "Limited Company"],
+
+      // S.p.A. is a distinctive dotted Italian form; expand it even when the
+      // country detector missed Italy. Keep plain "SPA" untouched.
+      [/\bs\s*\.\s*p\s*\.\s*a\.?(?=[,.\s]|$)/gi, "Societ\u00e0 per Azioni"],
 
       // --- G. Poland & Central Europe ---
       [/\bsp\.?\s*z\s*o\.?\s*o\.?(?=[,.\s]|$)/gi, "Spółka z ograniczoną odpowiedzialnością"],
@@ -746,7 +777,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
 
     const addressLead = clean(rawAddress).split(/[,;\n|]/, 1)[0];
-    const legalForm = addressLead.match(/\b(S\s*\.\s*R\s*\.\s*L\s*\.?|S\s*\.\s*N\s*\.\s*C\s*\.?|S\s*\.\s*A\s*\.?|S\s*\.\s*A\s*\.\s*S\s*\.?)\s*$/i);
+    const legalForm = addressLead.match(/\b(S\s*\.\s*R\s*\.\s*L\s*\.?|S\s*\.\s*N\s*\.\s*C\s*\.?|S\s*\.\s*P\s*\.\s*A\s*\.?|S\s*\.\s*A\s*\.?|S\s*\.\s*A\s*\.\s*S\s*\.?)\s*$/i);
     if (!legalForm) return companyName;
 
     // The legal entity line is more authoritative than unrelated name-like
@@ -766,6 +797,26 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       name = name.slice(0, trailingRightsNotice.index).replace(/[\s.,;:|]+$/g, "").trim();
     }
     return name;
+  }
+
+  function titleCaseCompanyWords(value) {
+    return String(value || "").split(/(\s+)/).map(word => {
+      if (!word.trim()) return word;
+      if (/^(?:USA|UK|IBM|BMW|BBC|BHP|LLC|LLP|PLC|GMBH|AG|T2)$/i.test(word)) return word.toUpperCase();
+      if (/^[A-Z]{2,3}$/.test(word)) return word;
+
+      const allCaps = word.match(/^([\p{L}]{4,})([.,;:]*)$/u);
+      if (allCaps && allCaps[1] === allCaps[1].toUpperCase()) {
+        return allCaps[1].charAt(0) + allCaps[1].slice(1).toLowerCase() + allCaps[2];
+      }
+
+      const letters = word.match(/^([\p{L}])([\p{L}\p{M}]*)(.*)$/u);
+      if (!letters) return word;
+      const alphaPart = letters[1] + letters[2];
+      // Preserve intentional brand casing such as eBay and iPhone.
+      if (/[A-Z]/.test(alphaPart.slice(1))) return word;
+      return letters[1].toLocaleUpperCase() + letters[2].toLocaleLowerCase() + letters[3];
+    }).join("");
   }
 
   // Format Company Name according to Rule 4 & Section 5.3 (Expand legal suffixes)
@@ -808,25 +859,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     name = trimSpecialChars(name);
 
     // 5. Title-case the trade name portion
-    name = name.split(/\s+/).map(w => {
-      if (/^(?:USA|UK|IBM|BMW|BBC|BHP|LLC|LLP|PLC|GMBH|AG|T2)$/i.test(w)) return w.toUpperCase();
-      if (/^[A-Z]{2,3}$/.test(w)) return w;
-      const allCapsWordWithPunctuation = w.match(/^([A-Z]{4,})([.,;:]*)$/);
-      if (allCapsWordWithPunctuation) {
-        return allCapsWordWithPunctuation[1].charAt(0) + allCapsWordWithPunctuation[1].slice(1).toLowerCase() + allCapsWordWithPunctuation[2];
-      }
-      if (/[a-z]/.test(w) && /[A-Z]/.test(w.slice(1))) return w;
-      if (/^[a-zA-Z]+$/.test(w)) {
-        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-      }
-      return w;
-    }).join(" ");
+    name = titleCaseCompanyWords(name);
 
     // Keep connector words title-cased too, matching the requested company
     // name format (for example, "TCF Council Of Fiji").
 
     // 6. Section 5.3: Expand all international legal suffixes to full form
-    name = expandLegalSuffixes(name, countryName);
+    // Legal suffix expansions also follow the requested capitalization format.
+    name = titleCaseCompanyWords(expandLegalSuffixes(name, countryName));
 
     // 7. Clean duplicate punctuation, extra spaces, trailing/leading commas or dots
     name = clean(name.replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, ""));
@@ -1173,7 +1213,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const finishName = value => formatName ? formatCompanyName(value, countryName) : value;
 
     // Comprehensive corporate suffix pattern (Section 5.3 International Legal Suffixes)
-    const corpSuffix = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|s\.?r\.?l\.?|s\.?n\.?c\.?|spa|kft|zrt|nyrt|s\.r\.o\.|a\.s\.|d\.o\.o\.|pvt\.?\s*ltd\.?|private\s+limited|pte\.?\s*ltd\.?|pty\.?\s*ltd\.?|proprietary\s+limited|sdn\.?\s*bhd\.?|berhad|bhd\.?|tbk\.?|wll|pjsc|fze|fzco|fz-llc|l3c|p\.?c\.?|p\.?a\.?|l\.?l\.?l\.?p\.?|l\.?p\.?a\.?|bcorp|clg|ulc|dac|scio|bencom|lp|section\s*8\s+company|producer\s+company|nidhi\s+(?:limited|company)|s\.?e\.?n\.?c\.?|s\.?e\.?c\.?|incorporated\s+association|npc|wfoe|wofe|fie|g\.?k\.?|y\.?k\.?|p\.?t\.?|perum|persero|s\.?c\.?l\.?|s\.?c\.?|psc|prjsc|g\.?t\.?\s*ltd)\b/i;
+    const corpSuffix = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|s\.?a\.?p\.?a\.?|s\.?a\.?s\.?u\.?|s\.?a\.?s\.?|s\.?l\.?u\.?|s\.?a\.?u\.?|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|s\.?r\.?l\.?|s\.?n\.?c\.?|s\.?p\.?a\.?|spa|sp\.?\s*z\s*o\.?\s*o\.?|ike|epe|a\.?e\.?|tnhh|jsc|kft|zrt|nyrt|s\.r\.o\.|a\.s\.|d\.o\.o\.|pvt\.?\s*ltd\.?|private\s+limited|pte\.?\s*ltd\.?|pty\.?\s*ltd\.?|proprietary\s+limited|sdn\.?\s*bhd\.?|berhad|bhd\.?|tbk\.?|wll|pjsc|fze|fzco|fz-llc|l3c|p\.?c\.?|p\.?a\.?|l\.?l\.?l\.?p\.?|l\.?p\.?a\.?|bcorp|clg|ulc|dac|scio|bencom|lp|section\s*8\s+company|producer\s+company|nidhi\s+(?:limited|company)|s\.?e\.?n\.?c\.?|s\.?e\.?c\.?|incorporated\s+association|npc|wfoe|wofe|fie|g\.?k\.?|y\.?k\.?|p\.?t\.?|perum|persero|s\.?c\.?l\.?|s\.?c\.?|psc|prjsc|g\.?t\.?\s*ltd)\b/i;
 
     // Helper: checks if candidate string contains a real corporate suffix
     const hasCorpSuffix = str => {
