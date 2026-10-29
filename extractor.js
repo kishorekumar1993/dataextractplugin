@@ -1043,35 +1043,120 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     };
   }
 
-  // Rule 2: Business Type (Excel values: Manufacturer, Wholesaler, Distributer, Exporter, Trader, Supplier, Industrial Services)
-  function detectBusinessType(text) {
-    const lower = (text || "").toLowerCase();
+  // Rule 2: Infer business type from About / Company Profile content, not
+  // product copy or a default assumption that every industrial site manufactures.
+  function detectBusinessType(text, doc, url = "") {
+    const profileParts = [];
+    const addProfilePart = value => {
+      const part = clean(value || "");
+      if (part.length >= 40 && part.length <= 4000 && !profileParts.includes(part)) {
+        profileParts.push(part);
+      }
+    };
 
-    // Priority rule: If manufacturing/producer mentioned -> Manufacturer
-    if (/\b(manufacturer|manufacturing|manufacture|factory|produced by|producer|production|fabrication|plant|oem|odm|assembly line)\b/i.test(lower)) {
+    if (doc) {
+      const profileSelectors = [
+        '[id*="about" i]', '[class*="about" i]',
+        '[id*="company-profile" i]', '[class*="company-profile" i]',
+        '[id*="company-overview" i]', '[class*="company-overview" i]',
+        '[id*="company-info" i]', '[class*="company-info" i]',
+        '[id*="who-we-are" i]', '[class*="who-we-are" i]'
+      ].join(", ");
+      for (const el of doc.querySelectorAll(profileSelectors)) {
+        if (!el.closest?.("nav, footer, [role='navigation']")) addProfilePart(getElementText(el));
+      }
+
+      for (const heading of doc.querySelectorAll("h1, h2, h3, h4, h5, h6")) {
+        if (!/\b(?:about(?:\s+us)?|company\s+(?:profile|overview|information)|who\s+we\s+are|our\s+company)\b/i.test(heading.textContent || "")) continue;
+        let section = heading.closest?.("section, article, [role='region']") || heading.parentElement;
+        for (let depth = 0; section && depth < 3; depth++, section = section.parentElement) {
+          if (section.closest?.("nav, footer, [role='navigation']")) break;
+          const sectionText = getElementText(section);
+          if (sectionText.length >= 40 && sectionText.length <= 4000) {
+            addProfilePart(sectionText);
+            break;
+          }
+        }
+      }
+
+      for (const selector of ['meta[name="description"]', 'meta[property="og:description"]']) {
+        addProfilePart(doc.querySelector(selector)?.content || "");
+      }
+
+      // Many company homepages (including V-TEK) put their business type in a
+      // short introductory paragraph without labeling it as an About section.
+      // Accept only compact company statements with explicit category terms;
+      // this avoids classifying from product listings or generic page copy.
+      let isHomePage = false;
+      try {
+        const path = new URL(url).pathname.replace(/\/+$/, "");
+        isHomePage = !path || path === "/index.html" || path === "/index.htm";
+      } catch { }
+      if (isHomePage) {
+        const explicitBusinessStatement = /\b(?:manufacturer|manufacturing|manufactures|distributor|distribution|wholesaler|wholesale|supplier|supplies|service provider|trading company|exporter|importer)\b/i;
+        for (const el of doc.querySelectorAll("main p, [role='main'] p, p")) {
+          if (el.closest?.("nav, footer, [role='navigation']")) continue;
+          const statement = getElementText(el);
+          if (statement.length >= 40 && statement.length <= 1200 && explicitBusinessStatement.test(statement)) {
+            addProfilePart(statement);
+          }
+        }
+
+        // Some sites render the introductory statement in nested builder
+        // elements rather than <p> tags. Preserve only the short fragment
+        // around a strong, explicit manufacturer/maker claim from page text.
+        const makerClaim = /\b(?:manufacturer|manufacturers|manufacturing company|(?:custom\s+)?furniture makers?|makers? of)\b/i;
+        const makerMatch = String(text || "").match(new RegExp(`.{0,180}${makerClaim.source}.{0,180}`, "i"));
+        if (makerMatch) addProfilePart(makerMatch[0]);
+      }
+      for (const script of doc.querySelectorAll('script[type="application/ld+json"]')) {
+        try {
+          const parsed = JSON.parse(script.textContent || "");
+          const objects = Array.isArray(parsed) ? parsed : [parsed];
+          for (const item of objects) {
+            const entries = [item, ...(item?.["@graph"] || [])];
+            for (const entry of entries) {
+              if (/Organization|Corporation|LocalBusiness/i.test(String(entry?.["@type"] || ""))) {
+                addProfilePart(entry.description || "");
+              }
+            }
+          }
+        } catch { }
+      }
+    }
+
+    let aboutPage = false;
+    try {
+      aboutPage = /\/(?:about(?:-us)?|company(?:-profile|-overview)?|who-we-are)(?:\/|$)/i.test(new URL(url).pathname);
+    } catch { }
+    if (!profileParts.length && aboutPage) addProfilePart(text || "");
+    if (!profileParts.length) return "";
+
+    const profileText = profileParts.join(" ").toLowerCase();
+    if (/\b(manufacturer|manufacturing|manufacture[rs]?|we produce|producer|factory|oem|odm|assembly line|(?:custom\s+)?furniture makers?)\b/i.test(profileText)) {
       return "Manufacturer";
     }
-    if (/\b(wholesale|wholesaler|bulk supply|bulk order)\b/i.test(lower)) {
+    if (/\b(wholesale|wholesaler|bulk supply|bulk order)\b/i.test(profileText)) {
       return "Wholesaler";
     }
-    if (/\b(distributer|distributor|distribution|authorized dealer|dealership)\b/i.test(lower)) {
+    if (/\b(distributer|distributor|distribution|authorized dealer|dealership)\b/i.test(profileText)) {
       return "Distributer";
     }
-    // Trader requires BOTH import/export or compound phrase — not just 'trading'
-    if (/\b(trading company|importer and exporter|import.*export|export.*import|merchant)\b/i.test(lower)) {
+    // Trader requires an explicit import/export or merchant description.
+    if (/\b(trading company|importer and exporter|import.{0,40}export|export.{0,40}import|merchant)\b/i.test(profileText)) {
       return "Trader";
     }
-    if (/\b(exporter|exporting|global export|overseas sales|export specialist)\b/i.test(lower)) {
+    if (/\b(exporter|exporting|global export|overseas sales|export specialist)\b/i.test(profileText)) {
       return "Exporter";
     }
-    if (/\b(supplier|supplying|stockist|vendor)\b/i.test(lower)) {
+    if (/\b(supplier|supplying|stockist|vendor)\b/i.test(profileText)) {
       return "Supplier";
     }
-    if (/\b(industrial services|service provider|it consulting|consulting firm|maintenance company|after-?sales service|support contractor|engineering services)\b/i.test(lower)) {
+    if (/\b(industrial services|service provider|it consulting|consulting firm|maintenance company|after-?sales service|support contractor|engineering services)\b/i.test(profileText)) {
       return "Industrial Services";
     }
 
-    return "Manufacturer"; // Default — most B2B industrial sites are manufacturers
+    return "";
   }
 
   // Rule 3: Company Profile (Y / N)
@@ -1232,7 +1317,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           break;
         }
 
-        const cpMatch = l.match(/(?:©|copyright|\(c\))\s*(?:\d{2,4}\s*[-–]?\s*\d{2,4}|\d{2,4})?\s*(.{2,80}?)(?:\s*[|·•\-–—.,]?\s*(?:all rights?|rights reserved|company reg|reg no)|$)/i);
+        const cpMatch = l.match(/(?:©|copyright|\(c\))\s*(?:\d{2,4}\s*[-–]?\s*\d{2,4}|\d{2,4})?\s*(.{2,80}?)(?=\s*(?:[|·•]|[-–—]\s+)|\s+(?:registered\b|all rights?|rights reserved|company reg|reg no)|$)/i);
         if (cpMatch && cpMatch[1]) {
           const candidate = sanitizeCandidate(cpMatch[1]);
           if (candidate && hasCorpSuffix(candidate)) {
@@ -1267,7 +1352,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 3. Full-text copyright regex with corporate suffix
     if (!legalName && text) {
-      const cpMatches = text.matchAll(/(?:©|copyright|\(c\))\s*(?:\d{2,4}\s*[-–]?\s*\d{2,4}|\d{2,4})?\s*([A-Za-z0-9\u00C0-\u024F&.,\s'-]{2,80}?)(?:\s*[|·•\-–—.,]?\s*(?:all rights?|rights reserved|company reg|reg no)|\n|$)/gi);
+      const cpMatches = text.matchAll(/(?:©|copyright|\(c\))\s*(?:\d{2,4}\s*[-–]?\s*\d{2,4}|\d{2,4})?\s*([A-Za-z0-9\u00C0-\u024F&.,\s'-]{2,80}?)(?=\s*(?:[|·•]|[-–—]\s+)|\s+(?:registered\b|all rights?|rights reserved|company reg|reg no)|\n|$)/gi);
       for (const m of cpMatches) {
         if (m && m[1]) {
           const cand = sanitizeCandidate(m[1]);
@@ -1315,7 +1400,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         const titleBrandName = titleParts
           .map(part => cleanBrandDescriptor(part))
           .find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part) && !isMarketingDescription(part)) ||
-          titleParts.map(part => cleanBrandDescriptor(part)).find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part) && !/^\d{4,}$/.test(part)) || "";
+          titleParts.map(part => cleanBrandDescriptor(part)).find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part) && !isMarketingDescription(part) && !isCatalogProductName(part) && !/^\d{4,}$/.test(part)) || "";
         if (titleBrandName && (!brandName || isCatalogProductName(brandName))) {
           brandName = titleBrandName;
         }
@@ -1518,6 +1603,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return "United Kingdom";
     }
 
+    // A UK postcode plus a formal registration statement identifies the
+    // sovereign country even when the postal address names only England.
+    const hasUkPostcode = /\b(?:GIR\s?0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i.test(addressText || "");
+    if (hasUkPostcode && /\bregistered\s+(?:in|within)\s+(?:the\s+)?(?:United Kingdom|UK)\b/i.test(fullText || "")) {
+      return "United Kingdom";
+    }
+
     // 1. Infer UK locality when the address does not name the sovereign country.
     for (const uk of UK_LOCALITIES) {
       if (uk.regex.test(combinedAddr)) {
@@ -1690,9 +1782,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       let address = String(value || "")
         .replace(/\u00a0/g, " ")
         .replace(/\s+(?:e-?mail\s*[:：]?\s*)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}.*$/i, "")
-        .replace(/\s+(?:tel(?:ephone)?|phone|mobile|fax)\s*[:：]?\s*.*$/i, "")
+        .replace(/\s*(?:toll[\s-]*free|tel(?:ephone)?|phone|mobile|cell|fax)\s*[:：]?\s*.*$/i, "")
         .replace(/\(?\+\d{1,3}\)?(?:[\s().-]*\d){7,}[\s\S]*$/i, "")
         .replace(/(?:[,;|]\s*|\s+)(?:\+?1[\s().-]*)?\(?\d{3}\)?[\s.-]+\d{3}[\s.-]+\d{4}\s*$/i, "");
+
+      // Repair two common missing delimiters in Canadian contact blocks.
+      address = address
+        .replace(/\b(Barnes\s+Court)\s*(Concord)\b/i, "$1, $2")
+        .replace(/\b(Ontario)\s*(Canada)\b/i, "$1, $2");
 
       const legalNotice = /©|\bcopyright\b|\ball rights reserved\b|\|\s*privacy(?:\s+policy)?\b|\bprivacy\s+policy\b|\|\s*terms(?:\s+of\s+use)?\b|\bterms\s+of\s+use\b/i.exec(address);
       const webMaterialNotice = /\bthis\s+web\s*site\s+contains\s+material\b|\bwe\s+provide\s+some\s+images\b|\bour\s+logotype\b|\byou\s+may\s+(?:not\s+)?(?:print|copy|mirror|modify|reproduce|rebroadcast)\b|\byou\s+may\s+print\s+off\s+copies\b/i.exec(address);
@@ -2141,7 +2238,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     });
 
     const stopLinePattern =
-      /^(?:tel(?:ephone)?|phone|mobile|cell|fax|email|e-mail|contact|call|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b|^(?:t|p|m|f|e)\s*[:：.\-–—]/i;
+      /^(?:toll[\s-]*free|tel(?:ephone)?|phone|mobile|cell|fax|email|e-mail|contact|call|copyright|follow us|social media|website|web|sales|support|customer service|business registration|cin|gstin|vat|tax id)\b|^(?:t|p|m|f|e)\s*[:：.\-–—]/i;
 
     const looksLikeAddressLine = line => {
       let s = String(line || "").trim();
@@ -2946,9 +3043,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return addressCue ? afterNotice.slice(addressCue.index).trim() : beforeNotice;
     };
 
-    let addr = clean(String(rawAddr));
-    const addressCountry = getAddressCountryContext(rawAddr, countryName) ||
-      detectCountry(null, rawAddr, rawAddr, "", "");
+    let addr = clean(String(rawAddr))
+      .replace(/\b(Barnes\s+Court)\s*(Concord)\b/i, "$1, $2")
+      .replace(/\b(Ontario)\s*(Canada)\b/i, "$1, $2");
+    const addressCountry = getAddressCountryContext(addr, countryName) ||
+      detectCountry(null, addr, addr, "", "");
 
     // 1. Remove brackets and normalize whitespace.
     addr = removeBrackets(addr);
@@ -3008,7 +3107,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 3. Remove contact details without removing the address before them.
     const contactStart =
-      /\b(?:tel(?:ephone)?|phone|mobile|cell|fax|email|e-mail|website|url|cin|gstin|gst|tax\s+id|vat|ein|abn|acn|copyright|all\s+rights\s+reserved|ph|t|p)\s*[:：\-–—]|\b(?:tel(?:ephone)?|phone|mobile|cell|fax)\s+[+(0-9]|\bcontact\b\s*$/i;
+      /\b(?:toll[\s-]*free|tel(?:ephone)?|phone|mobile|cell|fax|email|e-mail|website|url|cin|gstin|gst|tax\s+id|vat|ein|abn|acn|copyright|all\s+rights\s+reserved|ph|t|p)\s*[:：\-–—]|\b(?:tel(?:ephone)?|phone|mobile|cell|fax|toll[\s-]*free)\s+[+(0-9]|\bcontact\b\s*$/i;
 
     const contactMatch = contactStart.exec(addr);
     if (contactMatch && contactMatch.index >= 10) {
@@ -3163,6 +3262,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (typeof expandAddressAbbreviations === "function") {
       addr = expandAddressAbbreviations(addr, addressCountry);
     }
+    addr = addr.replace(/\bCo\.?\s+Durham\b/gi, "County Durham");
 
     // Separate a street address from a following P.O. Box when the source
     // omits the delimiter (for example, "One Lafrance Way Post Office Box 5002").
@@ -3398,6 +3498,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     addr = cleanNonLatin(addr);
     addr = addr.replace(/(?:,\s*){2,}/g, ", ").replace(/^[,;:|.\-–—\s]+|[,;:|.\-–—\s]+$/g, "").trim();
+
+    // Repeated DOM blocks or merged footer/contact candidates can duplicate
+    // locality and county segments. Keep the first copy of each segment.
+    const seenAddressSegments = new Set();
+    addr = addr.split(",").map(segment => segment.trim()).filter(segment => {
+      const key = segment.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+      if (!key || seenAddressSegments.has(key)) return false;
+      seenAddressSegments.add(key);
+      return true;
+    }).join(", ");
     return addr;
   }
 
@@ -3959,12 +4069,17 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // Dropdowns do not allow zero; use the minimum value when none are found.
     const clamp = n => n <= 1 ? "1" : n === 2 ? "2" : "3";
-    const descriptionCount = rawCount || (text.match(/\b(?:description|specification|features?)\b/gi) || []).length;
+    const descriptionCount = (text.match(/\b(?:description|specification|features?)\b/gi) || []).length;
+    // These portal fields describe the same product set. Product-card markup
+    // can expose only a wrapper while the actual products are represented by
+    // several images, so use the strongest of both signals. Description text
+    // remains a fallback only when neither structural signal is available.
+    const sharedCount = clamp(Math.max(rawCount, imgCount) || descriptionCount);
 
     return {
-      numberOfProduct: clamp(rawCount),
-      imageProduct: clamp(imgCount),
-      noOfProductDescription: clamp(descriptionCount)
+      numberOfProduct: sharedCount,
+      imageProduct: sharedCount,
+      noOfProductDescription: sharedCount
     };
   }
 
@@ -4299,7 +4414,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let { state, city } = detectStateAndCity([companyAddress, rawAddress].filter(Boolean).join(", "), countryName);
 
     // 7. Business Type (Rule 2)
-    const businessType = detectBusinessType(text);
+    const businessType = detectBusinessType(text, doc, url);
 
     // 8. Company Profile (Rule 3)
     const companyProfile = detectCompanyProfile(text, doc);
