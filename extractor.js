@@ -1792,6 +1792,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     try {
       const parsedUrl = new URL(pageUrl);
       pagePath = (parsedUrl.pathname || "") + (parsedUrl.search || "");
+      // Normalize the common Turkish "iletisim" contact route into the
+      // existing contact-page signal used for address trust and prioritization.
+      if (/(?:^|\/)iletisim(?:\.html?)?(?:\/|$|\?)/i.test(pagePath)) pagePath += "/contact";
       const host = parsedUrl.hostname.toLowerCase();
       domainCountry = COUNTRIES.find(country =>
         (country.tlds || []).some(tld => host.endsWith(tld))
@@ -1923,6 +1926,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         detectedLocation.state !== "N" ||
         detectedLocation.city !== "N" ||
         streetNumberMatch ||
+        /\b\d+[^\n]{0,40}\b(?:cad(?:de)?\.?|sok(?:ak)?\.?|bulvar[ıi]?\.?|mah(?:allesi)?\.?|no\.?)\b/i.test(cleaned) ||
         /\b(?:street|st\.?|road|rd\.?|lane|ln\.?|avenue|ave\.?|boulevard|blvd\.?|drive|dr\.?|court|ct\.?|place|pl\.?|square|sq\.?|highway|hwy\.?|parkway|pkwy\.?|terrace|ter\.?|circle|cir\.?|crescent|cres\.?|way|trail|trl\.?|route|rte\.?|expressway|freeway|district|zone|block|sector|plot|suite|ste\.?|floor|fl\.?|unit|building|bldg\.?|tower|house|apartment|apt\.?|flat|level|phase|county|\bco\.)\b/i.test(cleaned);
 
       // Navigation and product menus can inherit a city/country signal from
@@ -1978,7 +1982,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         Boolean(detectedCountry) ||
         detectedLocation.state !== "N" ||
         detectedLocation.city !== "N";
-      return locationSignal || streetNumberMatch;
+      const turkishStreetNumberMatch =
+        /\b\d+[^\n]{0,40}\b(?:cad(?:de)?\.?|sok(?:ak)?\.?|bulvar[ıi]?\.?|mah(?:allesi)?\.?|no\.?)\b/i.test(cleaned);
+      return locationSignal || streetNumberMatch || turkishStreetNumberMatch;
     };
 
     const addressShapeCache = new Map();
@@ -2289,9 +2295,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const hasNumber = /\d/.test(s);
       const hasStreetMarker = /\b(?:straße|strasse|p\.?\s*o\.?\s*box|post\s+office\s+box|street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|gu\b|si\b|do\b|ro\b|dong\b|gun\b|min\b|city\b|province\b|county\b)/i.test(s);
       const hasCommonUkStreetMarker = /\b\d+\s+.{1,45}\b(?:hill|close|mews|gardens?|grove|row|parade)\b/i.test(s);
+      const hasTurkishStreetMarker = /\b(?:cad(?:de)?\.?|sok(?:ak)?\.?|bulvar[ıi]?\.?|mah(?:allesi)?\.?|no\.?)\b/i.test(s);
       const commaSegments = s.split(",").map(p => p.trim()).filter(Boolean);
-      return (hasNumber && (commaSegments.length >= 2 || hasStreetMarker || hasCommonUkStreetMarker)) ||
-        (hasStreetMarker && commaSegments.length >= 2);
+      return (hasNumber && (commaSegments.length >= 2 || hasStreetMarker || hasCommonUkStreetMarker || hasTurkishStreetMarker)) ||
+        ((hasStreetMarker || hasTurkishStreetMarker) && commaSegments.length >= 2);
     };
 
     const officeMarkers = doc.querySelectorAll(
@@ -2454,7 +2461,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
             break;
           }
           if (!line || line.length > 120) break;
-          if (looksLikeAddressLine(line) || line.includes(",") || /\d/.test(line) ||
+          if (looksLikeAddressLine(line) || line.includes(",") || line.includes("/") || /\d/.test(line) ||
               /^[\p{L}\p{M}'’.-]+(?:\s+[\p{L}\p{M}'’.-]+){0,3}$/u.test(line)) {
             collected.push(line);
           } else {
@@ -3095,6 +3102,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .replace(/\u00a0/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+    // Turkish and some other postal formats separate town, province, and
+    // country with slashes; normalize those separators but keep numbers like 42/1.
+    addr = addr.replace(/\s+\/\s+/g, ", ");
     addr = cleanNonLatin(addr);
     // Remove a trailing US phone number accidentally joined to the address.
     // Phone extraction uses the page text separately, so it remains available.
@@ -4309,7 +4319,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
           const fullTarget = (resObj.pathname || "") + (resObj.search || "");
           let score = 0;
-          if (contactHrefRegex.test(fullTarget)) score += supplementalPageRegex.test(fullTarget) ? 8 : 50;
+          if (contactHrefRegex.test(fullTarget) || /(?:^|\/)iletisim(?:\.html?)?(?:[?#]|$)/i.test(fullTarget)) {
+            score += supplementalPageRegex.test(fullTarget) ? 8 : 50;
+          }
           if (contactTextRegex.test(text)) score += supplementalPageRegex.test(`${fullTarget} ${text}`) ? 4 : 40;
           if (/\b(?:contact-us|contactus|contact)\b/i.test(fullTarget)) score += 30;
           if (text === "contact us" || text === "contact") score += 30;
@@ -4336,7 +4348,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let score = 0;
     let path = "";
     try { path = new URL(url).pathname; } catch {}
-    if (/(?:contact|support|location|inquir|enquir|reach-us|get-in-touch|connect)/i.test(path)) score += 4;
+    if (/(?:contact|support|location|inquir|enquir|reach-us|get-in-touch|connect|iletisim)/i.test(path)) score += 4;
 
     const title = clean(doc?.title || "");
     const headings = doc

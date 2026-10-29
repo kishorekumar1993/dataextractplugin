@@ -656,6 +656,97 @@ async function crawlInTab(targetUrl, timeoutMs = 15000) {
       }
     }
 
+    // Use the company's linked public Facebook page only as a fallback for
+    // contact fields the website and its contact page did not provide.
+    const missingFacebookValue = value =>
+      !String(value || "").trim() ||
+      /^(?:not available|n\/a|none|null|unknown|available|-)$/i.test(String(value).trim());
+    const missingFacebookDetails = () =>
+      missingFacebookValue(mainData.companyAddress) ||
+      missingFacebookValue(mainData.emailId) ||
+      missingFacebookValue(mainData.phoneNumber);
+    const facebookUrl = mainData.social?.facebook;
+    if (facebookUrl && missingFacebookDetails() && Date.now() < crawlDeadline - 500) {
+      let controller;
+      let facebookTimer;
+      try {
+        const profileUrl = new URL(facebookUrl, rootPageUrl);
+        if (/^(?:www\.|m\.)?facebook\.com$/i.test(profileUrl.hostname)) {
+          profileUrl.protocol = "https:";
+          profileUrl.hash = "";
+          controller = new AbortController();
+          const timeout = Math.max(250, Math.min(1600, crawlDeadline - Date.now() - 250));
+          facebookTimer = setTimeout(() => controller.abort(), timeout);
+          const response = await fetch(profileUrl.href, {
+            credentials: "omit",
+            redirect: "follow",
+            headers: { "Accept-Language": "en-US,en;q=0.9" },
+            signal: controller.signal
+          });
+          let finalHost = "";
+          try { finalHost = new URL(response.url || profileUrl.href).hostname; } catch {}
+          if (response.ok && /(?:^|\.)facebook\.com$/i.test(finalHost) &&
+              /text\/html/i.test(response.headers.get("content-type") || "")) {
+            const facebookHtml = (await response.text()).slice(0, 3000000);
+            clearTimeout(facebookTimer);
+            if (facebookHtml.length >= 200 && Date.now() < crawlDeadline) {
+              const [{ result: facebookData }] = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: (markup, sourceUrl) => {
+                  if (typeof Extractor === "undefined") return null;
+                  const doc = new DOMParser().parseFromString(markup, "text/html");
+                  const bodyText = Extractor.getElementText(doc.body || doc.documentElement);
+                  const metadataText = [...doc.querySelectorAll('meta[name="description"], meta[property="og:description"]')]
+                    .map(meta => meta.getAttribute("content") || "")
+                    .filter(Boolean)
+                    .join("\n");
+                  const text = [bodyText, metadataText].filter(Boolean).join("\n");
+                  return Extractor.extractFromDocument(doc, text, sourceUrl);
+                },
+                args: [facebookHtml, response.url || profileUrl.href]
+              });
+
+              const isDummyFacebookPhone = value =>
+                !value || /^(?:0123456789|1234567890|12345678910|2345678910|123456789|12345678|1234567|9876543210|987654321|(\d)\1{6,})$/.test(String(value).replace(/\D/g, ""));
+              if (facebookData && !facebookData.error) {
+                if (missingFacebookValue(mainData.companyAddress) && facebookData.companyAddress &&
+                    facebookData.companyAddress.length >= 10 &&
+                    facebookData.companyAddress.split(",").length >= 2) {
+                  mainData.companyAddress = facebookData.companyAddress;
+                  mainData.addressSource = "facebook-" + (facebookData.addressSource || "public-page");
+                  if (missingFacebookValue(mainData.countryName) && facebookData.countryName) mainData.countryName = facebookData.countryName;
+                  const location = Extractor.detectStateAndCity(facebookData.companyAddress, mainData.countryName || "");
+                  if (!["Available", "Y"].includes(mainData.state) && ["Available", "Y"].includes(location.state)) mainData.state = "Available";
+                  if (!["Available", "Y"].includes(mainData.city) && ["Available", "Y"].includes(location.city)) mainData.city = "Available";
+                }
+                if (missingFacebookValue(mainData.phoneNumber) && !isDummyFacebookPhone(facebookData.phoneNumber)) {
+                  mainData.phoneNumber = facebookData.phoneNumber;
+                }
+                const fbEmails = [
+                  ...(facebookData.emailCandidates || []),
+                  facebookData.emailId,
+                  facebookData.secondaryEmailId
+                ].map(item => typeof item === "string" ? item : item?.email)
+                  .filter(Boolean);
+                allEmailCandidates.push(...fbEmails.map(email => ({
+                  email,
+                  sourcePage: profileUrl.href,
+                  pageRole: "contact",
+                  evidence: ["facebook-public-page"]
+                })));
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // Facebook can require authentication or block automated requests.
+        // Preserve website data and continue if its public profile is unavailable.
+        console.debug("Public Facebook contact fallback unavailable:", error);
+      } finally {
+        if (facebookTimer) clearTimeout(facebookTimer);
+      }
+    }
+
     const rankedEmails = rankEmailCandidates(allEmailCandidates, tab.url || normUrl);
     mainData.emailCandidates = rankedEmails;
     mainData.emailId = rankedEmails[0]?.email || "";
