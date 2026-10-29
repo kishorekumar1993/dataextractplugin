@@ -389,16 +389,46 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
             data = extract();
           }
           return data;
-        } catch {
-          return null;
+        } catch (error) {
+          return { error: String(error?.message || error || "Unknown extraction error") };
         }
       },
       args: [normUrl]
     });
-    const mainData = mergeFrameExtractionResults(frameResults);
+    let mainData = mergeFrameExtractionResults(frameResults);
 
     if (!mainData) {
-      throw new Error("Could not extract details from rendered page.");
+      // All-frame injection can yield no usable result on sites with unusual
+      // frame setups. Retry the top document directly so a broken/empty child
+      // frame cannot prevent extraction from the actual page.
+      try {
+        const [{ result: topResult }] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: pageUrl => {
+            if (typeof Extractor === "undefined") {
+              return { error: "Extractor engine was not available in the page." };
+            }
+            try {
+              const text = document.body?.innerText || Extractor.getElementText(document.body || document.documentElement);
+              return Extractor.extractFromDocument(document, text, window.location.href || pageUrl);
+            } catch (error) {
+              return { error: String(error?.message || error || "Unknown extraction error") };
+            }
+          },
+          args: [tab.url || normUrl]
+        });
+        if (topResult && !topResult.error) mainData = topResult;
+        else if (topResult?.error) console.warn("Top document extraction failed:", topResult.error);
+      } catch (error) {
+        console.warn("Top document extraction could not run:", error);
+      }
+    }
+
+    if (!mainData) {
+      const frameError = frameResults?.map(item => item?.result?.error).find(Boolean);
+      throw new Error(frameError
+        ? `Could not extract details from rendered page: ${frameError}`
+        : "Could not extract details from rendered page. The page returned no usable frame content.");
     }
     const rootPageUrl = tab.url || normUrl;
     const allEmailCandidates = annotateEmailCandidates(mainData, rootPageUrl, emailPageRoleForUrl(rootPageUrl));

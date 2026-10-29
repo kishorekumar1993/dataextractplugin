@@ -486,6 +486,27 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return textParts.join("").replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n").trim();
   }
 
+  // Remove non-Latin scripts (Hangul, Hanzi/Kanji, Kana, Cyrillic, Arabic, Thai, Devanagari, Hebrew, Greek)
+  // Ensures all extracted company names and addresses are strictly English/Latin characters.
+  function cleanNonLatin(str, isCompanyName = false) {
+    if (!str || typeof str !== "string") return "";
+    let s = str;
+
+    // 1. Remove non-Latin parentheticals completely (e.g. "(주식회사 레존텍)", "(上海市...)")
+    s = s.replace(/[\(\[（【]\s*[^)\]）】]*[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3040-\u309f\u30a0-\u30ff\u0400-\u04ff\u0600-\u06ff\u0e00-\u0e7f\u0900-\u097f\u0590-\u05ff\u0370-\u03ff][^)\]）】]*[\)\]）】]/g, " ");
+
+    // 2. Strip standalone non-Latin characters
+    s = s.replace(/[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3040-\u309f\u30a0-\u30ff\u0400-\u04ff\u0600-\u06ff\u0e00-\u0e7f\u0900-\u097f\u0590-\u05ff\u0370-\u03ff]+/g, " ");
+
+    // 3. Clean up commas, dashes, and whitespace
+    s = s.replace(/,\s*,+/g, ", ")
+         .replace(/\s+/g, " ")
+         .replace(/^[,;:\-.\s]+|[,;:\-.\s]+$/g, "")
+         .trim();
+
+    return s;
+  }
+
   // 5.3 International Legal Suffix Reference
   // Resolve jurisdiction-sensitive abbreviations only when country context is available.
   function expandLegalSuffixes(name, countryName = "") {
@@ -515,10 +536,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     );
     if (countryRules) {
       for (const [rx, rep] of countryRules.rules) {
-        const titleCasedRep = rep.replace(/\p{L}+/gu, word =>
-          word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase()
-        );
-        s = s.replace(rx, titleCasedRep);
+        s = s.replace(rx, rep);
       }
     }
 
@@ -688,9 +706,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       [/\bk\.?k\.?(?=\s*$|[,.])/gi, "Kabushiki Kaisha"],
       [/\bgk\b(?=\s*$|[,.])/gi, "Gōdō Kaisha"],
       [/\byk\b(?=\s*$|[,.])/gi, "Yūgen Kaisha"],
-      [/주식회사/g, "Jusik Hoesa"],
-      [/유한회사/g, "Yuhan Hoesa"],
-      [/유한책임회사/g, "Yuhanchaegim Hoesa"],
+      
 
       // --- I. Southeast Asia, J. Australia / Africa ---
       [/\bbhd\.?(?=[,.\s]|$)/gi, "Berhad"],
@@ -714,10 +730,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     s = s.replace(/\bgmbh\s*\+\s*(co\.?\s*k\.?g\.?)/gi, "GmbH & $1");
 
     for (const [rx, rep] of EXPANSIONS) {
-      const titleCasedRep = rep.replace(/\p{L}+/gu, word =>
-        word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase()
-      );
-      s = s.replace(rx, titleCasedRep);
+      s = s.replace(rx, rep);
     }
 
     return s;
@@ -767,11 +780,25 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     name = name.replace(/\bcopyright\b/gi, "");
     name = name.replace(/^(?:copyright|©|\(c\))\s*(?:[0-9]{4})?\s*/gi, "");
 
-    // 2. Expand Korean entity designations before stripping brackets
-    name = name.replace(/[\(\[（]\s*주\s*[\)\]）]|㈜/g, "Jusik Hoesa ");
-    name = name.replace(/주식회사/g, "Jusik Hoesa ");
-    name = name.replace(/유한회사/g, "Yuhan Hoesa ");
-    name = name.replace(/유한책임회사/g, "Yuhanchaegim Hoesa ");
+    // 2. Handle Korean entity designations: strict English only, NO transliteration ("Jusik Hoesa")
+    const hasKoreanEntity = /[\(\[（]\s*주\s*[\)\]）]|㈜|주식회사|유한회사|유한책임회사/.test(name);
+    name = name.replace(/[\(\[（]\s*주\s*[\)\]）]|㈜/g, " ");
+    name = name.replace(/주식회사|유한회사|유한책임회사/g, " ");
+
+    // If English/Latin text is present, clean out non-Latin characters so the name is English only
+    const hasLatinLetters = /[a-zA-Z]{2,}/.test(name);
+    if (hasLatinLetters) {
+      name = cleanNonLatin(name, true);
+      const corpSuffixShort = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|gmbh|ag)\b/i;
+      if (hasKoreanEntity && !corpSuffixShort.test(name)) {
+        name = `${name} Co., Ltd.`;
+      }
+    } else {
+      // Purely non-Latin input without Latin letters
+      if (hasKoreanEntity && !name.trim()) {
+        name = "Company Limited";
+      }
+    }
 
     // 3. Remove brackets while keeping inner text (e.g. (Korea) -> Korea, (UK) -> UK)
     name = removeBrackets(name);
@@ -788,7 +815,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         return allCapsWordWithPunctuation[1].charAt(0) + allCapsWordWithPunctuation[1].slice(1).toLowerCase() + allCapsWordWithPunctuation[2];
       }
       if (/[a-z]/.test(w) && /[A-Z]/.test(w.slice(1))) return w;
-      if (/^[a-zA-Z가-힣]+$/.test(w)) {
+      if (/^[a-zA-Z]+$/.test(w)) {
         return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
       }
       return w;
@@ -1166,8 +1193,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
                 break;
               }
               const n = sanitizeCandidate(x.name || "");
-              if (n && hasCorpSuffix(n) && !legalName && !metadataLegalName) {
-                metadataLegalName = n;
+              if (n && hasCorpSuffix(n) && !legalName) {
+                legalName = n;
+                break;
               } else if (n && !brandName) {
                 brandName = n;
               }
@@ -1271,13 +1299,17 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         legalName = sanitizeCandidate(corpPart);
       } else {
         const genericTitlePart = /^(?:home(?:page)?|welcome|contact(?:\s+us)?|about(?:\s+us)?|privacy(?:\s+policy)?|terms(?:\s+(?:and|&)\s+conditions)?|products?|services?|shop|store|furniture|blog|news|login|search|career(?:s)?|jobs?|vacancies|employer)(?:\s+page)?$/i;
-        const titleBrandName = [...titleParts].reverse()
+        const isMarketingDescription = str => {
+          if (!str) return false;
+          const s = str.trim();
+          if (s.split(/\s+/).length > 6) return true;
+          return /\b(?:leading|world leader|specializing in|professional|trusted|quality|manufacturer of|supplier of|solutions for|distributor of|tools manufacturer|flame detectors|fasteners|precision|machining|automation|since \d{4}|from [A-Za-z]+|official (?:website|site)|home|welcome|contact|about|products|services|store)\b/i.test(s);
+        };
+        const titleBrandName = titleParts
           .map(part => cleanBrandDescriptor(part))
-          .find(part => part.length >= 2 && part.length <= 80 && !genericTitlePart.test(part)) || "";
-        // A descriptive site title can disambiguate short acronym labels
-        // emitted by Organization metadata without replacing established names.
-        const currentIsAcronym = /^[A-Z0-9]{2,5}$/.test(String(brandName || "").trim());
-        if (titleBrandName && (!brandName || currentIsAcronym)) {
+          .find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part) && !isMarketingDescription(part)) ||
+          titleParts.map(part => cleanBrandDescriptor(part)).find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part)) || "";
+        if (titleBrandName && !brandName) {
           brandName = titleBrandName;
         }
       }
@@ -1662,12 +1694,17 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       /^(?:tel(?:ephone)?|phone|mobile|fax|email|e-mail|website|url)\s*[:：.-]/i
         .test(address);
 
+    const isCertificationNoise = address =>
+      /\b(?:approved\s+installer|certification|garagedoorsystems|dhfonline)\b/i.test(address) &&
+      !/\b(?:street|road|avenue|lane|drive|way|house|building|floor)\b/i.test(address);
+
     const isNoise = address =>
       !address ||
       address.length < 10 ||
       address.length > 350 ||
       /@|https?:\/\/|www\.|all rights reserved/i.test(address) ||
-      isContactOnly(address);
+      isContactOnly(address) ||
+      isCertificationNoise(address);
 
     const hasPostalCode = (address, hasStreetMarker = false) => {
       const numericPostalPattern = /(?:^|[,;\s])(\d{4,6}(?:-\d{4})?)(?=$|[,;\s])/g;
@@ -2384,6 +2421,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (segments.length < 2) score -= 20;
       if (address.length < 20) score -= 10;
 
+      // Latin script preference: prioritize English/Latin characters over foreign scripts
+      const hasLatin = /[a-zA-Z]/.test(address);
+      const nonLatinMatches = address.match(/[\uac00-\ud7a3\u4e00-\u9fff\u3040-\u30ff\u0400-\u04ff\u0600-\u06ff\u0e00-\u0e7f]/g) || [];
+      if (hasLatin && nonLatinMatches.length === 0) {
+        score += 40;
+      } else if (nonLatinMatches.length > 0) {
+        score -= nonLatinMatches.length * 5;
+      }
+
       return { ...candidate, score };
     });
 
@@ -2619,7 +2665,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/\bEPZ\b/gi, "Export Processing Zone");
     addr = addr.replace(/\bGIDC\b/gi, "Gujarat Industrial Development Corporation");
     addr = addr.replace(/\bMIDC\b/gi, "Maharashtra Industrial Development Corporation");
-    addr = addr.replace(/\bRIICO\b/gi, "Rajasthan State Industrial Development and Investment Corporation");
+    addr = addr.replace(/\bRIICO\b/gi, "Rajasthan State Industrial Development And Investment Corporation");
     addr = addr.replace(/\bUPSIDC\b/gi, "Uttar Pradesh State Industrial Development Corporation");
 
     // 2. Common Indian & International Address Terms (Sections 7.8 & 7.9)
@@ -2764,7 +2810,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(/\bFwy\b\.?/gi, "Freeway");
     addr = addr.replace(/\b(?:Tpke|Tpk)\b\.?/gi, "Turnpike");
     addr = addr.replace(/\bByp\b\.?/gi, "Bypass");
-    addr = addr.replace(/\bAly\b\.?/gi, "Alleyway");
+    addr = addr.replace(/\bPath\b\.?/gi, "Pathway");
+    addr = addr.replace(/\b(?:Aly|Alley)\b\.?/gi, "Alleyway");
+    addr = addr.replace(/\bWalk\b\.?/gi, "Walkway");
     addr = addr.replace(/\bWy\b\.?/gi, "Way");
     addr = addr.replace(/\bOpp\b\.?/gi, "Opposite");
 
@@ -2877,6 +2925,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       .replace(/\u00a0/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+    addr = cleanNonLatin(addr);
     // Remove a trailing US phone number accidentally joined to the address.
     // Phone extraction uses the page text separately, so it remains available.
     addr = addr.replace(/(?:[,;|]\s*|\s+)(?:\+?1[\s().-]*)?\(?\d{3}\)?[\s.-]+\d{3}[\s.-]+\d{4}\s*$/i, "").trim();
@@ -3155,15 +3204,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
     addr = addr.replace(/(?:,\s*){2,}/g, ", ").replace(/\s+,/g, ",");
     if (countryInfo?.iso === "CA") addr = addr.replace(/\b[A-Z]\d[A-Z]\s*\d[A-Z]\d\b/gi, " ");
-    if (countryInfo?.iso === "GB" || /^(?:england|scotland|wales|northern ireland|great britain|uk)$/.test(postalCountry)) {
-      addr = addr.replace(/\b(?:GIR\s?0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/gi, " ");
-    }
+    
     if (countryInfo?.iso) {
       addr = addr.replace(new RegExp(`(?:,\\s*|\\s+)${escapeRegExp(countryInfo.iso)}\\s*$`, "i"), " ");
     }
-    if (/^(?:united kingdom|england|scotland|wales|northern ireland|uk|great britain)$/.test(postalCountry)) {
-      addr = addr.replace(/\b(?:GIR\s?0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/gi, " ");
-    }
+    
     if (addressCountry === "Italy" || String(countryName || "").toLowerCase() === "italy") {
       // Italian CAP codes are five digits and may be separated by an en dash
       // instead of a comma (for example: "15 – 27100 Pavia –").
@@ -3287,6 +3332,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       addr = addr.replace(trailingCountryPattern, "").trim();
     }
 
+    addr = cleanNonLatin(addr);
+    addr = addr.replace(/(?:,\s*){2,}/g, ", ").replace(/^[,;:|.\-–—\s]+|[,;:|.\-–—\s]+$/g, "").trim();
     return addr;
   }
 
@@ -3874,24 +3921,126 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return social;
   }
 
-  // Find English or subpage URLs
-  function findEnglishSubpage(doc, baseUrl) {
-    if (!doc) return null;
+  // Find all English subpage URLs dynamically, ranked by relevance
+  function findEnglishSubpages(doc, baseUrl) {
+    if (!doc || !baseUrl) return [];
+    const found = [];
+    const seen = new Set();
     try {
       const base = new URL(baseUrl);
-      for (const a of doc.querySelectorAll("a[href]")) {
-        const href = a.getAttribute("href") || "";
-        const text = clean(a.innerText || a.textContent || "").toLowerCase();
+      const baseHost = base.hostname.replace(/^www\./i, "").toLowerCase();
+
+      const addCandidate = (rawUrl) => {
         try {
-          const resolved = new URL(href, baseUrl).href;
-          if (new URL(resolved).hostname !== base.hostname) continue;
-          if (href === "/en" || href.startsWith("/en/") || /\b(english|eng|en)\b/i.test(text)) {
-            return resolved;
+          if (!rawUrl) return;
+          const resolved = new URL(rawUrl, baseUrl);
+          resolved.hash = "";
+          const resolvedHost = resolved.hostname.replace(/^www\./i, "").toLowerCase();
+          const isSameDomain = resolvedHost === baseHost ||
+            resolvedHost === `en.${baseHost}` ||
+            resolvedHost === `eng.${baseHost}` ||
+            resolvedHost === `english.${baseHost}` ||
+            baseHost.endsWith(`.${resolvedHost}`) ||
+            resolvedHost.endsWith(`.${baseHost}`);
+
+          if (!isSameDomain) return;
+          if (!["http:", "https:"].includes(resolved.protocol)) return;
+
+          const normHref = resolved.href.replace(/\/+$/, "");
+          const normBase = baseUrl.replace(/\/+$/, "");
+          if (normHref === normBase) return;
+
+          if (!seen.has(normHref)) {
+            seen.add(normHref);
+            found.push(resolved.href);
           }
-        } catch { }
+        } catch {}
+      };
+
+      // 1. Check <link rel="alternate" hreflang="...">
+      for (const link of doc.querySelectorAll('link[rel="alternate"][hreflang]')) {
+        const hreflang = (link.getAttribute("hreflang") || "").trim().toLowerCase();
+        if (/^(?:en|en-[a-z]{2}|x-default)$/i.test(hreflang)) {
+          addCandidate(link.getAttribute("href"));
+        }
       }
-    } catch { }
-    return null;
+
+      // 2. Check <a> links with English text, title, aria-label, or href
+      const enTextRegex = /^(?:english|eng|en)$/i;
+      const enHrefRegex = /(?:^|\/)(?:en|eng|english|en-us|en-gb)(?:\/|$|\?)/i;
+
+      for (const a of doc.querySelectorAll("a[href]")) {
+        const href = (a.getAttribute("href") || "").trim();
+        if (!href || href.startsWith("#") || /^javascript:/i.test(href) || /^mailto:/i.test(href) || /^tel:/i.test(href)) {
+          continue;
+        }
+
+        const text = clean(a.innerText || a.textContent || "").trim();
+        const title = (a.getAttribute("title") || "").trim();
+        const aria = (a.getAttribute("aria-label") || "").trim();
+        const dataLang = (a.getAttribute("data-lang") || a.getAttribute("data-language") || "").trim();
+        const className = (a.className || "").toString();
+
+        if (enTextRegex.test(text) || enTextRegex.test(title) || enTextRegex.test(aria) || /^en(?:-[a-z]{2})?$/i.test(dataLang)) {
+          addCandidate(href);
+          continue;
+        }
+
+        const img = a.querySelector("img");
+        if (img) {
+          const alt = (img.getAttribute("alt") || "").trim();
+          const imgTitle = (img.getAttribute("title") || "").trim();
+          const src = (img.getAttribute("src") || "").trim();
+          if (enTextRegex.test(alt) || enTextRegex.test(imgTitle) || /(?:flags?\/en|languages?\/en|\/en\.png|\/en\.jpg)/i.test(src)) {
+            addCandidate(href);
+            continue;
+          }
+        }
+
+        try {
+          const parsed = new URL(href, baseUrl);
+          if (parsed.hostname.toLowerCase().startsWith("en.") || parsed.hostname.toLowerCase().startsWith("eng.")) {
+            addCandidate(href);
+            continue;
+          }
+          if (enHrefRegex.test(parsed.pathname)) {
+            addCandidate(href);
+            continue;
+          }
+        } catch {}
+
+        if (/\b(?:lang[-_]?en|btn[-_]?en|en[-_]?version)\b/i.test(className)) {
+          addCandidate(href);
+        }
+      }
+
+      // 3. Check <select> or <option> language switchers
+      for (const opt of doc.querySelectorAll("option[value]")) {
+        const val = (opt.getAttribute("value") || "").trim();
+        const text = clean(opt.innerText || opt.textContent || "").trim();
+        if (enTextRegex.test(text) || /^en(?:-[a-z]{2})?$/i.test(val) || enHrefRegex.test(val)) {
+          if (/^https?:\/\//i.test(val) || val.startsWith("/")) {
+            addCandidate(val);
+          }
+        }
+      }
+
+      // 4. Check path transformations (e.g. /zh-tw/ or /tw/ or /de/ or /es/ -> /en/)
+      const currentPath = base.pathname;
+      const langPrefixRegex = /^\/([a-z]{2}(?:-[a-z]{2})?)(?:\/|$)/i;
+      const match = currentPath.match(langPrefixRegex);
+      if (match && !/^en/i.test(match[1])) {
+        const enPath = currentPath.replace(langPrefixRegex, "/en/");
+        addCandidate(new URL(enPath, baseUrl).href);
+      }
+    } catch {}
+
+    return found;
+  }
+
+  function findEnglishSubpage(doc, baseUrl) {
+    const urls = findEnglishSubpages(doc, baseUrl);
+    return urls[0] || null;
   }
 
   // Find all Contact Us subpage URLs dynamically, ranked by relevance
@@ -4135,7 +4284,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const social = extractSocialMedia(doc, text);
 
     // 13. Subpage (English & Contact)
-    const enUrl = findEnglishSubpage(doc, url);
+    const enUrls = findEnglishSubpages(doc, url);
+    const enUrl = enUrls[0] || null;
     const contactUrls = findContactSubpages(doc, url);
     const contactUrl = contactUrls[0] || null;
     const contactPageScore = scoreContactPage(doc, url);
@@ -4174,6 +4324,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       urlRules,
       social,
       enUrl,
+      enUrls,
       contactUrl,
       contactUrls
     };
@@ -4208,7 +4359,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     mergeContactEmails,
     extractPhoneNumber,
     findRawAddress,
+    findEnglishSubpages,
     findEnglishSubpage,
+    cleanNonLatin,
     findContactSubpages,
     findContactSubpage,
     CITY_STATE_COUNTRY_MAP,
