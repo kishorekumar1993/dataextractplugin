@@ -742,11 +742,6 @@
       sendResponse({ url: detected });
       return true;
     }
-    if (request.action === "FILL_PORTAL_FROM_POPUP") {
-      const res = fillAllPortalFields(request.data);
-      sendResponse(res);
-      return true;
-    }
   });
 
 })();

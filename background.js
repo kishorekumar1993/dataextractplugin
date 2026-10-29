@@ -4,6 +4,10 @@
  * are executed reliably inside real tab contexts without service-worker limitations.
  */
 
+// The Manifest v3 worker is classic, so the shared extractor must be loaded
+// into the service-worker context as well as into page tabs.
+importScripts("extractor.js");
+
 // Helper to normalize URL
 function normalizeUrl(raw) {
   try {
@@ -34,9 +38,8 @@ function annotateEmailCandidates(data, sourcePage, fallbackRole = "other") {
   const raw = Array.isArray(data?.emailCandidates) && data.emailCandidates.length
     ? data.emailCandidates
     : [data?.emailId, data?.secondaryEmailId].filter(Boolean).map(email => ({ email }));
-  const pageRole = fallbackRole === "contact" || data?.emailPageRole === "contact" || data?.contactPageScore >= 4
-    ? "contact"
-    : fallbackRole === "homepage" || data?.emailPageRole === "homepage" ? "homepage" : "other";
+  const detectedRole = data?.contactPageScore >= 4 ? "contact" : data?.emailPageRole;
+  const pageRole = fallbackRole === "contact" || detectedRole === "contact" ? "contact" : detectedRole || fallbackRole;
   return raw.map(candidate => typeof candidate === "string" ? { email: candidate } : candidate)
     .filter(candidate => candidate?.email)
     .map(candidate => ({
@@ -46,6 +49,13 @@ function annotateEmailCandidates(data, sourcePage, fallbackRole = "other") {
       pageRole: pageRole || fallbackRole,
       evidence: Array.isArray(candidate.evidence) ? candidate.evidence : []
     }));
+}
+
+function emailPageRoleForUrl(pageUrl) {
+  try {
+    const path = new URL(pageUrl).pathname;
+    return path === "/" || path === "" ? "homepage" : "other";
+  } catch { return "other"; }
 }
 
 function rankEmailCandidates(candidates, rootUrl) {
@@ -390,7 +400,8 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
     if (!mainData) {
       throw new Error("Could not extract details from rendered page.");
     }
-    const allEmailCandidates = annotateEmailCandidates(mainData, tab.url || normUrl, "homepage");
+    const rootPageUrl = tab.url || normUrl;
+    const allEmailCandidates = annotateEmailCandidates(mainData, rootPageUrl, emailPageRoleForUrl(rootPageUrl));
 
     // 5. English Subpage Crawling (for international companies with /en)
     let enCandidates = [];

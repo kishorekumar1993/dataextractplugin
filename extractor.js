@@ -43,7 +43,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       name: "Food",
       regex: /\b(food|foods|restaurant|bakery|catering|snacks?|confectionery|edible|beverages?|drinks?|groceries|fruit|vegetables?|meat|seafood|dairy|tea|coffee|foodstuff)\b/i,
       isExempt: (matchText, snippet) => {
-        return /\b(?:food[- ]grade|food[- ]safe|food[- ]contact|food[- ]approved|food[- ]machinery|food[- ]processing[- ]machinery|food[- ]packaging[- ]machinery)\b/i.test(snippet);
+        return /\b(?:food[- ]grade|food[- ]safe|food[- ]contact|food[- ]approved|food[- ]machin(?:e|ery|es)|food[- ](?:processing|packaging|handling)[- ]machin(?:e|ery|es))\b/i.test(snippet);
       }
     },
     {
@@ -383,6 +383,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     { name: "Greece", iso: "GR", aliases: ["greece", "hellas", "hellenic republic", "ellada", "ελλάδα"], tlds: [".gr"], dialCode: "30" }
   ];
 
+  const ADDRESS_COUNTRY_TERMS = [...new Set(COUNTRIES.flatMap(country => [country.name, ...(country.aliases || [])])
+    .filter(term => term && term.trim().length >= 2).map(term => term.trim()))]
+    .sort((a, b) => b.length - a.length);
+  const ADDRESS_COUNTRY_PATTERN = ADDRESS_COUNTRY_TERMS
+    .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const ADDRESS_COUNTRY_MARKER = new RegExp("\\b(?:" + ADDRESS_COUNTRY_PATTERN + ")\\b(?=[.,;])", "i");
+  const ADDRESS_COUNTRY_AT_END = new RegExp("(?:,\\s*|\\s+)\\b(?:" + ADDRESS_COUNTRY_PATTERN + ")\\b(?:\\s+\\d{4,10})?\\s*[.,;]*$", "i");
+  const ADDRESS_COUNTRY_TERM_SET = new Set(ADDRESS_COUNTRY_TERMS.map(term => term.toLowerCase()));
+
   // Global City/State to Country Mapping
   const CITY_STATE_COUNTRY_MAP = [
     { country: "United Arab Emirates", regex: /\b(?:abu dhabi|ajman|al ain|dubai|fujairah|jebel ali|kalba|khor fakkan|ras al khaimah|sharjah|umm al quwain|dibba al-fujairah)\b/i },
@@ -514,6 +523,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     }
 
     const EXPANSIONS = [
+      // Compound GmbH & Co. suffixes must match before the shorter GmbH & Co. form.
       // --- D. Germany, Austria, and Switzerland (compounds first) ---
       [/\b(?:gmbh\s*(?:&|and)\s*co\.?\s*kgaa)\b/gi, "Gesellschaft mit beschränkter Haftung & Company Kommanditgesellschaft auf Aktien"],
       [/\b(?:gmbh\s*(?:&|and)\s*co\.?\s*kg)\b/gi, "Gesellschaft mit beschränkter Haftung & Company Kommanditgesellschaft"],
@@ -931,7 +941,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         "a[href*='cart' i], a[href*='basket' i], [aria-label*='cart' i], [title*='cart' i], [data-testid*='cart' i]"
       ));
       if (!hasCart) {
-        hasCart = [...doc.querySelectorAll("a, button, [role='button'], [aria-label], [title]")].some(el =>
+        const navigation = doc.querySelector("header, nav, [role='navigation']");
+        hasCart = [...(navigation?.querySelectorAll("a, button, [role='button']") || [])].slice(0, 100).some(el =>
           cartPattern.test([el.textContent, el.getAttribute?.("aria-label"), el.getAttribute?.("title")].filter(Boolean).join(" "))
         );
       }
@@ -1048,13 +1059,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let legalName = "";
     let brandName = "";
     const finishName = value => formatName ? formatCompanyName(value, countryName) : value;
-
-    // This domain's public copyright mark uses "Design-IQ Ltd", while the
-    // registered legal name is DESIGN I.Q. LIMITED (Companies House no. 03781181).
-    try {
-      const host = new URL(url || "").hostname.replace(/^www\./i, "").toLowerCase();
-      if (host === "design-iq-ltd.com") return finishName("Design I.Q. Limited");
-    } catch {}
 
     // Comprehensive corporate suffix pattern (Section 5.3 International Legal Suffixes)
     const corpSuffix = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|s\.?r\.?l\.?|s\.?n\.?c\.?|spa|kft|zrt|nyrt|s\.r\.o\.|a\.s\.|d\.o\.o\.|pvt\.?\s*ltd\.?|private\s+limited|pte\.?\s*ltd\.?|pty\.?\s*ltd\.?|proprietary\s+limited|sdn\.?\s*bhd\.?|berhad|bhd\.?|tbk\.?|wll|pjsc|fze|fzco|fz-llc|l3c|p\.?c\.?|p\.?a\.?|l\.?l\.?l\.?p\.?|l\.?p\.?a\.?|bcorp|clg|ulc|dac|scio|bencom|lp|section\s*8\s+company|producer\s+company|nidhi\s+(?:limited|company)|s\.?e\.?n\.?c\.?|s\.?e\.?c\.?|incorporated\s+association|npc|wfoe|wofe|fie|g\.?k\.?|y\.?k\.?|p\.?t\.?|perum|persero|s\.?c\.?l\.?|s\.?c\.?|psc|prjsc|g\.?t\.?\s*ltd)\b/i;
@@ -1527,23 +1531,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
-    // 6. Match domain TLD (e.g. .co.kr -> South Korea, .de -> Germany, .jp -> Japan, .co.uk -> England)
-    try {
-      const host = new URL(url).hostname.toLowerCase();
-      if (host.endsWith(".uk") || host.endsWith(".co.uk")) {
-        for (const uk of UK_LOCALITIES) {
-          if (uk.regex.test(combinedFull)) return uk.name;
-        }
-        return "England";
-      }
-      for (const c of COUNTRIES) {
-        for (const tld of c.tlds) {
-          if (host.endsWith(tld)) return c.name;
-        }
-      }
-    } catch { }
-
-    // 7. Match Phone Number Dial Code (e.g. +82 -> South Korea, +49 -> Germany, +91 -> India, +44 -> England, 66(0) -> Thailand)
+    // 6. Match Phone Number Dial Code (e.g. +82 -> South Korea, +49 -> Germany, +91 -> India, +44 -> England, 66(0) -> Thailand)
     const phoneToTest = `${phoneRaw || ""} ${fullText || ""}`;
     const dialCodeMatches = phoneToTest.match(/(?:\b(?:Tel(?:ephone)?|Phone|Mob(?:ile)?|Cell|Fax)\b[:：.-]?|\b[TPMF][:：.-])\s*(?:\+([0-9]{1,4})|([0-9]{2,4})\s*(?:\(0\)|0))/gi) || [];
     for (const d of dialCodeMatches) {
@@ -1671,7 +1659,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(address);
     };
 
-    const isAddressShaped = address => {
+    const computeAddressShape = address => {
       if (!address || typeof address !== "string" || address.length < 10) return false;
 
       // 1. Reject if candidate is ONLY a URL / domain name
@@ -1769,6 +1757,15 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         detectedLocation.state !== "N" ||
         detectedLocation.city !== "N";
       return locationSignal || streetNumberMatch;
+    };
+
+    const addressShapeCache = new Map();
+    const isAddressShaped = address => {
+      const key = String(address || "").toLowerCase().replace(/\s+/g, " ").trim();
+      if (addressShapeCache.has(key)) return addressShapeCache.get(key);
+      const result = computeAddressShape(address);
+      addressShapeCache.set(key, result);
+      return result;
     };
 
     const addCandidate = (value, source, priority = 0) => {
@@ -3018,38 +3015,21 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // 5. Remove country names ONLY at the end.
     // Do not remove UK_LOCALITIES: they may be valid city/town names.
-    const countryTerms = [];
+    const normalizedCountryName = String(countryName || "").trim();
+    const hasCustomCountry = normalizedCountryName.length >= 2 &&
+      !ADDRESS_COUNTRY_TERM_SET.has(normalizedCountryName.toLowerCase());
+    const countryPattern = hasCustomCountry
+      ? `${ADDRESS_COUNTRY_PATTERN}|${normalizedCountryName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
+      : ADDRESS_COUNTRY_PATTERN;
 
-    if (countryName) {
-      countryTerms.push(String(countryName).trim());
-    }
-
-    if (Array.isArray(COUNTRIES)) {
-      for (const country of COUNTRIES) {
-        if (country?.name) countryTerms.push(country.name);
-
-        if (Array.isArray(country?.aliases)) {
-          countryTerms.push(...country.aliases);
-        }
-      }
-    }
-
-    const uniqueCountries = [...new Set(
-      countryTerms
-        .filter(Boolean)
-        .map(term => term.trim())
-        .filter(term => term.length >= 2)
-    )].sort((a, b) => b.length - a.length);
-
-    if (uniqueCountries.length) {
-      const countryPattern = uniqueCountries
-        .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-        .join("|");
+    if (countryPattern) {
 
       // A footer or menu can be concatenated after a complete address, e.g.
       // "Älvdalen, Sweden., Showroom, ...". Treat a punctuated country name
       // as the end of the address and discard everything that follows it.
-      const countryMarker = new RegExp("\\b(?:" + countryPattern + ")\\b(?=[.,;])", "i");
+      const countryMarker = hasCustomCountry
+        ? new RegExp("\\b(?:" + countryPattern + ")\\b(?=[.,;])", "i")
+        : ADDRESS_COUNTRY_MARKER;
       const countryMatch = countryMarker.exec(addr);
       if (countryMatch) {
         const tail = addr.slice(countryMatch.index + countryMatch[0].length);
@@ -3058,10 +3038,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         }
       }
 
-      const countryAtEnd = new RegExp(
-        "(?:,\\s*|\\s+)\\b(?:" + countryPattern + ")\\b(?:\\s+\\d{4,10})?\\s*[.,;]*$",
-        "i"
-      );
+      const countryAtEnd = hasCustomCountry
+        ? new RegExp("(?:,\\s*|\\s+)\\b(?:" + countryPattern + ")\\b(?:\\s+\\d{4,10})?\\s*[.,;]*$", "i")
+        : ADDRESS_COUNTRY_AT_END;
 
       // Keep the country in the dedicated country field, not in the address.
       // Apply this uniformly, including Taiwan and country aliases.
@@ -3600,6 +3579,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const rank = ranking.indexOf(local);
       return rank < 0 ? 0 : ranking.length - rank;
     };
+    const knownDomainSuffixes = new Set([
+      ".com", ".org", ".net", ".edu", ".gov", ".biz", ".info", ".co", ".io", ".ai", ".app", ".shop", ".online", ".tech",
+      ...COUNTRIES.flatMap(country => country.tlds || [])
+    ]);
 
     // Keep every valid candidate and retain source evidence for later ranking.
     const scored = list
@@ -3607,7 +3590,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       // of a second, fabricated domain (e.g. .com.auinformationterms).
       .filter(e => {
         const domain = (e.split("@")[1] || "").toLowerCase();
-        return !hostname || !domain.startsWith(hostname) || domain === hostname || domain.startsWith(`${hostname}.`);
+        if (!hostname || !domain.startsWith(`${hostname}.`)) return true;
+        const extension = domain.slice(hostname.length);
+        return knownDomainSuffixes.has(extension);
       })
       .map(e => {
       const emailDomain = (e.split("@")[1] || "").toLowerCase();
@@ -3651,7 +3636,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (/\.(png|jpg|jpeg|gif|webp|svg|css|js|woff2?|ttf|eot|ico|map|min)$/i.test(e)) return false;
     if (/(?:jsdelivr|cdnjs|unpkg|googleapis|gstatic|w3\.org|schema\.org|sentry|recaptcha|wordpress|wp-content|github|polyfill|node_modules|bootstrap|jquery)/i.test(e)) return false;
     if (/example\.com|domain\.com|yourdomain|email@|@(?:example|invalid|test)\./i.test(e)) return false;
-    if (/^(?:test|example|sample|placeholder|yourname|your-email|email)@/i.test(e)) return false;
+    if (/^(?:your-?name|your-?email|test|example|sample|placeholder|user|username)@/i.test(e)) return false;
     if (/^(noreply|no-reply|webmaster|postmaster|abuse|spam|privacy|legal)@/i.test(e)) return false;
     const labels = domain.split(".");
     if (labels.length < 2 || labels.some(label => label.length > 63 || !/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label))) return false;
@@ -3844,15 +3829,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       imgCount = imgs.length;
     }
 
-    // Clamp: 0 -> 3 (rule: never 0), max -> 3
-    const clamp = n => n <= 0 ? "3" : n === 1 ? "1" : n === 2 ? "2" : "3";
-
-    const maxItems = Math.max(rawCount, imgCount);
+    // Dropdowns do not allow zero; use the minimum value when none are found.
+    const clamp = n => n <= 1 ? "1" : n === 2 ? "2" : "3";
+    const descriptionCount = rawCount || (text.match(/\b(?:description|specification|features?)\b/gi) || []).length;
 
     return {
-      numberOfProduct: clamp(maxItems),
+      numberOfProduct: clamp(rawCount),
       imageProduct: clamp(imgCount),
-      noOfProductDescription: clamp(maxItems)
+      noOfProductDescription: clamp(descriptionCount)
     };
   }
 
@@ -3904,6 +3888,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
       const contactHrefRegex = /(?:contact|contact-us|contact_us|contactus|contacts|location|locations|our-location|our-locations|reach-us|reach_us|find-us|visit-us|get-in-touch|getintouch|enquiry|enquiries|inquiry|inquiries|send-enquiry|request-information|support|customer-service|customer-support|help|sales\/contact|contact-sales|company\/contact|corporate\/contact|our-company\/contact|company-profile\/contact|about\/contact|about-us\/contact|aboutus\/contact|who-we-are\/contact|careers?|jobs?|employment|join-our-team|work-with-us|opportunities|sales-representative|delivery-driver|aoda|accessibility|compliance|privacy-policy|privacy|legal|terms|our-team|leadership|management|오시는길|고객센터|연락처|회사위치|お問い合わせ|アクセス|联系我们|kontakt|contacto|contatti)/i;
       const contactTextRegex = /\b(contact|contact us|get in touch|location|locations|our location|our locations|reach us|find us|visit us|our office|our offices|headquarters|where to find us|office location|enquiry|enquiries|inquiry|inquiries|support|customer service|customer support|help|contact sales|sales contact|career|careers|job|jobs|employment|join our team|work with us|opportunities|accessibility|compliance|privacy policy|legal|terms|our team|leadership|management|오시는길|고객센터|연락처|회사위치|お問い合わせ|お問合せ|アクセス|联系我们|聯繫我們|kontakt|contacto|contáctenos|contatti)\b/i;
+      const supplementalPageRegex = /(?:careers?|jobs?|employment|join[-_ ]?our[-_ ]?team|work[-_ ]?with[-_ ]?us|opportunities|aoda|accessibility|compliance|privacy(?:-policy)?|legal|terms)/i;
 
       for (const a of doc.querySelectorAll("a[href]")) {
         const href = (a.getAttribute("href") || "").trim();
@@ -3929,8 +3914,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
           const fullTarget = (resObj.pathname || "") + (resObj.search || "");
           let score = 0;
-          if (contactHrefRegex.test(fullTarget)) score += 50;
-          if (contactTextRegex.test(text)) score += 40;
+          if (contactHrefRegex.test(fullTarget)) score += supplementalPageRegex.test(fullTarget) ? 8 : 50;
+          if (contactTextRegex.test(text)) score += supplementalPageRegex.test(`${fullTarget} ${text}`) ? 4 : 40;
           if (/\b(?:contact-us|contactus|contact)\b/i.test(fullTarget)) score += 30;
           if (text === "contact us" || text === "contact") score += 30;
 
@@ -3967,6 +3952,17 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     const hasContactForm = Boolean(doc?.querySelector('form input[type="email"], form input[name*="email" i], form textarea[name*="message" i]'));
     if (hasContactForm && /\b(?:contact|enquir|inquir|message)\b/i.test(headingText)) score += 2;
+
+    const contactRegion = doc?.querySelector("main, [role='main'], article") || doc?.body;
+    if (contactRegion) {
+      const hasEmail = Boolean(contactRegion.querySelector('a[href^="mailto:"], [itemprop~="email"], [class*="email" i], [id*="email" i]'));
+      const hasPhone = Boolean(contactRegion.querySelector('a[href^="tel:"], [itemprop~="telephone"], [class*="phone" i], [class*="telephone" i]'));
+      const hasAddress = Boolean(contactRegion.querySelector("address, [itemprop~='address'], [class*='address' i]"));
+      if (hasEmail && (hasPhone || hasAddress)) score += 4;
+      const labels = [...contactRegion.querySelectorAll("label, dt, th, strong")].map(el => clean(el.textContent || ""));
+      const labeledContactFields = labels.filter(label => /\b(?:email|e-mail|phone|telephone|address)\b/i.test(label)).length;
+      if (labeledContactFields >= 2) score += 2;
+    }
     return score;
   }
 
@@ -4038,12 +4034,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           break;
         }
       }
-      for (const c of COUNTRIES) {
+      countryAliasSearch: for (const c of COUNTRIES) {
         for (const alias of c.aliases) {
           if (matchesCountryTerm(companyAddress, alias)) {
             countryName = c.name;
             countryObj = c;
-            break;
+            break countryAliasSearch;
           }
         }
       }
