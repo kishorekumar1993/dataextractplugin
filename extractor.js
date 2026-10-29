@@ -389,7 +389,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   const ADDRESS_COUNTRY_PATTERN = ADDRESS_COUNTRY_TERMS
     .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const ADDRESS_COUNTRY_MARKER = new RegExp("\\b(?:" + ADDRESS_COUNTRY_PATTERN + ")\\b(?=[.,;])", "i");
-  const ADDRESS_COUNTRY_AT_END = new RegExp("(?:,\\s*|\\s+)\\b(?:" + ADDRESS_COUNTRY_PATTERN + ")\\b(?:\\s+\\d{4,10})?\\s*[.,;]*$", "i");
+  const ADDRESS_COUNTRY_AT_END = new RegExp("(?:,\\s*|\\s+)\\b(?:" + ADDRESS_COUNTRY_PATTERN + ")\\b(?:\\s*,?\\s+\\d{3,10})?\\s*[.,;]*$", "i");
   const ADDRESS_COUNTRY_TERM_SET = new Set(ADDRESS_COUNTRY_TERMS.map(term => term.toLowerCase()));
 
   // Global City/State to Country Mapping
@@ -3105,7 +3105,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
 
       const countryAtEnd = hasCustomCountry
-        ? new RegExp("(?:,\\s*|\\s+)\\b(?:" + countryPattern + ")\\b(?:\\s+\\d{4,10})?\\s*[.,;]*$", "i")
+        ? new RegExp("(?:,\\s*|\\s+)\\b(?:" + countryPattern + ")\\b(?:\\s*,?\\s+\\d{3,10})?\\s*[.,;]*$", "i")
         : ADDRESS_COUNTRY_AT_END;
 
       // Keep the country in the dedicated country field, not in the address.
@@ -3117,6 +3117,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (typeof expandAddressAbbreviations === "function") {
       addr = expandAddressAbbreviations(addr, addressCountry);
     }
+
+    // Separate a street address from a following P.O. Box when the source
+    // omits the delimiter (for example, "One Lafrance Way Post Office Box 5002").
+    addr = addr.replace(
+      /\b((?:street|road|avenue|boulevard|drive|lane|court|place|circle|parkway|highway|way|terrace|crescent|square))\s+(?=post\s+office\s+box(?:\s+number)?\b)/gi,
+      "$1, "
+    );
 
     // A P.O. Box number is part of the mailing address, not a postal code.
     // Temporarily protect it from the numeric postcode cleanup below.
@@ -3274,7 +3281,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       ) {
         return core.toUpperCase() + trailing;
       }
-      if (/^[A-Z]{2,3}[,;:]?$/.test(core)) return core + trailing;
       if (/^(?:FL|AL|AK|AZ|AR|CA|CO|CT|DE|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)$/i.test(core)) {
         return core.toUpperCase() + trailing;
       }
@@ -3324,6 +3330,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     ]).filter(Boolean))]
       .sort((left, right) => right.length - left.length)
       .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const countryByName = COUNTRIES.find(country =>
+      country.name.toLowerCase() === String(countryName || "").trim().toLowerCase() ||
+      country.aliases.some(alias => alias.toLowerCase() === String(countryName || "").trim().toLowerCase())
+    );
+    if (countryByName?.iso) {
+      addr = addr.replace(new RegExp(`(?:,\\s*|\\s+)${escapeRegExp(countryByName.iso)}[.,;]*$`, "i"), "").trim();
+    }
     if (trailingCountryTerms.length) {
       const trailingCountryPattern = new RegExp(
         `(?:,\\s*|\\s+)\\b(?:${trailingCountryTerms.join("|")})\\b(?:\\s*,?\\s*(?:r\\s*\\.?\\s*o\\s*\\.?\\s*c\\.?|republic\\s+of\\s+china))?[.,;]*$`,
@@ -4025,11 +4038,14 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         }
       }
 
-      // 4. Check path transformations (e.g. /zh-tw/ or /tw/ or /de/ or /es/ -> /en/)
+      // 4. Some sites keep English at the root and prefix translated pages
+      // with a locale (for example /zh/product/... while /product/... is EN).
       const currentPath = base.pathname;
-      const langPrefixRegex = /^\/([a-z]{2}(?:-[a-z]{2})?)(?:\/|$)/i;
+      const langPrefixRegex = /^\/([a-z]{2,3}(?:-[a-z0-9]{2,8})*)(?:\/|$)/i;
       const match = currentPath.match(langPrefixRegex);
       if (match && !/^en/i.test(match[1])) {
+        const rootEnglishPath = currentPath.replace(langPrefixRegex, "/") || "/";
+        addCandidate(new URL(rootEnglishPath, baseUrl).href);
         const enPath = currentPath.replace(langPrefixRegex, "/en/");
         addCandidate(new URL(enPath, baseUrl).href);
       }
