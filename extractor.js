@@ -525,8 +525,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const EXPANSIONS = [
       // Compound GmbH & Co. suffixes must match before the shorter GmbH & Co. form.
       // --- D. Germany, Austria, and Switzerland (compounds first) ---
-      [/\b(?:gmbh\s*(?:&|and)\s*co\.?\s*kgaa)\b/gi, "Gesellschaft mit beschränkter Haftung & Company Kommanditgesellschaft auf Aktien"],
-      [/\b(?:gmbh\s*(?:&|and)\s*co\.?\s*kg)\b/gi, "Gesellschaft mit beschränkter Haftung & Company Kommanditgesellschaft"],
+      [/\b(?:gmbh\s*(?:&|and)\s*co\.?\s*kgaa)\b/gi, "Gesellschaft mit beschränkter Haftung & Co. Kommanditgesellschaft auf Aktien"],
+      [/\b(?:gmbh\s*(?:&|and)\s*co\.?\s*kg)\b/gi, "Gesellschaft mit beschränkter Haftung & Co. Kommanditgesellschaft"],
       [/\b(?:gmbh\s*(?:&|and)\s*co\.?)\b/gi, "Gesellschaft mit beschränkter Haftung & Company"],
       [/\bggmbh\b/gi, "Gemeinnützige Gesellschaft mit beschränkter Haftung"],
       [/\bkgaa\b/gi, "Kommanditgesellschaft auf Aktien"],
@@ -573,7 +573,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       // Treat "Co., LLC" as one compound suffix so "Co." is not left
       // abbreviated beside an expanded limited-liability form.
       [/\bco\.?\s*,?\s*l\.?l\.?c\.?(?=[,.\s]|$)/gi, "Company, Limited Liability Company"],
-      [/\bl\.?l\.?c\.?(?=\s*[,;:]?$)/gi, "Limited Liability Company"],
+      [/\bl\.?l\.?c\.?(?!\s+company\b)(?=[,.\s]|$)/gi, "Limited Liability Company"],
       [/\bl\.?l\.?p\.?(?=[,.\s]|$)/gi, "Limited Liability Partnership"],
       [/\bp\.?l\.?c\.?(?=[,.\s]|$)/gi, "Public Limited Company"],
       [/\bcic\b/gi, "Community Interest Company"],
@@ -707,7 +707,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       [/\bcorp\.?(?=[,.\s]|$)/gi, "Corporation"],
       [/\bltd\.?(?=[,.\s]|$)/gi, "Limited"],
       [/\bco\.?(?=\s+(?:limited|ltd|incorporated|corporation)\b)/gi, "Company"],
-      [/\bco\.?(?=[,]?\s*$)/gi, "Company"]
+      [/(?<!&\s*)\bco\.?(?=[,.\s]|$)/gi, "Company"]
     ];
 
     // Normalize the common German spelling before compound suffix expansion.
@@ -1075,9 +1075,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (!str || /^\s*(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4}\s*$/i.test(str)) {
         return false;
       }
-      // A short legal form such as "AS" or "SE" must terminate the name;
-      // otherwise ordinary title words ("Euchner as an employer") look legal.
-      return new RegExp(`(?:${corpSuffix.source})\\s*[.,;]?\\s*$`, "i").test(String(str).trim());
+      // A short legal form such as "AS" or "SE" must terminate the legal entity or be followed
+      // only by punctuation, country/state/location (e.g. "LLC, USA", "Ltd (UK)"), or trailing year.
+      return new RegExp(
+        `(?:${corpSuffix.source})(?:\\s*[,;:\\-]?\\s*(?:\\([A-Za-z\\s]+\\)|[A-Za-z]+|(?:19|20)\\d{2}))?\\s*[.,;]?\\s*$`,
+        "i"
+      ).test(String(str).trim());
     };
 
     // Helper to validate and clean a company name candidate
@@ -1212,7 +1215,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (!legalName) {
         for (const line of footerLines) {
           const l = clean(line);
-          if (!l || l.length < 2 || l.length > 120 || !hasCorpSuffix(l)) continue;
+          if (!l || l.length < 2 || l.length > 120) continue;
 
           // Ignore address and contact lines that happen to contain a suffix.
           if (/(?:street|road|floor|suite|bldg|building|avenue|drive|lane|way|park\b|industrial estate|tel\b|phone\b|fax\b|email\b|@|사업자|대표자|-ro\b|-gu\b|-si\b)/i.test(l)) {
@@ -1358,7 +1361,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // If we have a brand name (e.g. "Accurite Industries"), check the extended content
     // of the page (footer, address, full text) to see if this brand name appears with a legal suffix (e.g. "Accurite Industries Ltd")!
     if (brandName && text) {
-      const baseClean = brandName.replace(/\s+/g, "\\s+");
+      const baseClean = brandName.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&").replace(/\s+/g, "\\s+");
       const germanGmbhCoRegex = new RegExp(
         `\\b(${baseClean}\\s+gmbh\\s*(?:\\+|&)\\s*co\\.?\\s*k\\.?g\\.?)(?=$|[\\s,.;])`,
         "i"
@@ -1368,7 +1371,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         return finishName(germanGmbhCoMatch[1]);
       }
       const suffixSearchRegex = new RegExp(
-        `\\b(${baseClean}\\s+(?:co[.,\\s]*ltd\\.?|co[.,\\s]+limited|company\\s+limited|corporation|corp\\.?|incorporated|inc\\.?|limited|ltd\\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|s\\.?r\\.?l\\.?|s\\.?n\\.?c\\.?|srl|spa|kft|zrt|nyrt|s\\.r\\.o\\.|a\\.s\\.|d\\.o\\.o\\.|pvt\\.?\\s*ltd\\.?|private\\s+limited|pte\\.?\\s*ltd\\.?|pty\\.?\\s*ltd\\.?|proprietary\\s+limited|sdn\\.?\\s*bhd\\.?|berhad|bhd\\.?|tbk\\.?|wll|pjsc|fze|fzco|fz-llc))\\b`,
+        `\\b(${baseClean}\\s+(?:${corpSuffix.source}))\\b`,
         "i"
       );
       const match = text.match(suffixSearchRegex);
@@ -1381,12 +1384,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (brandName && doc) {
       const allText = getElementText(doc.body);
       const lines = allText.split(/[\r\n]+/);
+      const brandLower = brandName.toLowerCase();
       for (const line of lines) {
         const l = clean(line);
-        if (l.length >= brandName.length && l.length <= brandName.length + 30) {
-          if (l.toLowerCase().startsWith(brandName.toLowerCase()) && hasCorpSuffix(l)) {
+        if (l.length >= brandName.length && l.length <= brandName.length + 50) {
+          const lLower = l.toLowerCase();
+          if ((lLower.startsWith(brandLower) || lLower.includes(brandLower))) {
             const cand = sanitizeCandidate(l);
-            if (cand) return finishName(cand);
+            if (cand && hasCorpSuffix(cand) && cand.toLowerCase().includes(brandLower)) {
+              return finishName(cand);
+            }
           }
         }
       }
