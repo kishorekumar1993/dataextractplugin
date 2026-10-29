@@ -1269,11 +1269,17 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const corpPart = titleParts.find(p => hasCorpSuffix(p) && p.length >= 2 && p.length <= 80);
       if (corpPart) {
         legalName = sanitizeCandidate(corpPart);
-      } else if (!brandName) {
+      } else {
         const genericTitlePart = /^(?:home(?:page)?|welcome|contact(?:\s+us)?|about(?:\s+us)?|privacy(?:\s+policy)?|terms(?:\s+(?:and|&)\s+conditions)?|products?|services?|shop|store|furniture|blog|news|login|search|career(?:s)?|jobs?|vacancies|employer)(?:\s+page)?$/i;
-        brandName = [...titleParts].reverse()
+        const titleBrandName = [...titleParts].reverse()
           .map(part => cleanBrandDescriptor(part))
           .find(part => part.length >= 2 && part.length <= 80 && !genericTitlePart.test(part)) || "";
+        // A descriptive site title can disambiguate short acronym labels
+        // emitted by Organization metadata without replacing established names.
+        const currentIsAcronym = /^[A-Z0-9]{2,5}$/.test(String(brandName || "").trim());
+        if (titleBrandName && (!brandName || currentIsAcronym)) {
+          brandName = titleBrandName;
+        }
       }
     }
 
