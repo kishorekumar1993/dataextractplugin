@@ -528,8 +528,8 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
 
     const orderedEmails = [...new Set([
       primaryContactPageEmail,
-      ...contactPageEmails,
       ...homepageEmails,
+      ...contactPageEmails,
       ...otherPageEmails
     ].map(email => String(email || "").trim()).filter(Boolean))];
     mainData.emailId = orderedEmails[0] || "";

@@ -616,8 +616,8 @@ async function crawlAndExtractDirect(targetUrl) {
 
     const orderedEmails = [...new Set([
       primaryContactPageEmail,
-      ...contactPageEmails,
       ...homepageEmails,
+      ...contactPageEmails,
       ...otherPageEmails
     ].map(email => String(email || "").trim()).filter(Boolean))];
     mainData.emailId = orderedEmails[0] || "";

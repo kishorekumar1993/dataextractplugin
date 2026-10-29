@@ -3530,7 +3530,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const decoded = decodeEmailText(value);
       const matches = decoded.match(emailRegex) || [];
       for (const match of matches) {
-        const email = match.replace(/[.,;:!?]+$/, "").toLowerCase();
+        // Inline markup can join a visible "Email" label directly to the
+        // mailbox (for example, Email + info@site.com => emailinfo@site.com).
+        const email = match
+          .replace(/[.,;:!?]+$/, "")
+          .replace(/^(?:e-?mail)(?=(?:info|sales|contact|support|office|admin|enquir(?:y|ies)|inquir(?:y|ies)|export|marketing|accounts|billing|general)@)/i, "")
+          .toLowerCase();
         if (isValidEmail(email)) emails.add(email);
       }
     };
