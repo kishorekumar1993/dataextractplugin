@@ -389,7 +389,7 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
           u.hostname.replace(/^www\./i, "").toLowerCase();
         const samePath = candidateUrl.pathname.replace(/\/+$/, "") === u.pathname.replace(/\/+$/, "");
         return !(sameHost && samePath && candidateUrl.search === u.search);
-      }).slice(0, 5);
+      }).slice(0, 10);
     } catch {}
 
     let footerAddressTakenFromContactPage = false;
@@ -420,7 +420,7 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
                 const rootUrl = new URL(tab.url || normUrl);
                 if (nextUrl.hostname.replace(/^www\./i, "").toLowerCase() !== rootUrl.hostname.replace(/^www\./i, "").toLowerCase()) continue;
                 nextUrl.hash = "";
-                if (!visitedContactUrls.has(nextUrl.href) && contactCandidates.length < 10) {
+                if (!visitedContactUrls.has(nextUrl.href) && contactCandidates.length < 20) {
                   visitedContactUrls.add(nextUrl.href);
                   contactCandidates.push(nextUrl.href);
                 }
