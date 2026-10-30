@@ -151,7 +151,7 @@ function mergeFrameExtractionResults(results) {
   const topFrameLanguage = results?.find(item => item?.frameId === 0)?.result?.pageLanguage;
   if (topFrameLanguage) merged.pageLanguage = topFrameLanguage;
   for (const data of records.slice(1)) {
-    for (const key of ["companyName", "countryName", "emailId", "secondaryEmailId", "phoneNumber", "enUrl", "contactUrl"]) {
+    for (const key of ["companyName", "countryName", "businessType", "companyProfile", "emailId", "secondaryEmailId", "phoneNumber", "enUrl", "contactUrl", "aboutUrl"]) {
       if (!merged[key] && data[key]) merged[key] = data[key];
     }
     if (data.companyAddress) {
@@ -518,13 +518,16 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
       }
     }
 
-    // Crawl only contact URLs discovered in the page, not guessed routes.
+    // Crawl contact and about subpages discovered in the page
     let contactCandidates = [];
     try {
       const u = new URL(rootPageUrl);
-      // Always check discovered contact pages so their email can take primary
-      // priority, even when the homepage already has two email addresses.
-      const hostCandidates = [...(mainData.contactUrls || []), mainData.contactUrl];
+      // Check contact pages for emails/phone/address, and check About pages if businessType or companyProfile is missing
+      const hostCandidates = [
+        ...(mainData.contactUrls || []),
+        mainData.contactUrl,
+        ...((!mainData.businessType || mainData.companyProfile !== "Y") ? (mainData.aboutUrls || [mainData.aboutUrl]) : [])
+      ];
       contactCandidates = [...new Set(hostCandidates.filter(Boolean).map(candidate => {
         try {
           const candidateUrl = new URL(candidate, u);
@@ -630,6 +633,7 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
           if (["Y", "Available"].includes(contactData.state) && !["Y", "Available"].includes(mainData.state)) mainData.state = contactData.state;
           if (["Y", "Available"].includes(contactData.city) && !["Y", "Available"].includes(mainData.city)) mainData.city = contactData.city;
           if (contactData.companyProfile === "Y" && mainData.companyProfile !== "Y") mainData.companyProfile = "Y";
+          if (contactData.businessType && !mainData.businessType) mainData.businessType = contactData.businessType;
           const isDummyPhone = num => !num || /^(?:0123456789|1234567890|12345678910|2345678910|123456789|12345678|1234567|9876543210|987654321|(\d)\1{6,})$/.test(num);
           
           // 👇 FIX: Always prioritize the Contact Page phone over the main page (bottom) phone
@@ -752,6 +756,13 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
         console.debug("Public Facebook contact fallback unavailable:", error);
       } finally {
         if (facebookTimer) clearTimeout(facebookTimer);
+      }
+    }
+
+    // Final business type inference if still not determined
+    if (!mainData.businessType) {
+      if (mainData.numberOfProduct && Number(mainData.numberOfProduct) >= 1) {
+        mainData.businessType = "Manufacturer";
       }
     }
 

@@ -1079,72 +1079,65 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     };
   }
 
-  // Rule 2: Infer business type from About / Company Profile content, not
-  // product copy or a default assumption that every industrial site manufactures.
+  // Rule 2: Infer business type from About / Company Profile content, metadata, hero copy, and page context.
+  // Prioritizes Manufacturer, then Wholesaler, Distributer, Trader, Exporter, Supplier, Industrial Services.
   function detectBusinessType(text, doc, url = "") {
     const profileParts = [];
     const addProfilePart = value => {
       const part = clean(value || "");
-      if (part.length >= 40 && part.length <= 4000 && !profileParts.includes(part)) {
+      if (part.length >= 25 && part.length <= 4000 && !profileParts.includes(part)) {
         profileParts.push(part);
       }
     };
 
     if (doc) {
+      // 1. Semantic About / Profile sections & elements
       const profileSelectors = [
         '[id*="about" i]', '[class*="about" i]',
         '[id*="company-profile" i]', '[class*="company-profile" i]',
         '[id*="company-overview" i]', '[class*="company-overview" i]',
         '[id*="company-info" i]', '[class*="company-info" i]',
-        '[id*="who-we-are" i]', '[class*="who-we-are" i]'
+        '[id*="who-we-are" i]', '[class*="who-we-are" i]',
+        '[id*="our-story" i]', '[class*="our-story" i]',
+        '[id*="what-we-do" i]', '[class*="what-we-do" i]',
+        '[id*="profile" i]', '[class*="profile" i]'
       ].join(", ");
       for (const el of doc.querySelectorAll(profileSelectors)) {
         if (!el.closest?.("nav, footer, [role='navigation']")) addProfilePart(getElementText(el));
       }
 
+      // 2. Section headings for About / Overview / Who We Are / What We Do
       for (const heading of doc.querySelectorAll("h1, h2, h3, h4, h5, h6")) {
-        if (!/\b(?:about(?:\s+us)?|company\s+(?:profile|overview|information)|who\s+we\s+are|our\s+company)\b/i.test(heading.textContent || "")) continue;
+        if (!/\b(?:about(?:\s+us)?|company\s+(?:profile|overview|information)|who\s+we\s+are|our\s+company|what\s+we\s+do|our\s+story)\b/i.test(heading.textContent || "")) continue;
         let section = heading.closest?.("section, article, [role='region']") || heading.parentElement;
         for (let depth = 0; section && depth < 3; depth++, section = section.parentElement) {
           if (section.closest?.("nav, footer, [role='navigation']")) break;
           const sectionText = getElementText(section);
-          if (sectionText.length >= 40 && sectionText.length <= 4000) {
+          if (sectionText.length >= 30 && sectionText.length <= 4000) {
             addProfilePart(sectionText);
             break;
           }
         }
       }
 
-      for (const selector of ['meta[name="description"]', 'meta[property="og:description"]']) {
+      // 3. Document meta descriptions & OpenGraph descriptions
+      for (const selector of ['meta[name="description"]', 'meta[property="og:description"]', 'meta[name="keywords"]']) {
         addProfilePart(doc.querySelector(selector)?.content || "");
       }
 
-      // Many company homepages (including V-TEK) put their business type in a
-      // short introductory paragraph without labeling it as an About section.
-      // Accept only compact company statements with explicit category terms;
-      // this avoids classifying from product listings or generic page copy.
-      let isHomePage = false;
-      try {
-        const path = new URL(url).pathname.replace(/\/+$/, "");
-        isHomePage = !path || path === "/index.html" || path === "/index.htm";
-      } catch { }
-      if (isHomePage) {
-        const explicitBusinessStatement = /\b(?:manufacturer|manufacturing|manufactures|distributor|distribution|wholesaler|wholesale|supplier|supplies|service provider|trading company|exporter|importer)\b/i;
-        for (const el of doc.querySelectorAll("main p, [role='main'] p, p")) {
-          if (el.closest?.("nav, footer, [role='navigation']")) continue;
-          const statement = getElementText(el);
-          if (statement.length >= 40 && statement.length <= 1200 && explicitBusinessStatement.test(statement)) {
+      // 4. Hero / Banner / Lead intro paragraphs
+      for (const el of doc.querySelectorAll("header p, .hero p, .banner p, .intro p, .lead, main p, [role='main'] p, p")) {
+        if (el.closest?.("nav, footer, [role='navigation']")) continue;
+        const statement = getElementText(el);
+        if (statement.length >= 30 && statement.length <= 1500) {
+          const explicitStatement = /\b(?:manufacturer|manufacturing|manufactures|producer|produced|factory|distributor|distribution|wholesaler|wholesale|supplier|supplies|service provider|services|trading company|exporter|importer|custom\s+makers?|makers?\s+of|developed\s+by|specialists?\s+in)\b/i;
+          if (explicitStatement.test(statement)) {
             addProfilePart(statement);
           }
         }
-
-        // Some sites render the introductory statement in nested builder
-        // elements rather than <p> tags. Preserve only the short fragment
-        // around a strong, explicit manufacturer/maker claim from page text.
-        const makerClaim = /\b(?:manufacturers?|manufacturing company|(?:custom\s+)?furniture makers?|makers? of)\b/i;
-        const makerMatch = String(text || "").match(new RegExp(`.{0,180}${makerClaim.source}.{0,180}`, "i"));
-        if (makerMatch) addProfilePart(makerMatch[0]);
       }
+
+      // 5. Schema.org JSON-LD description
       for (const script of doc.querySelectorAll('script[type="application/ld+json"]')) {
         try {
           const parsed = JSON.parse(script.textContent || "");
@@ -1161,34 +1154,54 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       }
     }
 
+    // 6. Check if current page is dedicated About page
     let aboutPage = false;
     try {
-      aboutPage = /\/(?:about(?:-us)?|company(?:-profile|-overview)?|who-we-are)(?:\/|$)/i.test(new URL(url).pathname);
+      aboutPage = /\/(?:about(?:-us)?|company(?:-profile|-overview)?|who-we-are|our-story)(?:\/|$)/i.test(new URL(url).pathname);
     } catch { }
     if (!profileParts.length && aboutPage) addProfilePart(text || "");
+
+    // 7. Fallback to full page text snippets matching explicit business type markers
+    if (!profileParts.length && text) {
+      const explicitMarkers = /\b(?:manufacturers?|manufacturing|manufacture|producers?|factory|fabricat(?:ion|or|ors)|distribut(?:or|ors|er|ers|ion)|wholesal(?:er|ers|e)|traders?|trading\s+company|exporters?|exporting|suppliers?|supplying|service\s+provider|industrial\s+services)\b/gi;
+      const matches = [...String(text).matchAll(explicitMarkers)];
+      for (const m of matches.slice(0, 5)) {
+        const start = Math.max(0, m.index - 100);
+        const end = Math.min(text.length, m.index + 100);
+        addProfilePart(text.slice(start, end));
+      }
+    }
+
     if (!profileParts.length) return "";
 
     const profileText = profileParts.join(" ").toLowerCase();
-    if (/\b(manufacturers?|manufacturing|manufacture[rs]?|we produce|producer|factory|oem|odm|assembly line|(?:custom\s+)?furniture makers?)\b/i.test(profileText)) {
+
+    // Priority 1: Manufacturer (producer, fabrication, plant, OEM, custom maker)
+    if (/\b(manufacturers?|manufacturing|manufacture[rs]?|we produce|producer|factory|fabricat(?:ion|or|ors)|oem|odm|assembly line|(?:custom\s+)?furniture makers?|makers?\s+of)\b/i.test(profileText)) {
       return "Manufacturer";
     }
+    // Priority 2: Wholesaler (bulk supply, wholesale trade)
     if (/\b(wholesale|wholesaler|bulk supply|bulk order)\b/i.test(profileText)) {
       return "Wholesaler";
     }
-    if (/\b(distributer|distributor|distribution|authorized dealer|dealership)\b/i.test(profileText)) {
+    // Priority 3: Distributer (distributor, distribution, authorized dealer)
+    if (/\b(distributer|distributor|distribution|authorized dealer|dealership|exclusive dealer)\b/i.test(profileText)) {
       return "Distributer";
     }
-    // Trader requires an explicit import/export or merchant description.
-    if (/\b(trading company|importer and exporter|import.{0,40}export|export.{0,40}import|merchant)\b/i.test(profileText)) {
+    // Priority 4: Trader (trading company, import/export merchant)
+    if (/\b(trading company|importer and exporter|import.{0,40}export|export.{0,40}import|merchant|traders?)\b/i.test(profileText)) {
       return "Trader";
     }
+    // Priority 5: Exporter
     if (/\b(exporter|exporting|global export|overseas sales|export specialist)\b/i.test(profileText)) {
       return "Exporter";
     }
-    if (/\b(supplier|supplying|stockist|vendor)\b/i.test(profileText)) {
+    // Priority 6: Supplier (vendor, stockist, supplies)
+    if (/\b(supplier|supplying|stockist|vendor|supplies)\b/i.test(profileText)) {
       return "Supplier";
     }
-    if (/\b(industrial services|service provider|it consulting|consulting firm|maintenance company|after-?sales service|support contractor|engineering services)\b/i.test(profileText)) {
+    // Priority 7: Industrial Services (services, maintenance, solutions, contractor)
+    if (/\b(industrial services|service provider|services?|it consulting|consulting firm|maintenance company|after-?sales service|support contractor|engineering services)\b/i.test(profileText)) {
       return "Industrial Services";
     }
 
@@ -4309,6 +4322,56 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     return urls[0] || null;
   }
 
+  // Find all About Us / Company Profile subpage URLs dynamically
+  function findAboutSubpages(doc, baseUrl) {
+    if (!doc || !baseUrl) return [];
+    const found = [];
+    const seen = new Set();
+    try {
+      const base = new URL(baseUrl);
+      const baseHostNorm = base.hostname.replace(/^www\./i, "").toLowerCase();
+
+      const aboutHrefRegex = /(?:about|about-us|about_us|aboutus|company|company-profile|company-overview|company-info|who-we-are|our-story|our-company|corporate|profile|about-the-company)/i;
+      const aboutTextRegex = /\b(about|about us|who we are|our story|our company|company profile|company overview|corporate profile|about the company)\b/i;
+
+      for (const a of doc.querySelectorAll("a[href]")) {
+        const href = (a.getAttribute("href") || "").trim();
+        if (!href || href.startsWith("#") || /^javascript:/i.test(href) || /^mailto:/i.test(href) || /^tel:/i.test(href)) {
+          continue;
+        }
+
+        const text = clean(a.innerText || a.textContent || "").toLowerCase();
+
+        try {
+          const resolved = new URL(href, baseUrl).href;
+          const resObj = new URL(resolved);
+          if (!["http:", "https:"].includes(resObj.protocol)) continue;
+
+          const resHostNorm = resObj.hostname.replace(/^www\./i, "").toLowerCase();
+          if (resHostNorm !== baseHostNorm && !resHostNorm.endsWith(`.${baseHostNorm}`)) continue;
+
+          const normPath = resObj.pathname.replace(/\/+$/, "");
+          if ((normPath === "" || normPath === "/" || normPath === base.pathname.replace(/\/+$/, "")) && !resObj.search) {
+            continue;
+          }
+
+          const fullTarget = (resObj.pathname || "") + (resObj.search || "");
+          let score = 0;
+          if (aboutHrefRegex.test(fullTarget)) score += 40;
+          if (aboutTextRegex.test(text)) score += 40;
+
+          if (score > 0 && !seen.has(resolved)) {
+            seen.add(resolved);
+            found.push({ url: resolved, score });
+          }
+        } catch { }
+      }
+    } catch { }
+
+    found.sort((a, b) => b.score - a.score);
+    return found.map(f => f.url);
+  }
+
   // Find all Contact Us subpage URLs dynamically, ranked by relevance
   function findContactSubpages(doc, baseUrl) {
     if (!doc || !baseUrl) return [];
@@ -4551,11 +4614,13 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 13. Social Media (Facebook, LinkedIn)
     const social = extractSocialMedia(doc, text);
 
-    // 13. Subpage (English & Contact)
+    // 13. Subpage (English, Contact & About)
     const enUrls = findEnglishSubpages(doc, url);
     const enUrl = enUrls[0] || null;
     const contactUrls = findContactSubpages(doc, url);
     const contactUrl = contactUrls[0] || null;
+    const aboutUrls = findAboutSubpages(doc, url);
+    const aboutUrl = aboutUrls[0] || null;
     const contactPageScore = scoreContactPage(doc, url);
     const emailPageRole = contactPageScore >= 4
       ? "contact"
@@ -4583,6 +4648,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       emailCandidates: emails.candidates,
       emailPageRole,
       contactPageScore,
+      aboutUrl,
+      aboutUrls,
       phoneNumber,
       numberOfProduct: counts.numberOfProduct,
       imageProduct: counts.imageProduct,
@@ -4630,6 +4697,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     findEnglishSubpages,
     findEnglishSubpage,
     cleanNonLatin,
+    findAboutSubpages,
     findContactSubpages,
     findContactSubpage,
     CITY_STATE_COUNTRY_MAP,
