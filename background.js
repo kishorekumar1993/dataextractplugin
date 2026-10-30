@@ -232,7 +232,7 @@ function waitForTabComplete(tabId, timeoutMs) {
           finish();
         }
       } catch {}
-    }, 250);
+    }, 120);
     function listener(updatedTabId, info) {
       if (updatedTabId === tabId && info.status === "complete") finish();
     }
@@ -260,7 +260,7 @@ async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs) {
 
 async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
+  const timer = setTimeout(() => controller.abort(), 3500);
   let response;
   let html = "";
 
@@ -307,11 +307,11 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
   let renderedTab;
   try {
     renderedTab = await chrome.tabs.create({ url: response?.url || pageUrl, active: false });
-    await waitForTabComplete(renderedTab.id, 6000);
+    await waitForTabComplete(renderedTab.id, 3500);
     renderedTab = await recoverFromBrowserError(
       renderedTab.id,
       response?.url || pageUrl,
-      4000
+      2000
     );
 
     const [{ result: extractorLoaded }] = await chrome.scripting.executeScript({
@@ -338,9 +338,9 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
           return data;
         };
         let data = extract();
-        const deadline = Date.now() + 900;
+        const deadline = Date.now() + 600;
         while ((!data.companyAddress || !data.emailId || !data.secondaryEmailId) && Date.now() < deadline) {
-          await new Promise(resolve => setTimeout(resolve, 300));
+          await new Promise(resolve => setTimeout(resolve, 150));
           data = extract();
         }
         return data;
@@ -377,24 +377,24 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
 }
 
 // Perform reliable crawling inside a background tab
-async function crawlInTab(targetUrl, timeoutMs = 25000) {
+async function crawlInTab(targetUrl, timeoutMs = 12000) {
   const normUrl = normalizeUrl(targetUrl);
   if (!normUrl) {
     return { success: false, error: "Please enter a valid website URL." };
   }
 
   let tab = null;
-  const crawlDeadline = Date.now() + Math.max(timeoutMs, 25000);
+  const crawlDeadline = Date.now() + Math.max(timeoutMs, 12000);
   try {
     // 1. Create hidden background tab
     tab = await chrome.tabs.create({ url: normUrl, active: false });
 
     // 2. Wait for page load
-    await waitForTabComplete(tab.id, Math.min(timeoutMs, 9000));
-    tab = await recoverFromBrowserError(tab.id, normUrl, Math.min(timeoutMs, 4000));
+    await waitForTabComplete(tab.id, Math.min(timeoutMs, 5000));
+    tab = await recoverFromBrowserError(tab.id, normUrl, Math.min(timeoutMs, 2500));
 
     // Small delay to ensure client-side JS renders
-    await new Promise(r => setTimeout(r, 150));
+    await new Promise(r => setTimeout(r, 80));
 
     // 3. Inject extractor.js into the tab only if not already loaded
     const [{ result: alreadyLoaded }] = await chrome.scripting.executeScript({
@@ -552,12 +552,26 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
 
     let footerAddressTakenFromContactPage = false;
     let bestContactAddressPriority = -1;
+    // Fast path: if homepage already has verified address, email, phone, businessType and profile,
+    // skip subpage crawling entirely for maximum speed!
+    const hasCompleteDetails = Boolean(
+      mainData.companyAddress &&
+      mainData.companyAddress.length >= 12 &&
+      mainData.emailId &&
+      mainData.phoneNumber &&
+      mainData.businessType &&
+      mainData.companyProfile === "Y"
+    );
+    if (hasCompleteDetails) {
+      contactCandidates = [];
+    }
+
     const visitedContactUrls = new Set(contactCandidates);
     for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 2; contactIndex++) {
       // Keep optional subpage crawling from making the user wait indefinitely,
       // but NEVER skip the contact page if essential contact details are missing!
       const missingCoreContact = !mainData.companyAddress || !mainData.emailId || !mainData.phoneNumber;
-      if (!missingCoreContact && Date.now() > crawlDeadline - 4000) break;
+      if (!missingCoreContact && Date.now() > crawlDeadline - 3000) break;
       const contactUrl = contactCandidates[contactIndex];
       try {
         const contactData = await extractFetchedPage(tab.id, contactUrl, true);
@@ -687,7 +701,7 @@ async function crawlInTab(targetUrl, timeoutMs = 25000) {
           profileUrl.protocol = "https:";
           profileUrl.hash = "";
           controller = new AbortController();
-          const timeout = Math.max(250, Math.min(1600, crawlDeadline - Date.now() - 250));
+          const timeout = Math.max(250, Math.min(1000, crawlDeadline - Date.now() - 200));
           facebookTimer = setTimeout(() => controller.abort(), timeout);
           const response = await fetch(profileUrl.href, {
             credentials: "omit",
