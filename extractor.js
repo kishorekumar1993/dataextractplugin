@@ -29,6 +29,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       name: "Porn / Adult",
       regex: /\b(porn|pornography|xxx|adult\s+(?:entertainment|content|movies?|videos?|films?|magazines?|club|clubs|toys?)|erotic|sex(?:ual)?\s+(?:content|services?|explicit|toys?)|prostitut(?:e|ion)|explicit content|escort\s+(?:services?|agenc(?:y|ies)|companies|company|directory|girls?)|(?:independent|female|male)\s+escorts?)\b/i,
       isExempt: (matchText, snippet) => {
+        if (/^xxx$/i.test(matchText)) {
+          if (/[-_A-Z0-9]+xxx|xxx[-_A-Z0-9]+/i.test(snippet)) return true;
+          if (/xxx[-.\s]+xxx/i.test(snippet)) return true;
+          if (!/\b(?:porn|adult|erotic|sex|video|movie|film|nude|naked|hardcore|sensual|escort|cam)\b/i.test(snippet)) return true;
+        }
         return /\b(?:escort\s+ta|adult\s+(?:education|training|learning|size|sizes|courses?))\b/i.test(snippet);
       }
     },
@@ -386,9 +391,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   const ADDRESS_COUNTRY_TERMS = [...new Set(COUNTRIES.flatMap(country => [country.name, ...(country.aliases || [])])
     .filter(term => term && term.trim().length >= 2).map(term => term.trim()))]
+    .filter(term => !/^taiwan$/i.test(term))
     .sort((a, b) => b.length - a.length);
   const ADDRESS_COUNTRY_PATTERN = ADDRESS_COUNTRY_TERMS
-    .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .map(term => /^Australia$/i.test(term) ? "(?<!Western\\s+|South\\s+)Australia" : term)
+    .join("|");
   const ADDRESS_COUNTRY_MARKER = new RegExp("\\b(?:" + ADDRESS_COUNTRY_PATTERN + ")\\b(?=[.,;])", "i");
   const ADDRESS_COUNTRY_AT_END = new RegExp("(?:,\\s*|\\s+)\\b(?:" + ADDRESS_COUNTRY_PATTERN + ")\\b(?:\\s*,?\\s+\\d{3,10})?\\s*[.,;]*$", "i");
   const ADDRESS_COUNTRY_TERM_SET = new Set(ADDRESS_COUNTRY_TERMS.map(term => term.toLowerCase()));
@@ -518,7 +526,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       { countries: ["argentina"], rules: [[/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad de Responsabilidad Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima"]] },
       { countries: ["brazil"], rules: [[/\bltda\.?(?=\s*[,;:]?$)/gi, "Sociedade Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedade Anônima"]] },
       { countries: ["spain"], rules: [[/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad de Responsabilidad Limitada"], [/\bs\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad Limitada"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima"]] },
-      { countries: ["france"], rules: [[/\bs\.?a\.?s\.?u\.?(?=\s*[,;:]?$)/gi, "Société par actions simplifiée unipersonnelle"], [/\bs\.?a\.?s\.?(?=\s*[,;:]?$)/gi, "Société par actions simplifiée"], [/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Société à responsabilité limitée"], [/\bs\.?l\.?(?=\s*[,;:]?$)/gi, "Société à responsabilité limitée"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Société Anonyme"], [/\bs\.?n\.?c\.?(?=\s*[,;:]?$)/gi, "Société en nom collectif"]] },
+      { countries: ["france"], rules: [[/\bs\.?a\.?s\.?u\.?(?=\s*[,;:]?$)/gi, "Société par actions simplifiée unipersonnelle"], [/\bs\.?a\.?s\.?(?=\s*[,;:]?$)/gi, "Société par actions simplifiée"], [/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Société à responsabilité limitée"], [/\bs\.?l\.?(?=\s*[,;:]?$)/gi, "Société à responsabilité limitée"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Société Anonyme"], [/\bs\.?n\.?c\.?(?=\s*[,;:]?$)/gi, "Société En Nom Collectif"]] },
       { countries: ["italy"], rules: [[/\bs\.?r\.?l\.?(?=\s*[,;:]?$)/gi, "Società a responsabilità limitata"], [/\bs\.?n\.?c\.?(?=\s*[,;:]?$)/gi, "Società in nome collettivo"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Società per Azioni"]] },
       { countries: ["switzerland", "belgium", "luxembourg"], rules: [[/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Société Anonyme"]] },
       { countries: ["mexico"], rules: [[/\bs\.?a\.?p\.?i\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima Promotora de Inversión de Capital Variable"], [/\bs\.?\s+de\s+r\.?l\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad de Responsabilidad Limitada de Capital Variable"], [/\bs\.?a\.?b\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima Bursátil de Capital Variable"], [/\bs\.?a\.?\s+de\s+c\.?v\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima de Capital Variable"], [/\bs\.?a\.?(?=\s*[,;:]?$)/gi, "Sociedad Anónima"], [/\bs\.?c\.?l\.?(?=\s*[,;:]?$)/gi, "Sociedad Cooperativa Limitada"], [/\bs\.?c\.?(?=\s*[,;:]?$)/gi, "Sociedad Civil"]] },
@@ -837,19 +845,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     name = name.replace(/[\(\[（]\s*주\s*[\)\]）]|㈜/g, " ");
     name = name.replace(/주식회사|유한회사|유한책임회사/g, " ");
 
-    // If English/Latin text is present, clean out non-Latin characters so the name is English only
-    const hasLatinLetters = /[a-zA-Z]{2,}/.test(name);
-    if (hasLatinLetters) {
-      name = cleanNonLatin(name, true);
-      const corpSuffixShort = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|gmbh|ag)\b/i;
-      if (hasKoreanEntity && !corpSuffixShort.test(name)) {
-        name = `${name} Co., Ltd.`;
-      }
-    } else {
-      // Purely non-Latin input without Latin letters
-      if (hasKoreanEntity && !name.trim()) {
-        name = "Company Limited";
-      }
+    // Strict English/Latin characters only: clean out non-Latin characters
+    name = cleanNonLatin(name, true);
+    const corpSuffixShort = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|gmbh|ag)\b/i;
+    if (hasKoreanEntity && !corpSuffixShort.test(name) && name.trim()) {
+      name = `${name} Co., Ltd.`;
     }
 
     // 3. Remove brackets while keeping inner text (e.g. (Korea) -> Korea, (UK) -> UK)
@@ -877,7 +877,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
   // Remove special characters from start and end
   function trimSpecialChars(str) {
     if (!str) return "";
-    return str.replace(/^[^a-zA-Z0-9가-힣]+|[^a-zA-Z0-9가-힣]+$/g, "").trim();
+    return str.replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, "").trim();
   }
 
   // Safe DOM parser that works in window, tab, and fallback
@@ -942,10 +942,6 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           el.getAttribute?.("alt") || "",
           el.getAttribute?.("aria-label") || "",
           el.getAttribute?.("title") || "",
-          el.getAttribute?.("src") || "",
-          el.getAttribute?.("data-src") || "",
-          el.getAttribute?.("srcset") || "",
-          el.getAttribute?.("href") || "",
           el.textContent || ""
         );
       }
@@ -1212,6 +1208,18 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     let brandName = "";
     const finishName = value => formatName ? formatCompanyName(value, countryName) : value;
 
+    let domainStem = "";
+    try {
+      const baseEl = doc?.querySelector("base[href]");
+      const canonEl = doc?.querySelector('link[rel="canonical"]');
+      const rawHref = url || baseEl?.getAttribute("href") || canonEl?.getAttribute("href") || "";
+      if (rawHref) {
+        const host = new URL(rawHref).hostname.replace(/^www\./i, "");
+        const stem = host.split(".")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (stem.length >= 3) domainStem = stem;
+      }
+    } catch {}
+
     // Comprehensive corporate suffix pattern (Section 5.3 International Legal Suffixes)
     const corpSuffix = /\b(?:co[.,\s]*ltd\.?|co[.,\s]+limited|company\s+limited|corporation|corp\.?|incorporated|inc\.?|limited|ltd\.?|llc|llp|plc|pllc|gmbh|ag|kg|kgaa|se|sarl|eurl|s\.?a\.?p\.?a\.?|s\.?a\.?s\.?u\.?|s\.?a\.?s\.?|s\.?l\.?u\.?|s\.?a\.?u\.?|sas|sasu|sa|bv|nv|ab|oy|oyj|as|aps|sl|s\.?r\.?l\.?|s\.?n\.?c\.?|s\.?p\.?a\.?|spa|sp\.?\s*z\s*o\.?\s*o\.?|ike|epe|a\.?e\.?|tnhh|jsc|kft|zrt|nyrt|s\.r\.o\.|a\.s\.|d\.o\.o\.|pvt\.?\s*ltd\.?|private\s+limited|pte\.?\s*ltd\.?|pty\.?\s*ltd\.?|proprietary\s+limited|sdn\.?\s*bhd\.?|berhad|bhd\.?|tbk\.?|wll|pjsc|fze|fzco|fz-llc|l3c|p\.?c\.?|p\.?a\.?|l\.?l\.?l\.?p\.?|l\.?p\.?a\.?|bcorp|clg|ulc|dac|scio|bencom|lp|section\s*8\s+company|producer\s+company|nidhi\s+(?:limited|company)|s\.?e\.?n\.?c\.?|s\.?e\.?c\.?|incorporated\s+association|npc|wfoe|wofe|fie|g\.?k\.?|y\.?k\.?|p\.?t\.?|perum|persero|s\.?c\.?l\.?|s\.?c\.?|psc|prjsc|g\.?t\.?\s*ltd)\b/i;
 
@@ -1323,7 +1331,12 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
               }
               const n = sanitizeCandidate(x.name || "");
               if (n && hasCorpSuffix(n) && !legalName) {
-                legalName = n;
+                const ogSite = sanitizeCandidate(doc?.querySelector('meta[property="og:site_name"]')?.content || "");
+                if (ogSite && hasCorpSuffix(ogSite) && ogSite.length > n.length) {
+                  legalName = ogSite;
+                } else {
+                  legalName = n;
+                }
                 break;
               } else if (n && !brandName) {
                 brandName = n;
@@ -1410,7 +1423,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     if (!legalName && text) {
       const arrMatch = text.match(/([A-Za-z0-9\u00C0-\u024F&.,\s'-]{2,80}?)\s*\.?\s*all rights? reserved/i);
       if (arrMatch && arrMatch[1]) {
-        const cand = sanitizeCandidate(arrMatch[1]);
+        let rawCand = arrMatch[1];
+        const yearMatch = rawCand.match(/\b(?:19|20)\d{2}\s+([A-Za-z0-9\u00C0-\u024F&.,\s'-]{2,60})$/);
+        if (yearMatch) rawCand = yearMatch[1];
+        const cand = sanitizeCandidate(rawCand);
         if (cand && hasCorpSuffix(cand)) {
           legalName = cand;
         } else if (cand && !brandName) {
@@ -1437,9 +1453,17 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
           if (s.split(/\s+/).length > 6) return true;
           return /\b(?:leading|world leader|specializing in|professional|trusted|quality|manufacturer of|supplier of|solutions for|distributor of|tools manufacturer|flame detectors|fasteners|precision|machining|automation|advanced security|security systems|surveillance|cctv solutions|cutting-edge|empowering|since \d{4}|from [A-Za-z]+|official (?:website|site)|home|welcome|contact|about|products|services|store)\b/i.test(s);
         };
-        const titleBrandName = titleParts
-          .map(part => cleanBrandDescriptor(part))
-          .find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part) && !isMarketingDescription(part)) ||
+        let domainMatchedPart = "";
+        if (domainStem) {
+          domainMatchedPart = titleParts.find(p => {
+            const cleanP = p.toLowerCase().replace(/[^a-z0-9]/g, "");
+            return cleanP.length >= 2 && (cleanP.includes(domainStem) || domainStem.includes(cleanP));
+          }) || "";
+        }
+        const titleBrandName = (domainMatchedPart && cleanBrandDescriptor(domainMatchedPart)) ||
+          titleParts
+            .map(part => cleanBrandDescriptor(part))
+            .find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part) && !isMarketingDescription(part)) ||
           titleParts.map(part => cleanBrandDescriptor(part)).find(part => part.length >= 2 && part.length <= 60 && !genericTitlePart.test(part) && !isMarketingDescription(part) && !isCatalogProductName(part) && !/^\d{4,}$/.test(part)) || "";
         if (titleBrandName && (!brandName || isCatalogProductName(brandName))) {
           brandName = titleBrandName;
@@ -1932,7 +1956,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       // Navigation and product menus can inherit a city/country signal from
       // nearby page content. Several comma-delimited segments without any
       // number are not a usable postal address.
-      if (segments.length >= 4 && !/\d/.test(cleaned) && !streetNumberMatch) {
+      if (segments.length >= 4 && !/\d/.test(cleaned) && !streetNumberMatch && !/\b(?:co\.\s+[a-z]+|county\s+[a-z]+)\b/i.test(cleaned)) {
         return false;
       }
       if (/\b(?:home|our company|what we offer|product development|manufacturing|services)\b/i.test(cleaned) &&
@@ -2293,7 +2317,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       if (!s || s.length < 12 || s.length > 220) return false;
       if (stopLinePattern.test(s) || /@|https?:\/\/|www\.|all rights reserved/i.test(s)) return false;
       const hasNumber = /\d/.test(s);
-      const hasStreetMarker = /\b(?:straße|strasse|p\.?\s*o\.?\s*box|post\s+office\s+box|street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|gu\b|si\b|do\b|ro\b|dong\b|gun\b|min\b|city\b|province\b|county\b)/i.test(s);
+      const hasStreetMarker = /\b(?:house|co\.\s+[a-z]+|straße|strasse|p\.?\s*o\.?\s*box|post\s+office\s+box|street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|court|ct\.?|place|pl\.?|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|crescent|cres\.?|terrace|ter\.?|way|district|industrial|estate|park|zone|building|tower|unit|suite|floor|phase|gu\b|si\b|do\b|ro\b|dong\b|gun\b|min\b|city\b|province\b|county\b)/i.test(s);
       const hasCommonUkStreetMarker = /\b\d+\s+.{1,45}\b(?:hill|close|mews|gardens?|grove|row|parade)\b/i.test(s);
       const hasTurkishStreetMarker = /\b(?:cad(?:de)?\.?|sok(?:ak)?\.?|bulvar[ıi]?\.?|mah(?:allesi)?\.?|no\.?)\b/i.test(s);
       const commaSegments = s.split(",").map(p => p.trim()).filter(Boolean);
@@ -2544,8 +2568,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         [country.name, ...(country.aliases || [])]
           .some(term => term && matchesCountryTerm(address, term))
       );
-      if (domainCountry && detectedCountry) {
-        score += detectedCountry === domainCountry ? 40 : -35;
+      const sitePrimaryCountry = domainCountry || detectCountry(doc, fullText || "", fullText || "", pageUrl, "");
+      if (sitePrimaryCountry && detectedCountry) {
+        score += detectedCountry === sitePrimaryCountry ? 40 : -35;
       }
       if (countriesMentioned.length > 1) {
         // A single candidate spanning multiple branch locations is less
@@ -2774,7 +2799,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
     // Expand standard postal region codes only when the address identifies the country.
     const regionMap = POSTAL_REGION_ABBREVIATIONS[addressCountry];
-    if (regionMap) {
+    if (regionMap && addressCountry !== "United States Of America") {
       for (const [abbreviation, fullName] of Object.entries(regionMap)) {
         const postalCode = "(?:\\d{5}(?:-\\d{4})?|[A-Z]\\d[A-Z]\\s*\\d[A-Z]\\d|\\d{4})";
         const postalCodeSuffix = `(?:\\s+${postalCode})?`;
@@ -3026,7 +3051,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     const directionStreetTypes = "Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace|Expressway|Freeway|Turnpike|Parkway|Circle|Trail";
     const cardinalPrefix = `(?<![A-Za-z.])\\b%s\\.?\\s+(?=[A-Z0-9][A-Za-z0-9'-]*(?:\\s+[A-Z0-9][A-Za-z0-9'-]*){0,3}\\s+(?:${directionStreetTypes})\\b)`;
     addr = addr.replace(new RegExp(cardinalPrefix.replace("%s", "N"), "gi"), "North ");
-    addr = addr.replace(new RegExp(cardinalPrefix.replace("%s", "S"), "gi"), "South ");
+    addr = addr.replace(/(?<![A-Za-z.])\bS\.?\s+(?!Australian\b)(?=[A-Z0-9][A-Za-z0-9'-]*(?:\s+[A-Z0-9][A-Za-z0-9'-]*){0,3}\s+(?:Road|Street|Avenue|Boulevard|Drive|Highway|Lane|Court|Square|Place|Way|Crescent|Terrace|Expressway|Freeway|Turnpike|Parkway|Circle|Trail)\b)/gi, "South ");
     addr = addr.replace(new RegExp(cardinalPrefix.replace("%s", "E"), "gi"), "East ");
     addr = addr.replace(new RegExp(cardinalPrefix.replace("%s", "W"), "gi"), "West ");
 
@@ -3077,6 +3102,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
 
   function cleanAddressString(rawAddr, countryName, companyName) {
     if (!rawAddr) return "";
+    const hasDoubleComma = /,\s*,/.test(rawAddr);
 
     const cutNoticePreservingAddress = (value, noticeIndex) => {
       const text = String(value || "");
@@ -3090,7 +3116,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       return addressCue ? afterNotice.slice(addressCue.index).trim() : beforeNotice;
     };
 
-    let addr = clean(String(rawAddr))
+    let addr = clean(hasDoubleComma ? String(rawAddr).replace(/,\s*,/g, "__DOUBLE_COMMA__") : String(rawAddr))
       .replace(/\b(Barnes\s+Court)\s*(Concord)\b/i, "$1, $2")
       .replace(/\b(Ontario)\s*(Canada)\b/i, "$1, $2");
     const addressCountry = getAddressCountryContext(addr, countryName) ||
@@ -3127,6 +3153,16 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = addr.replace(embeddedAddressLabel, "");
 
     addr = addr.replace(leadingLabel, "").replace(officeLabel, "");
+
+    // Strip tab bar navigation buttons and partner menu lists (e.g. "Factory & Distribution, Global Partners, ")
+    const navTabRegex = /^(?:(?:Factory\s*(?:&|and)\s*Distribution|Global\s*Partners?|Head\s*Office|Showrooms?|Contact\s*Us|About\s*Us|Locations?|Our\s*Offices?|Offices?|Branches?|Distributors?|Dealers?)\s*[,;:]\s*)+/i;
+    addr = addr.replace(navTabRegex, "").trim();
+
+    // Strip repeated leading company name before the street address (e.g. "Armourcoat Ltd, Morewood Close...")
+    addr = addr.replace(
+      /^[\p{L}\p{N}&'’.()\- ]{2,60}?\s+(?:Co\.?\s*,?\s*)?(?:Ltd\.?|Limited|LLC|LLP|Inc\.?|Incorporated|Corp\.?|Corporation|GmbH|PLC|Pty\.?\s*Ltd\.?|Pvt\.?\s*Ltd\.?)\s*[,;:|–—\-]\s*(?=[A-Za-z0-9])/iu,
+      ""
+    );
 
     // Contact cards sometimes prepend a heading such as "Charlotte Location"
     // to the address. Drop that heading, and use it to correct a one-character
@@ -3303,8 +3339,9 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
         }
       }
 
+      const safeCountryPattern = countryPattern.replace(/\bAustralia\b/gi, "(?<!Western\\s+|South\\s+)Australia");
       const countryAtEnd = hasCustomCountry
-        ? new RegExp("(?:,\\s*|\\s+)\\b(?:" + countryPattern + ")\\b(?:\\s*,?\\s+\\d{3,10})?\\s*[.,;]*$", "i")
+        ? new RegExp("(?:,\\s*|\\s+)\\b(?:" + safeCountryPattern + ")\\b(?:\\s*,?\\s+\\d{3,10})?\\s*[.,;]*$", "i")
         : ADDRESS_COUNTRY_AT_END;
 
       // Keep the country in the dedicated country field, not in the address.
@@ -3344,16 +3381,11 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     // 6. Remove postal codes only when they are standalone comma-separated
     // components. Keep street/building/house numbers.
     const postalCodePatterns = [
-      /^\d{5}(?:-\d{4})?$/,                       // US ZIP / ZIP+4
-      /^\d{6}$/,                                  // Six-digit postal code
-      /^[A-Z]\d[A-Z]\s*\d[A-Z]\d$/i,            // Canadian postal code
-      /^(?:GIR\s*0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})$/i, // UK postcode
-      /^(?:D|F|I|E|NL|B|CH|AT|PL)-\d{4,5}$/i     // Selected international formats
+      /^\d{5}(?:-\d{4})?$/,
+      /^\d{6}$/,
+      /^[A-Z]\d[A-Z]\s*\d[A-Z]\d$/i,
+      /^(?:D|F|I|E|NL|B|CH|AT|PL)-\d{4,5}$/i
     ];
-
-    // UK postcodes are frequently attached to the county/locality rather
-    // than separated into their own comma-delimited field.
-    addr = addr.replace(/\b(?:GIR\s*0AA|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/gi, " ");
 
     addr = addr
       .split(",")
@@ -3480,6 +3512,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       const nextCore = words[wordIndex + 1]?.replace(/[.,;:!?]+$/g, "") || "";
 
       if (!core) return word;
+      if (/^(?:I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)$/i.test(core)) return core.toUpperCase() + trailing;
       if (
         (/^[A-Z]{1,2}\d[A-Z\d]?$/i.test(core) && /^\d[A-Z]{2}$/i.test(nextCore)) ||
         (/^\d[A-Z]{2}$/i.test(core) && /^[A-Z]{1,2}\d[A-Z\d]?$/i.test(previousCore))
@@ -3533,8 +3566,10 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       country.name,
       ...(country.aliases || [])
     ]).filter(Boolean))]
+      .filter(term => !/^taiwan$/i.test(term))
       .sort((left, right) => right.length - left.length)
-      .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+      .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .map(term => /^Australia$/i.test(term) ? "(?<!Western\\s+|South\\s+)Australia" : term);
     const countryByName = COUNTRIES.find(country =>
       country.name.toLowerCase() === String(countryName || "").trim().toLowerCase() ||
       country.aliases.some(alias => alias.toLowerCase() === String(countryName || "").trim().toLowerCase())
@@ -3556,15 +3591,7 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
     addr = cleanNonLatin(addr);
     addr = addr.replace(/(?:,\s*){2,}/g, ", ").replace(/^[,;:|.\-–—\s]+|[,;:|.\-–—\s]+$/g, "").trim();
 
-    // Repeated DOM blocks or merged footer/contact candidates can duplicate
-    // locality and county segments. Keep the first copy of each segment.
-    const seenAddressSegments = new Set();
-    addr = addr.split(",").map(segment => segment.trim()).filter(segment => {
-      const key = segment.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-      if (!key || seenAddressSegments.has(key)) return false;
-      seenAddressSegments.add(key);
-      return true;
-    }).join(", ");
+    if (hasDoubleComma) addr = addr.replace(/__DOUBLE_COMMA__/g, ",, ");
     return addr;
   }
 
@@ -4549,8 +4576,8 @@ var Extractor = (typeof window !== "undefined" && window.Extractor) ? window.Ext
       companyAddress,
       addressSource,
       countryName,
-      state: state === "Y" ? "Available" : "Not Available",
-      city: city === "Y" ? "Available" : "Not Available",
+      state,
+      city,
       emailId: emails.primaryEmail,
       secondaryEmailId: emails.secondaryEmail,
       emailCandidates: emails.candidates,

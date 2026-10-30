@@ -79,7 +79,13 @@ function isEnglishPage(data, pageUrl) {
   const declared = String(data?.pageLanguage || "").trim().toLowerCase().replace(/_/g, "-");
   if (declared) return declared === "en" || declared.startsWith("en-");
   const inferred = pageLanguageFromUrl(pageUrl);
-  return inferred === "en" || inferred.startsWith("en-");
+  if (inferred) return inferred === "en" || inferred.startsWith("en-");
+  // Check if page data has non-Latin script (Hangul, Hanzi/Kanji, Kana, Cyrillic, Arabic, Thai, etc.)
+  const textSample = [data?.companyName, data?.companyAddress].filter(Boolean).join(" ");
+  if (/[\uac00-\ud7a3\u4e00-\u9fff\u3040-\u30ff\u0400-\u04ff\u0600-\u06ff\u0e00-\u0e7f]/.test(textSample)) {
+    return false;
+  }
+  return true;
 }
 
 function hasNonEnglishLocale(pageUrl) {
@@ -254,7 +260,7 @@ async function recoverFromBrowserError(tabId, requestedUrl, timeoutMs) {
 
 async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 1500);
+  const timer = setTimeout(() => controller.abort(), 8000);
   let response;
   let html = "";
 
@@ -301,11 +307,11 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
   let renderedTab;
   try {
     renderedTab = await chrome.tabs.create({ url: response?.url || pageUrl, active: false });
-    await waitForTabComplete(renderedTab.id, 1800);
+    await waitForTabComplete(renderedTab.id, 6000);
     renderedTab = await recoverFromBrowserError(
       renderedTab.id,
       response?.url || pageUrl,
-      1800
+      4000
     );
 
     const [{ result: extractorLoaded }] = await chrome.scripting.executeScript({
@@ -371,21 +377,21 @@ async function extractFetchedPage(tabId, pageUrl, renderIfDataMissing = false) {
 }
 
 // Perform reliable crawling inside a background tab
-async function crawlInTab(targetUrl, timeoutMs = 15000) {
+async function crawlInTab(targetUrl, timeoutMs = 25000) {
   const normUrl = normalizeUrl(targetUrl);
   if (!normUrl) {
     return { success: false, error: "Please enter a valid website URL." };
   }
 
   let tab = null;
-  const crawlDeadline = Date.now() + 11000;
+  const crawlDeadline = Date.now() + Math.max(timeoutMs, 25000);
   try {
     // 1. Create hidden background tab
     tab = await chrome.tabs.create({ url: normUrl, active: false });
 
     // 2. Wait for page load
-    await waitForTabComplete(tab.id, Math.min(timeoutMs, 6000));
-    tab = await recoverFromBrowserError(tab.id, normUrl, Math.min(timeoutMs, 3000));
+    await waitForTabComplete(tab.id, Math.min(timeoutMs, 9000));
+    tab = await recoverFromBrowserError(tab.id, normUrl, Math.min(timeoutMs, 4000));
 
     // Small delay to ensure client-side JS renders
     await new Promise(r => setTimeout(r, 150));
@@ -544,9 +550,11 @@ async function crawlInTab(targetUrl, timeoutMs = 15000) {
     let footerAddressTakenFromContactPage = false;
     let bestContactAddressPriority = -1;
     const visitedContactUrls = new Set(contactCandidates);
-    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 1; contactIndex++) {
-      // Keep optional subpage crawling from making the user wait indefinitely.
-      if (Date.now() > crawlDeadline - 3500) break;
+    for (let contactIndex = 0; contactIndex < contactCandidates.length && contactIndex < 2; contactIndex++) {
+      // Keep optional subpage crawling from making the user wait indefinitely,
+      // but NEVER skip the contact page if essential contact details are missing!
+      const missingCoreContact = !mainData.companyAddress || !mainData.emailId || !mainData.phoneNumber;
+      if (!missingCoreContact && Date.now() > crawlDeadline - 4000) break;
       const contactUrl = contactCandidates[contactIndex];
       try {
         const contactData = await extractFetchedPage(tab.id, contactUrl, true);
